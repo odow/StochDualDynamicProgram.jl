@@ -2,13 +2,13 @@ module StochDualDynamicProgram
 
 importall JuMP
 using MathProgBase
-using Clp
+using Clp, Gurobi
 using Formatting
 using Distributions
 
 export SDDPModel,
     @defStateVar, @defValueToGo,
-    addStageProblem!
+    addStageProblem!, simulate
 
 type SDDPModel{M,N,T}
     stage_problems::Array{JuMP.Model, 2}
@@ -40,35 +40,35 @@ rel_tol    - Relative tolerance convergence criteria. DDP halts when (ub - lb) /
 """
 function SDDPModel(;
     stages=0,
-    scenarios=1,
+    markov_states=1,
     transition=nothing,
-    initial_scenario=0,
+    initial_markov_state=0,
     conf_level=0.95,
-    lpsolver=ClpSolver(),
+    lpsolver=GurobiSolver(OutputFlag=0),#ClpSolver(),
     abs_tol=1e-8,
     rel_tol=1e-8)
     if transition==nothing
         # Uniform transition matrix
-        transition = 1 / scenarios * ones(scenarios, scenarios)
+        transition = 1 / markov_states * ones(markov_states, markov_states)
     end
     T = length(size(transition))
     # Check valid transition matrix
 
     if T==2
-        @assert size(transition)[1] == size(transition)[2] == scenarios
-        for i=1:scenarios
+        @assert size(transition)[1] == size(transition)[2] == markov_states
+        for i=1:markov_states
             @assert abs(sum(transition[i,:]) - 1.) < 1e-10
         end
     elseif T==3
         @assert size(transition)[1] == stages
-        @assert size(transition)[2] == size(transition)[3] == scenarios
+        @assert size(transition)[2] == size(transition)[3] == markov_states
         for i=1:size(transition)[1]
-            for j=1:scenarios
+            for j=1:markov_states
                 @assert abs(sum(transition[i,j,:]) - 1.) < 1e-10
             end
         end
     end
-    SDDPModel{stages,scenarios,T}(Array(JuMP.Model, (stages, scenarios)), transition, initial_scenario, (-Inf, -Inf), Inf, :Unconverged, conf_level, abs_tol, rel_tol, lpsolver)
+    SDDPModel{stages,markov_states,T}(Array(JuMP.Model, (stages, markov_states)), transition, initial_markov_state, (-Inf, -Inf), Inf, :Unconverged, conf_level, abs_tol, rel_tol, lpsolver)
 end
 function Base.copy{M,N,T}(m::SDDPModel{M,N,T})
     SDDPModel{M,N,T}(deepcopy(m.stage_problems), copy(m.transition), m.initial_scenario, m.lower_bound, m.upper_bound, m.status, m.QUANTILE, m.ATOL, m.RELTOL, m.LPSOLVER)
@@ -122,6 +122,7 @@ Usage
 """
 function addStageProblem!{M,N,T}(build_model!::Function, m::SDDPModel{M,N,T}, stage_idx::Int, scenario_idx::Int)
     sp = StageProblem()
+    setSolver(sp, m.LPSOLVER)
     build_model!(sp)
 
     # remove last theta
@@ -140,21 +141,21 @@ is_sp(m) = false
 """
 A helper function for the JuMP.getValue so it can extract the values from and SDDP problem.
 """
-function JuMP.getValue(m::SDDPModel, v::Symbol)
-    x = Array(Any, length(m.stage_problems))
-    for (idx, sp) in enumerate(m.stage_problems)
-        try
-            x[idx] = getValue(getVar(sp, v))
-        catch
-        end
-    end
-    if issubtype(typeof(x[1]), Number)
-        return convert(Vector{Float64}, x)
-    else
-        # Deal with more complicated values
-        return x
-    end
-end
+# function JuMP.getValue(m::SDDPModel, v::Symbol)
+#     x = Array(Any, length(m.stage_problems))
+#     for (idx, sp) in enumerate(m.stage_problems)
+#         try
+#             x[idx] = getValue(getVar(sp, v))
+#         catch
+#         end
+#     end
+#     if issubtype(typeof(x[1]), Number)
+#         return convert(Vector{Float64}, x)
+#     else
+#         # Deal with more complicated values
+#         return x
+#     end
+# end
 
 # Some helper functions
 JuMP.getLower(c::ConstraintRef) = c.m.linconstr[c.idx].lb
@@ -165,7 +166,7 @@ JuMP.getUpper(m::SDDPModel) = m.upper_bound
 setLower!{T<:Real}(m::SDDPModel, v::Tuple{T,T}) = (m.lower_bound = v)
 setUpper!{T<:Real}(m::SDDPModel, v::T) = (m.upper_bound = v)
 atol(m) = getUpper(m) - getLower(m)
-rtol(m) = abs(getUpper(m)) != Inf?abs(atol(m) / getUpper(m)):Inf
+rtol(m) = abs(getUpper(m)) != Inf?atol(m) / abs(getUpper(m)):Inf
 
 """
 Get the value of the current stage (i.e. not including the value to go)
@@ -203,14 +204,85 @@ Solve a StageProblem.
 """
 function solve!(sp::Model, m::SDDPModel)
     # Catch case where we aren't optimal
-    if solve(sp) != :Optimal
+    status = solve(sp)
+    if status == :Infeasible
+        grb = MathProgBase.getrawsolver(getInternalModel(sp))
+        Gurobi.computeIIS(grb)
+        numconstr = Gurobi.num_constrs(grb)
+        numvar = Gurobi.num_vars(grb)
+
+        iisconstr = Gurobi.get_intattrarray(grb, "IISConstr", 1, numconstr)
+        iislb = Gurobi.get_intattrarray(grb, "IISLB", 1, numvar)
+        iisub = Gurobi.get_intattrarray(grb, "IISUB", 1, numvar)
+
+        println("Irreducible Inconsistent Subsystem (IIS)")
+        println("Variable bounds:")
+        for i in 1:numvar
+            v = Variable(sp, i)
+            if iislb[i] != 0 && iisub[i] != 0
+                println(getLower(v), " <= ", getName(v), " <= ", getUpper(v))
+            elseif iislb[i] != 0
+                println(getName(v), " >= ", getLower(v))
+            elseif iisub[i] != 0
+                println(getName(v), " <= ", getUpper(v))
+            end
+        end
+
+
+        println("Constraints:")
+        for i in 1:numconstr
+            if iisconstr[i] != 0
+                println(ConstraintRef{LinearConstraint}(sp, i))
+            end
+        end
+        println("End of IIS")
+    elseif status != :Optimal
         println("Model:")
         display(sp)
         println("\nConstraints:")
         display(sp.linconstr)
         println()
-        error("Unable to continue. Not solved to optimality")
+        error("Status: $(status). Unable to continue. Not solved to optimality")
     end
+end
+
+"""
+Simulate SDDP model and return variable solutions contained in [vars]
+"""
+function simulate{M,N,T}(m::SDDPModel{M,N,T}, n::Int, vars::Vector{Symbol})
+    results = Dict{Symbol, Vector{Vector{Any}}}()
+    for v in vars
+        results[v] = Array(Vector{Any}, M)
+        for i=1:M
+            results[v][i] = Array(Any, n)
+        end
+    end
+
+    for pass=1:n
+        if m.initial_scenario==0
+            scenario = transition(m, 1, m.initial_scenario)
+        else
+            scenario = m.initial_scenario
+        end
+        for stage=1:M
+            old_scenario = scenario
+            sp = m.stage_problems[stage, scenario]  # corresponding stage problem
+            sp.ext[:old_scenario] = old_scenario    # Lets store the scenario we just came from
+            solve!(sp, m)                           # solve
+            # pass forward if necessary
+            if stage < M
+                pass_states_forward!(m, stage, old_scenario)
+                # transition to new scenario
+                scenario = transition(m, stage, old_scenario)
+            end
+
+            for v in vars
+                results[v][stage][pass] = getValue(getVar(sp, v))
+            end
+
+        end
+    end
+    return results
 end
 
 """
@@ -237,10 +309,10 @@ function forward_pass!{M,N,T}(m::SDDPModel{M,N,T}, npasses::Int=1, print_info::B
 
             # pass forward if necessary
             if stage < M
-                pass_states_forward!(m, stage, scenario)
+                pass_states_forward!(m, stage, old_scenario)
 
                 # transition to new scenario
-                scenario = transition(m, stage, scenario)
+                scenario = transition(m, stage, old_scenario)
             end
         end
     end
@@ -393,5 +465,6 @@ function print_stats_header()
     printfmt("{1:22s} | {2:10s} | {3:6s}\n", "LB", "UB", "% Gap")
 end
 
+include("macros.jl")
 
 end
