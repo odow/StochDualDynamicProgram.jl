@@ -67,17 +67,15 @@ facts("@defValueToGo") do
 end
 
 facts("Hydro Example") do
+    include("../examples/hydro.jl")
+    
     context("Version One") do
-        include("../examples/hydro.jl")
         results = solve_hydro()
-        @fact Float64[mean(results[:upper_reservoir][t]) for t=1:3] --> roughly([122.99, 66.83, 0.0], 0.1)
-        @fact Float64[mean(results[:lower_reservoir][t]) for t=1:3] --> roughly([200.0, 75.02, 0.0], 0.1)
+        @fact mean(results[:Objective]) --> roughly(904, 20)
     end
 
     context("Version Two") do
-        include("../examples/hydro2.jl")
         results = solve_hydro2()
-        @fact Float64[mean(results[:upper_reservoir][t]) for t=1:3] --> roughly([122.99, 66.83, 0.0], 0.1)
-        @fact Float64[mean(results[:lower_reservoir][t]) for t=1:3] --> roughly([200.0, 75.02, 0.0], 0.1)
+        @fact mean(results[:Objective])--> roughly(-910, 20)
     end
 end

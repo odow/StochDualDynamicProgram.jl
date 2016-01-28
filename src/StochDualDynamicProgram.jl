@@ -10,11 +10,12 @@ export SDDPModel,
     addStageProblem!, simulate
 
 type SDDPModel{M,N,T}
+    sense::Symbol
     stage_problems::Array{JuMP.Model, 2}
     transition::Array{Float64, T}
     initial_scenario::Int
-    lower_bound::Tuple{Float64, Float64}
-    upper_bound::Float64
+    confidence_interval::Tuple{Float64, Float64}
+    valid_bound::Float64
     status::Symbol
     QUANTILE::Float64
     ATOL::Float64
@@ -38,6 +39,7 @@ abs_tol    - Absolute tolerance convergence criteria. DDP halts when ub - lb < a
 rel_tol    - Relative tolerance convergence criteria. DDP halts when (ub - lb) / lb < rel_tol
 """
 function SDDPModel(;
+    sense=:Max,
     stages=0,
     markov_states=1,
     transition=nothing,
@@ -46,6 +48,11 @@ function SDDPModel(;
     lpsolver=ClpSolver(),
     abs_tol=1e-8,
     rel_tol=1e-8)
+
+    if !(sense in [:Max, :Min])
+        error("Sense must be either :Max or :Min. Currently = $(sense).")
+    end
+
     if transition==nothing
         # Uniform transition matrix
         transition = 1 / markov_states * ones(markov_states, markov_states)
@@ -67,10 +74,11 @@ function SDDPModel(;
             end
         end
     end
-    SDDPModel{stages,markov_states,T}(Array(JuMP.Model, (stages, markov_states)), transition, initial_markov_state, (-Inf, -Inf), Inf, :Unconverged, conf_level, abs_tol, rel_tol, lpsolver)
+    my_inf = (sense==:Max?Inf:-Inf)
+    SDDPModel{stages,markov_states,T}(sense, Array(JuMP.Model, (stages, markov_states)), transition, initial_markov_state, (-my_inf, -my_inf), my_inf, :Unconverged, conf_level, abs_tol, rel_tol, lpsolver)
 end
 function Base.copy{M,N,T}(m::SDDPModel{M,N,T})
-    SDDPModel{M,N,T}(deepcopy(m.stage_problems), copy(m.transition), m.initial_scenario, m.lower_bound, m.upper_bound, m.status, m.QUANTILE, m.ATOL, m.RELTOL, m.LPSOLVER)
+    SDDPModel{M,N,T}(m.sense, deepcopy(m.stage_problems), copy(m.transition), m.initial_scenario, m.confidence_interval, m.valid_bound, m.status, m.QUANTILE, m.ATOL, m.RELTOL, m.LPSOLVER)
 end
 
 function transition{M,N,T}(m::SDDPModel{M,N,T}, stage::Int, scenario::Int)
@@ -83,7 +91,6 @@ function transition{M,N,T}(m::SDDPModel{M,N,T}, stage::Int, scenario::Int)
             r -= k
         end
     end
-    return N
 end
 # transition{M,N}(m::SDDPModel{M,N,2}, scenario::Int) = transition(m, 1, scenario)
 
@@ -159,13 +166,38 @@ is_sp(m) = false
 # Some helper functions
 JuMP.getLower(c::ConstraintRef) = c.m.linconstr[c.idx].lb
 JuMP.getUpper(c::ConstraintRef) = c.m.linconstr[c.idx].ub
-JuMP.getLower(m::SDDPModel) = m.lower_bound[2]
-getLowerBnd(m::SDDPModel) = m.lower_bound[1]
-JuMP.getUpper(m::SDDPModel) = m.upper_bound
-setLower!{T<:Real}(m::SDDPModel, v::Tuple{T,T}) = (m.lower_bound = v)
-setUpper!{T<:Real}(m::SDDPModel, v::T) = (m.upper_bound = v)
-atol(m) = getUpper(m) - getLower(m)
-rtol(m) = abs(getUpper(m)) != Inf?atol(m) / abs(getUpper(m)):Inf
+
+
+function getCloseCIBound(m::SDDPModel)
+    if m.sense==:Max
+        m.confidence_interval[2]
+    else
+        m.confidence_interval[1]
+    end
+end
+function getFarCIBound(m::SDDPModel)
+    if m.sense==:Max
+        m.confidence_interval[1]
+    else
+        m.confidence_interval[2]
+    end
+end
+getBound(m::SDDPModel) = m.valid_bound
+
+setCI!{T<:Real}(m::SDDPModel, v::Tuple{T,T}) = (m.confidence_interval = v)
+setBound!{T<:Real}(m::SDDPModel, v::T) = (m.valid_bound = v)
+
+function atol(m)
+    if m.sense==:Max
+        getBound(m) - getCloseCIBound(m)
+    else
+        getCloseCIBound(m) - getBound(m)
+    end
+end
+
+function rtol(m)
+    abs(getBound(m)) != Inf?atol(m) / abs(getBound(m)):Inf
+end
 
 """
 Get the value of the current stage (i.e. not including the value to go)
@@ -173,6 +205,7 @@ Get the value of the current stage (i.e. not including the value to go)
 function get_true_value(m::Model)
     @assert is_sp(m)
     if m.ext[:theta] != nothing
+        # TODO: is this correct for minimisation
         return getObjectiveValue(m) - getValue(m.ext[:theta])
     else
         return getObjectiveValue(m)
@@ -182,7 +215,7 @@ end
 """
 Calculate the upper bound of the first stage problem
 """
-function set_upper_bound!{M,N,T}(m::SDDPModel{M,N,T})
+function set_valid_bound!{M,N,T}(m::SDDPModel{M,N,T})
     obj = 0.0
     if m.initial_scenario == 0
         for i=1:N
@@ -191,8 +224,10 @@ function set_upper_bound!{M,N,T}(m::SDDPModel{M,N,T})
     else
         obj += getObjectiveValue(m.stage_problems[1, m.initial_scenario])
     end
-    if obj < getUpper(m)
-        setUpper!(m, obj)
+    if m.sense==:Max && obj < getBound(m)
+        setBound!(m, obj)
+    elseif m.sense==:Min && obj > getBound(m)
+        setBound!(m, obj)
     end
 end
 
@@ -218,7 +253,7 @@ end
 Simulate SDDP model and return variable solutions contained in [vars]
 """
 function simulate{M,N,T}(m::SDDPModel{M,N,T}, n::Int, vars::Vector{Symbol})
-    results = Dict{Symbol, Vector{Vector{Any}}}()
+    results = Dict{Symbol, Any}(:Objective=>zeros(Float64,n))
     for v in vars
         results[v] = Array(Vector{Any}, M)
         for i=1:M
@@ -237,6 +272,7 @@ function simulate{M,N,T}(m::SDDPModel{M,N,T}, n::Int, vars::Vector{Symbol})
             sp = m.stage_problems[stage, scenario]  # corresponding stage problem
             sp.ext[:old_scenario] = old_scenario    # Lets store the scenario we just came from
             solve!(sp, m)                           # solve
+            results[:Objective][pass] += get_true_value(sp)         # Add objective
             # pass forward if necessary
             if stage < M
                 pass_states_forward!(m, stage, old_scenario)
@@ -291,14 +327,14 @@ function forward_pass!{M,N,T}(m::SDDPModel{M,N,T}, npasses::Int=1, print_info::B
     else
         _obj = (obj[1], obj[1])
     end
-    if _obj[1] > getLowerBnd(m)
-        setLower!(m, _obj)
+    if (m.sense==:Max && _obj[1] > getFarCIBound(m)) || (m.sense==:Min && _obj[2] < getFarCIBound(m))
+        setCI!(m, _obj)
     end
 
 end
 
 function t_test(x::Vector; conf_level=0.95)
-    tstar = 1.96 # quantile(TDist(length(x)-1), 1 - (1 - conf_level)/2)
+    tstar = quantile(TDist(length(x)-1), 1 - (1 - conf_level)/2)
     SE = std(x)/sqrt(length(x))
     lo, hi = mean(x) + [-1, 1] * tstar * SE
     return (lo, hi)#, mean(x))
@@ -359,7 +395,7 @@ function backward_pass!{M,N,T}(m::SDDPModel{M,N,T})
     end
 
     # Calculate a new upper bound
-    set_upper_bound!(m)
+    set_valid_bound!(m)
 end
 function backward_pass!(m::SDDPModel, backward_passes::Int)
     for i=1:backward_passes
@@ -382,18 +418,31 @@ scenario - the scenario to add the cut to
 function add_cut!(m::SDDPModel, stage::Int, scenario::Int)
     # Get the stage problem to add the cut to
     sp = m.stage_problems[stage, scenario]
-
-    @addConstraint(sp,
-        sp.ext[:theta] <= sum{
-            get_transition(m, stage, scenario, i) * (
-                getObjectiveValue(s2) +
-                sum{getDual(s2.ext[:duals][state]) * (
-                    getVar(sp, state) - getLower(s2.ext[:duals][state])
-                    ), state=sp.ext[:state_vars]
-                }
-            ), (i, s2)=enumerate(m.stage_problems[stage+1,:])
-        }
-    )
+    if m.sense==:Max
+        @addConstraint(sp,
+            sp.ext[:theta] <= sum{
+                get_transition(m, stage, scenario, i) * (
+                    getObjectiveValue(s2) +
+                    sum{getDual(s2.ext[:duals][state]) * (
+                        getVar(sp, state) - getLower(s2.ext[:duals][state])
+                        ), state=sp.ext[:state_vars]
+                    }
+                ), (i, s2)=enumerate(m.stage_problems[stage+1,:])
+            }
+        )
+    else
+        @addConstraint(sp,
+            sp.ext[:theta] >= sum{
+                get_transition(m, stage, scenario, i) * (
+                    getObjectiveValue(s2) +
+                    sum{getDual(s2.ext[:duals][state]) * (
+                        getVar(sp, state) - getLower(s2.ext[:duals][state])
+                        ), state=sp.ext[:state_vars]
+                    }
+                ), (i, s2)=enumerate(m.stage_problems[stage+1,:])
+            }
+        )
+    end
 end
 
 """
@@ -427,10 +476,10 @@ function JuMP.solve{M,N,T}(m::SDDPModel{M,N,T}; verbosity=1, forward_passes=1, b
 end
 
 function print_stats(m::SDDPModel)
-    printfmt("({1:8.2f}, {2:8.2f}) | {3:8.2f} | {4:3.2f}\n", m.lower_bound[1], m.lower_bound[2], m.upper_bound, 100*rtol(m))
+    printfmt("({1:8.2f}, {2:8.2f}) | {3:8.2f} | {4:3.2f}\n", m.confidence_interval[1], m.confidence_interval[2], m.valid_bound, 100*rtol(m))
 end
 function print_stats_header()
-    printfmt("{1:22s} | {2:10s} | {3:6s}\n", "LB", "UB", "% Gap")
+    printfmt("{1:22s} | {2:10s} | {3:6s}\n", "Expected Objective", "Valid Bound", "% Gap")
 end
 
 include("macros.jl")
