@@ -1,8 +1,7 @@
 module StochDualDynamicProgram
 
 importall JuMP
-using MathProgBase
-using Clp, Gurobi
+using MathProgBase, Clp
 using Formatting
 using Distributions
 
@@ -138,9 +137,9 @@ addStageProblem!(build_model!::Function, m::SDDPModel, stage_idx::Int) = addStag
 is_sp(m::JuMP.Model) = haskey(m.ext, :is_sp) && m.ext[:is_sp]
 is_sp(m) = false
 
-"""
-A helper function for the JuMP.getValue so it can extract the values from and SDDP problem.
-"""
+# """
+# A helper function for the JuMP.getValue so it can extract the values from and SDDP problem.
+# """
 # function JuMP.getValue(m::SDDPModel, v::Symbol)
 #     x = Array(Any, length(m.stage_problems))
 #     for (idx, sp) in enumerate(m.stage_problems)
