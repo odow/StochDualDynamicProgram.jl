@@ -43,7 +43,7 @@ function SDDPModel(;
     transition=nothing,
     initial_markov_state=0,
     conf_level=0.95,
-    lpsolver=GurobiSolver(OutputFlag=0),#ClpSolver(),
+    lpsolver=ClpSolver(),
     abs_tol=1e-8,
     rel_tol=1e-8)
     if transition==nothing
