@@ -204,38 +204,7 @@ Solve a StageProblem.
 function solve!(sp::Model, m::SDDPModel)
     # Catch case where we aren't optimal
     status = solve(sp)
-    if status == :Infeasible
-        grb = MathProgBase.getrawsolver(getInternalModel(sp))
-        Gurobi.computeIIS(grb)
-        numconstr = Gurobi.num_constrs(grb)
-        numvar = Gurobi.num_vars(grb)
-
-        iisconstr = Gurobi.get_intattrarray(grb, "IISConstr", 1, numconstr)
-        iislb = Gurobi.get_intattrarray(grb, "IISLB", 1, numvar)
-        iisub = Gurobi.get_intattrarray(grb, "IISUB", 1, numvar)
-
-        println("Irreducible Inconsistent Subsystem (IIS)")
-        println("Variable bounds:")
-        for i in 1:numvar
-            v = Variable(sp, i)
-            if iislb[i] != 0 && iisub[i] != 0
-                println(getLower(v), " <= ", getName(v), " <= ", getUpper(v))
-            elseif iislb[i] != 0
-                println(getName(v), " >= ", getLower(v))
-            elseif iisub[i] != 0
-                println(getName(v), " <= ", getUpper(v))
-            end
-        end
-
-
-        println("Constraints:")
-        for i in 1:numconstr
-            if iisconstr[i] != 0
-                println(ConstraintRef{LinearConstraint}(sp, i))
-            end
-        end
-        println("End of IIS")
-    elseif status != :Optimal
+    if status != :Optimal
         println("Model:")
         display(sp)
         println("\nConstraints:")

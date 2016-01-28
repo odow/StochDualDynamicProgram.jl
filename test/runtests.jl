@@ -8,6 +8,10 @@ facts("SDDPModel") do
     )
     @fact size(m.stage_problems) --> (3,2)
     @fact StochDualDynamicProgram.get_transition(m, 1, 1, 1) --> 0.2
+
+    sp = StochDualDynamicProgram.StageProblem()
+    @fact StochDualDynamicProgram.is_sp(sp) --> true
+    @fact StochDualDynamicProgram.is_sp(m) --> false
 end
 
 facts("@defStateVar") do
@@ -63,8 +67,17 @@ facts("@defValueToGo") do
 end
 
 facts("Hydro Example") do
-    include("../examples/hydro.jl")
-    results = solve_hydro()
-    @fact Float64[mean(results[:upper_reservoir][t]) for t=1:3] --> roughly([122.99, 66.83, 0.0], 0.1)
-    @fact Float64[mean(results[:lower_reservoir][t]) for t=1:3] --> roughly([200.0, 75.02, 0.0], 0.1)
+    context("Version One") do
+        include("../examples/hydro.jl")
+        results = solve_hydro()
+        @fact Float64[mean(results[:upper_reservoir][t]) for t=1:3] --> roughly([122.99, 66.83, 0.0], 0.1)
+        @fact Float64[mean(results[:lower_reservoir][t]) for t=1:3] --> roughly([200.0, 75.02, 0.0], 0.1)
+    end
+
+    context("Version Two") do
+        include("../examples/hydro2.jl")
+        results = solve_hydro2()
+        @fact Float64[mean(results[:upper_reservoir][t]) for t=1:3] --> roughly([122.99, 66.83, 0.0], 0.1)
+        @fact Float64[mean(results[:lower_reservoir][t]) for t=1:3] --> roughly([200.0, 75.02, 0.0], 0.1)
+    end
 end
