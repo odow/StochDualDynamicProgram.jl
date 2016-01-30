@@ -12,7 +12,7 @@ export SDDPModel,
 type SDDPModel{M,N,T}
     sense::Symbol
     stage_problems::Array{JuMP.Model, 2}
-    transition::Array{Float64, T}
+    transition::Array{Union{Float64, Array{Float64, 2}}, T}
     initial_scenario::Int
     confidence_interval::Tuple{Float64, Float64}
     valid_bound::Float64
