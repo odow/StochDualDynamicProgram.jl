@@ -26,11 +26,11 @@ end
 """
 Creates an SDDPModel type
 
-    SDDPModel([;stages, scenarios, transition, initial_scenario, conf_level, lpsolver, mipsolver, abs_tol, rel_tol])
+    SDDPModel([;stages, markov_states, transition, initial_scenario, conf_level, lpsolver, abs_tol, rel_tol])
 
 Inputs:
 stages     - the number of stages
-scenarios  - the number of scenarios
+markov_states - the number of scenarios
 transition - the transition matrix. Can be N*N where N is the number of scenarios, or M*N*N where M is the number of stages.
 initial_scenario - the scenario at time 0. Model transitions at the start of time period 1
 conf_level - confidence level for the lower bound
@@ -40,7 +40,7 @@ rel_tol    - Relative tolerance convergence criteria. DDP halts when (ub - lb) /
 """
 function SDDPModel(;
     sense=:Max,
-    stages=0,
+    stages=1,
     markov_states=1,
     transition=nothing,
     initial_markov_state=0,
@@ -65,12 +65,12 @@ function SDDPModel(;
         for i=1:markov_states
             @assert abs(sum(transition[i,:]) - 1.) < 1e-10
         end
-    elseif T==3
-        @assert size(transition)[1] == stages
-        @assert size(transition)[2] == size(transition)[3] == markov_states
-        for i=1:size(transition)[1]
+    elseif T==1
+        @assert length(transition) == stages
+        for i=1:stages
+            @assert size(transition[i])[1] == size(transition[i])[2] == markov_states
             for j=1:markov_states
-                @assert abs(sum(transition[i,j,:]) - 1.) < 1e-10
+                @assert abs(sum(transition[i][j,:]) - 1.) < 1e-10
             end
         end
     end
@@ -98,8 +98,8 @@ function get_transition{M,N}(m::SDDPModel{M,N,2}, stage::Int, s1::Int, s2::Int)
     s1==0?1/N : m.transition[s1,s2]
 end
 # get_transition{M,N}(m::SDDPModel{M,N,2}, s1::Int, s2::Int) = get_transition(m, 1, s1, s2)
-function get_transition{M,N}(m::SDDPModel{M,N,3}, stage::Int, s1::Int, s2::Int)
-    s1==0?1/N : m.transition[stage, s1,s2]
+function get_transition{M,N}(m::SDDPModel{M,N,1}, stage::Int, s1::Int, s2::Int)
+    s1==0?1/N : m.transition[stage][s1,s2]
 end
 
 """

@@ -172,7 +172,11 @@ function solve_hydro2(;
     ],
 
     # Transition matrix
-    Transition = reshape([ [0.6 0.4;0.3 0.7]; [0.3 0.7;0.3 0.7]; [0.5 0.5;0.5 0.5] ], (3, 2, 2)),
+    Transition = Array{Float64, 2}[
+        [0.6 0.4;0.3 0.7],
+        [0.3 0.7;0.3 0.7],
+        [0.5 0.5;0.5 0.5]
+      ],
 
     # Price of purchasing and spilling water
     #   ($/Unit)
