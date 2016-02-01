@@ -13,7 +13,7 @@ Pkg.clone("https://github.com/odow/StochDualDynamicProgram.jl.git")
 ## Usage
 See the `/examples/hydro.jl` file for example usage. But briefly:
 
-### `SDDPModel()`
+### `SDDPModel`
 
 This function creates a new SDDP model object. `SDDPModel()` takes the following keyword arguments:
 
@@ -33,4 +33,49 @@ This function creates a new SDDP model object. `SDDPModel()` takes the following
 ```julia
 m = SDDPModel(stages=3, markov_states=2, transition=[0.2 0.8; 0.7 0.3])
 m = SDDPModel(sense=:Min, stages=3, markov_states=2, conf_level=0.99)
+```
+### `addStageProblem!`
+This function defines a new stage problem in the SDDP model `m`.
+```julia
+addStageProblem!(m::SDDPModel, stage::Int, markov_state::Int) do sp
+  # Stage problem definition
+end
+```
+
+### `@defStateVar`
+Define a new state variable in the stage problem `sp`.
+
+#### Example
+```julia
+@defStateVar(sp, x, x0==1)
+@defStateVar(sp, x >= 0.5, x0==1)
+@defStateVar(sp, 0 <= x <= 0.5, x0==1)
+```
+
+### `@defValueToGo`
+Define the value to go variable for the stage problem `sp`.
+
+The value to go variable must be defined with some large, non-infinite bound.
+
+If the SDDP model has the sense `:Max`, it is expected that theta optimises towards `+inf`. 
+If the SDDP model has the sense `:Min`, it is expected that theta optimises towards `-inf`. 
+
+#### Example
+```julia
+@defValueToGo(sp, ϑ <= 1000)
+```
+
+### `solve(m::SDDPModel [; forward_passes=1, backward_passes=1)`
+This function solves the SDDP model `m`. There are two optional keyword parameters:
+ - `forward_passes`: The number of forward simulation passes to conduct when estimating the objective
+ - `backward_passes`: the number of cutting passes to make before testing for convergence
+
+### `simulate(m::SDDPModel, n::Int, variables::Vector{Symbol})`
+This function simulates `n` realisations of the policy given by a converged SDDP model `m`. It returns a dictionary with an entry for each variable given in `variables`. Each dictionary entry is a vector corresponding to the stages in the model. Each item in the vector is a vector of the `n` values that the variable took in the `n` realisations.
+
+```julia
+results = simulate(m, 5, [:x])
+
+# The five realisations of the x variable in stage 1 
+results[:x][1] --> [1, 1.5, 1, 1.25, 1.25]
 ```
