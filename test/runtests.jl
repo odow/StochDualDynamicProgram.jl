@@ -12,6 +12,14 @@ facts("SDDPModel") do
     sp = StochDualDynamicProgram.StageProblem()
     @fact StochDualDynamicProgram.is_sp(sp) --> true
     @fact StochDualDynamicProgram.is_sp(m) --> false
+
+    @fact_throws SDDPModel(sense=:bogus)
+
+    m = SDDPModel(markov_states=2)
+    @fact StochDualDynamicProgram.get_transition(m, 1, 1, 1) --> 0.5
+    m2 = copy(m)
+    m.sense = :Min
+    @fact m2.sense --> :Max
 end
 
 facts("@defStateVar") do
@@ -68,7 +76,7 @@ end
 
 facts("Hydro Example") do
     include("../examples/hydro.jl")
-    
+
     context("Version One") do
         results = solve_hydro()
         @fact mean(results[:Objective]) --> roughly(904, 20)
@@ -78,4 +86,11 @@ facts("Hydro Example") do
         results = solve_hydro2()
         @fact mean(results[:Objective])--> roughly(-910, 20)
     end
+end
+
+facts("Newsvendor Example") do
+    include("../examples/newsvendor.jl")
+
+    results = solve_newsvendor()
+    @fact mean(results[:Objective]) --> roughly(90, 5)
 end

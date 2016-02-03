@@ -1,7 +1,7 @@
 module StochDualDynamicProgram
 
 importall JuMP
-using MathProgBase, Clp
+using MathProgBase, Clp# , Gurobi
 using Formatting
 using Distributions
 
@@ -26,15 +26,16 @@ end
 """
 Creates an SDDPModel type
 
-    SDDPModel([;stages, markov_states, transition, initial_scenario, conf_level, lpsolver, abs_tol, rel_tol])
+    SDDPModel([;sense, stages, markov_states, transition, initial_scenario, conf_level, solver, abs_tol, rel_tol])
 
 Inputs:
+sense      - :Max or :Min
 stages     - the number of stages
 markov_states - the number of scenarios
 transition - the transition matrix. Can be N*N where N is the number of scenarios, or M*N*N where M is the number of stages.
 initial_scenario - the scenario at time 0. Model transitions at the start of time period 1
 conf_level - confidence level for the lower bound
-lpsolver   - AbstractMathProgBase solver capable of returning dual variables. Defaults to Clp.
+solver   - AbstractMathProgBase solver capable of returning dual variables. Defaults to Clp.
 abs_tol    - Absolute tolerance convergence criteria. DDP halts when ub - lb < abs_tol
 rel_tol    - Relative tolerance convergence criteria. DDP halts when (ub - lb) / lb < rel_tol
 """
@@ -45,7 +46,7 @@ function SDDPModel(;
     transition=nothing,
     initial_markov_state=0,
     conf_level=0.95,
-    lpsolver=ClpSolver(),
+    solver=ClpSolver(),
     abs_tol=1e-8,
     rel_tol=1e-8)
 
@@ -75,7 +76,7 @@ function SDDPModel(;
         end
     end
     my_inf = (sense==:Max?Inf:-Inf)
-    SDDPModel{stages,markov_states,T}(sense, Array(JuMP.Model, (stages, markov_states)), transition, initial_markov_state, (-my_inf, -my_inf), my_inf, :Unconverged, conf_level, abs_tol, rel_tol, lpsolver)
+    SDDPModel{stages,markov_states,T}(sense, Array(JuMP.Model, (stages, markov_states)), transition, initial_markov_state, (-my_inf, -my_inf), my_inf, :Unconverged, conf_level, abs_tol, rel_tol, solver)
 end
 function Base.copy{M,N,T}(m::SDDPModel{M,N,T})
     SDDPModel{M,N,T}(m.sense, deepcopy(m.stage_problems), copy(m.transition), m.initial_scenario, m.confidence_interval, m.valid_bound, m.status, m.QUANTILE, m.ATOL, m.RELTOL, m.LPSOLVER)
@@ -121,7 +122,7 @@ Add a new stage problem to the SDDPModel.
 
 Usage
 
-    addStageProblem!(m, stage, scenario) do sp
+    addStageProblem!(m, stage, markov_state) do sp
         @defVar(sp, x)
     end
 
@@ -234,18 +235,24 @@ end
 """
 Solve a StageProblem.
 
-    solve!(sp::Model[, relaxation])
+    solve!(sp::Model, m::SDDPModel)
 """
 function solve!(sp::Model, m::SDDPModel)
     # Catch case where we aren't optimal
     status = solve(sp)
     if status != :Optimal
-        println("Model:")
-        display(sp)
-        println("\nConstraints:")
-        display(sp.linconstr)
-        println()
-        error("Status: $(status). Unable to continue. Not solved to optimality")
+        # if status == :Infeasible
+        #     info("Printing IIS")
+        #     grb_model = MathProgBase.getrawsolver(getInternalModel(sp))
+        #     Gurobi.computeIIS(grb_model)
+        #     num_constrs = Gurobi.num_constrs(grb_model)
+        #     iis_constrs = Gurobi.get_intattrarray(grb_model, "IISConstr",  1, num_constrs)
+        #     @show sp.linconstr[find(iis_constrs)]
+        # elseif status == :Unbounded
+        #     @show sp.colVal
+        #     @show Variable(sp, length(sp.colVal))
+        # end
+        error("SDDP Subproblems must be feasible. Current status: $(status).")
     end
 end
 
@@ -290,7 +297,7 @@ function simulate{M,N,T}(m::SDDPModel{M,N,T}, n::Int, vars::Vector{Symbol})
 end
 
 """
-Forward pass of the MISDDP algorithm
+Forward pass of the SDDP algorithm
 """
 function forward_pass!{M,N,T}(m::SDDPModel{M,N,T}, npasses::Int=1, print_info::Bool=false)
     scenario = 0                                    # Initialise variable
@@ -353,7 +360,7 @@ function pass_states_forward!{M,N,T}(m::SDDPModel{M,N,T}, idx::Int, scenario::In
 end
 
 """
-Backward pass for the MISDDP algorithm
+Backward pass for the SDDP algorithm
 
     backward_pass!(m::SDDPModel)
 
@@ -447,16 +454,6 @@ end
 
 """
 Solve the model using the SDDP algorithm.
-
-Parameters:
-- verbosity
-    0 = nothing
-    1 = print iteration status
-    2 = info messages
-
-Returns:
-- m::SDDPModel
-    the converged SDDPModel
 """
 function JuMP.solve{M,N,T}(m::SDDPModel{M,N,T}; verbosity=1, forward_passes=1, backward_passes=1)
     print_stats_header()
