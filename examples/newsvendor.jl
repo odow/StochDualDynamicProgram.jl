@@ -1,4 +1,5 @@
 using StochDualDynamicProgram, JuMP
+
 # Hydro problem with different transition matrix
 function solve_newsvendor(;
     Demand = [
@@ -21,29 +22,20 @@ function solve_newsvendor(;
       )
 
     # Initialise SDDP Model
-    m = SDDPModel(stages=3, markov_states=2, transition=Transition, initial_markov_state=1)
+    m = SDDPModel(stages=3, markov_states=2, transition=Transition, initial_markov_state=1) do sp, stage, markov_state
+        @defStateVar(sp, 0 <= stock <= 100, stock0==5)
 
-    # For each stage
-    for stage=1:3
-        # And markov state
-        for markov_state=1:2
-            # create a new subproblem
-            addStageProblem!(m, stage, markov_state) do sp
-                @defStateVar(sp, 0 <= stock <= 100, stock0==5)
+        @defVar(sp, buy>=0)
+        @defVar(sp, 0 <= sell <= Demand[stage, markov_state])
 
-                @defVar(sp, buy>=0)
-                @defVar(sp, 0 <= sell <= Demand[stage, markov_state])
-
-                if stage < 3
-                    @defValueToGo(sp, theta <= 1000)
-                    @setObjective(sp, Max, theta + sell * RetailPrice - buy * PurchasePrice[markov_state])
-                else
-                    @setObjective(sp, Max, sell * RetailPrice - buy * PurchasePrice[markov_state])
-                end
-
-                @addConstraint(sp, stock == stock0 + buy - sell)
-            end
+        if stage < 3
+            @defValueToGo(sp, theta <= 1000)
+            @setObjective(sp, Max, theta + sell * RetailPrice - buy * PurchasePrice[markov_state])
+        else
+            @setObjective(sp, Max, sell * RetailPrice - buy * PurchasePrice[markov_state])
         end
+
+        @addConstraint(sp, stock == stock0 + buy - sell)
     end
 
     solve(m,                # Solve the model using the SDDP algorithm

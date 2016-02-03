@@ -11,7 +11,7 @@ Pkg.clone("https://github.com/odow/StochDualDynamicProgram.jl.git")
 ```
 
 ## Usage
-See the `/examples/hydro.jl` file for example usage. But briefly:
+See the `/examples` folder for example usage. But briefly:
 
 ### `SDDPModel`
 
@@ -34,10 +34,17 @@ This function creates a new SDDP model object. `SDDPModel()` takes the following
 m = SDDPModel(stages=3, markov_states=2, transition=[0.2 0.8; 0.7 0.3])
 m = SDDPModel(sense=:Min, stages=3, markov_states=2, conf_level=0.99)
 ```
-### `addStageProblem!`
+#### `addStageProblem!`
 This function defines a new stage problem in the SDDP model `m`.
 ```julia
 addStageProblem!(m::SDDPModel, stage::Int, markov_state::Int) do sp
+  # Stage problem definition
+end
+```
+
+Alternatively, you can define the stage problems using the following `do` syntax. `sp` is a JuMP model corresponding to the stage `stage` and markov state `markov_state`.
+```julia
+m = SDDPModel([;kwargs...]) do sp, stage, markov_state
   # Stage problem definition
 end
 ```
@@ -57,8 +64,8 @@ Define the value to go variable for the stage problem `sp`.
 
 The value to go variable must be defined with some large, non-infinite bound.
 
-If the SDDP model has the sense `:Max`, it is expected that theta optimises towards `+inf`. 
-If the SDDP model has the sense `:Min`, it is expected that theta optimises towards `-inf`. 
+If the SDDP model has the sense `:Max`, it is expected that theta optimises towards `+inf`.
+If the SDDP model has the sense `:Min`, it is expected that theta optimises towards `-inf`.
 
 #### Example
 ```julia
@@ -76,6 +83,6 @@ This function simulates `n` realisations of the policy given by a converged SDDP
 ```julia
 results = simulate(m, 5, [:x])
 
-# The five realisations of the x variable in stage 1 
+# The five realisations of the x variable in stage 1
 results[:x][1] --> [1, 1.5, 1, 1.25, 1.25]
 ```

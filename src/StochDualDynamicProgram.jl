@@ -78,6 +78,41 @@ function SDDPModel(;
     my_inf = (sense==:Max?Inf:-Inf)
     SDDPModel{stages,markov_states,T}(sense, Array(JuMP.Model, (stages, markov_states)), transition, initial_markov_state, (-my_inf, -my_inf), my_inf, :Unconverged, conf_level, abs_tol, rel_tol, solver)
 end
+
+function SDDPModel(build_subproblem!::Function;
+    sense=:Max,
+    stages=1,
+    markov_states=1,
+    transition=nothing,
+    initial_markov_state=0,
+    conf_level=0.95,
+    solver=ClpSolver(),
+    abs_tol=1e-8,
+    rel_tol=1e-8)
+
+    m = SDDPModel(sense=sense,
+    stages=stages,
+    markov_states=markov_states,
+    transition=transition,
+    initial_markov_state=initial_markov_state,
+    conf_level=conf_level,
+    solver=solver,
+    abs_tol=abs_tol,
+    rel_tol=rel_tol)
+
+    for stage=1:stages
+        for markov_state=1:markov_states
+            sp = StageProblem()
+            setSolver(sp, m.LPSOLVER)
+            build_subproblem!(sp, stage, markov_state)
+
+            m.stage_problems[stage, markov_state] = sp
+        end
+    end
+
+    return m
+end
+
 function Base.copy{M,N,T}(m::SDDPModel{M,N,T})
     SDDPModel{M,N,T}(m.sense, deepcopy(m.stage_problems), copy(m.transition), m.initial_scenario, m.confidence_interval, m.valid_bound, m.status, m.QUANTILE, m.ATOL, m.RELTOL, m.LPSOLVER)
 end
