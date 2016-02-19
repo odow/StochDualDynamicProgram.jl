@@ -1,3 +1,5 @@
+# TODO at the moment we assume uniform scenario probability in each markov state
+
 module StochDualDynamicProgram
 
 importall JuMP
@@ -9,11 +11,11 @@ export SDDPModel,
     @defStateVar, @defValueToGo,
     addStageProblem!, simulate
 
-type SDDPModel{M,N,T}
+type SDDPModel{M,N,S,T}
     sense::Symbol
-    stage_problems::Array{JuMP.Model, 2}
+    stage_problems::Array{JuMP.Model, 3}
     transition::Array{Union{Float64, Array{Float64, 2}}, T}
-    initial_scenario::Int
+    init_markov_state::Int
     confidence_interval::Tuple{Float64, Float64}
     valid_bound::Float64
     status::Symbol
@@ -26,14 +28,14 @@ end
 """
 Creates an SDDPModel type
 
-    SDDPModel([;sense, stages, markov_states, transition, initial_scenario, conf_level, solver, abs_tol, rel_tol])
+    SDDPModel([;sense, stages, markov_states, transition, init_markov_state, conf_level, solver, abs_tol, rel_tol])
 
 Inputs:
 sense      - :Max or :Min
 stages     - the number of stages
 markov_states - the number of scenarios
 transition - the transition matrix. Can be N*N where N is the number of scenarios, or M*N*N where M is the number of stages.
-initial_scenario - the scenario at time 0. Model transitions at the start of time period 1
+init_markov_state - the scenario at time 0. Model transitions at the start of time period 1
 conf_level - confidence level for the lower bound
 solver   - AbstractMathProgBase solver capable of returning dual variables. Defaults to Clp.
 abs_tol    - Absolute tolerance convergence criteria. DDP halts when ub - lb < abs_tol
@@ -43,12 +45,17 @@ function SDDPModel(;
     sense=:Max,
     stages=1,
     markov_states=1,
+    scenarios=1,
     transition=nothing,
     initial_markov_state=0,
     conf_level=0.95,
     solver=ClpSolver(),
     abs_tol=1e-8,
     rel_tol=1e-8)
+
+    @assert stages >= 1
+    @assert markov_states >= 1
+    @assert scenarios >= 1
 
     if !(sense in [:Max, :Min])
         error("Sense must be either :Max or :Min. Currently = $(sense).")
@@ -76,13 +83,18 @@ function SDDPModel(;
         end
     end
     my_inf = (sense==:Max?Inf:-Inf)
-    SDDPModel{stages,markov_states,T}(sense, Array(JuMP.Model, (stages, markov_states)), transition, initial_markov_state, (-my_inf, -my_inf), my_inf, :Unconverged, conf_level, abs_tol, rel_tol, solver)
+    SDDPModel{stages,markov_states,scenarios,T}(sense, Array(JuMP.Model, (stages, markov_states, scenarios)), transition, initial_markov_state, (-my_inf, -my_inf), my_inf, :Unconverged, conf_level, abs_tol, rel_tol, solver)
 end
+
+# This will probably break at some point
+# https://groups.google.com/forum/#!searchin/julia-users/arguments$20anonymous$20function/julia-users/QcgdNZd-sI8/dgIYSxozZzUJ
+arglength(f::Function)=length(Base.uncompressed_ast(f.code.def).args[1])
 
 function SDDPModel(build_subproblem!::Function;
     sense=:Max,
     stages=1,
     markov_states=1,
+    scenarios=1,
     transition=nothing,
     initial_markov_state=0,
     conf_level=0.95,
@@ -93,6 +105,7 @@ function SDDPModel(build_subproblem!::Function;
     m = SDDPModel(sense=sense,
     stages=stages,
     markov_states=markov_states,
+    scenarios=scenarios,
     transition=transition,
     initial_markov_state=initial_markov_state,
     conf_level=conf_level,
@@ -102,22 +115,34 @@ function SDDPModel(build_subproblem!::Function;
 
     for stage=1:stages
         for markov_state=1:markov_states
-            sp = StageProblem()
-            setSolver(sp, m.LPSOLVER)
-            build_subproblem!(sp, stage, markov_state)
-
-            m.stage_problems[stage, markov_state] = sp
+            for scenario=1:scenarios
+                sp = StageProblem()
+                setSolver(sp, m.LPSOLVER)
+                if arglength(build_subproblem!)==4
+                    build_subproblem!(sp, stage, markov_state, scenario)
+                elseif arglength(build_subproblem!)==3
+                    @assert markov_states == 1
+                    build_subproblem!(sp, stage, scenario)
+                elseif arglength(build_subproblem!)==2
+                    @assert markov_states == 1
+                    @assert scenarios == 1
+                    build_subproblem!(sp, stage)
+                else
+                    error("Invalid number of arguments")
+                end
+                m.stage_problems[stage, markov_state, scenario] = sp
+            end
         end
     end
 
     return m
 end
 
-function Base.copy{M,N,T}(m::SDDPModel{M,N,T})
-    SDDPModel{M,N,T}(m.sense, deepcopy(m.stage_problems), copy(m.transition), m.initial_scenario, m.confidence_interval, m.valid_bound, m.status, m.QUANTILE, m.ATOL, m.RELTOL, m.LPSOLVER)
+function Base.copy{M,N,S,T}(m::SDDPModel{M,N,S,T})
+    SDDPModel{M,N,S,T}(m.sense, deepcopy(m.stage_problems), copy(m.transition), m.init_markov_state, m.confidence_interval, m.valid_bound, m.status, m.QUANTILE, m.ATOL, m.RELTOL, m.LPSOLVER)
 end
 
-function transition{M,N,T}(m::SDDPModel{M,N,T}, stage::Int, scenario::Int)
+function transition{M,N,S,T}(m::SDDPModel{M,N,S,T}, stage::Int, scenario::Int)
     r = rand()
     for i=1:N
         k = get_transition(m, stage, scenario, i)
@@ -128,13 +153,10 @@ function transition{M,N,T}(m::SDDPModel{M,N,T}, stage::Int, scenario::Int)
         end
     end
 end
-# transition{M,N}(m::SDDPModel{M,N,2}, scenario::Int) = transition(m, 1, scenario)
-
-function get_transition{M,N}(m::SDDPModel{M,N,2}, stage::Int, s1::Int, s2::Int)
+function get_transition{M,N,S}(m::SDDPModel{M,N,S,2}, stage::Int, s1::Int, s2::Int)
     s1==0?1/N : m.transition[s1,s2]
 end
-# get_transition{M,N}(m::SDDPModel{M,N,2}, s1::Int, s2::Int) = get_transition(m, 1, s1, s2)
-function get_transition{M,N}(m::SDDPModel{M,N,1}, stage::Int, s1::Int, s2::Int)
+function get_transition{M,N,S}(m::SDDPModel{M,N,S,1}, stage::Int, s1::Int, s2::Int)
     s1==0?1/N : m.transition[stage][s1,s2]
 end
 
@@ -148,7 +170,7 @@ function StageProblem()
     sp.ext[:state_vars] = Symbol[]
     sp.ext[:duals] = Dict{Symbol, ConstraintRef}()
     sp.ext[:theta] = nothing
-    sp.ext[:old_scenario] = 0
+    sp.ext[:old_scenario] = (0,0)
     return sp
 end
 
@@ -162,20 +184,20 @@ Usage
     end
 
 """
-function addStageProblem!{M,N,T}(build_model!::Function, m::SDDPModel{M,N,T}, stage_idx::Int, scenario_idx::Int)
-    sp = StageProblem()
-    setSolver(sp, m.LPSOLVER)
-    build_model!(sp)
-
-    # remove last theta
-    if stage_idx == M && sp.ext[:theta] != nothing
-        @addConstraint(sp, sp.ext[:theta] == 0)
-    end
-
-    m.stage_problems[stage_idx, scenario_idx] = sp
-end
-addStageProblem!(build_model!::Function, m::SDDPModel, stage_idx::Int) = addStageProblem!(build_model!, m, stage_idx, 1)
-
+# function addStageProblem!{M,N,S,T}(build_model!::Function, m::SDDPModel{M,N,S,T}, stage_idx::Int, scenario_idx::Int)
+#     sp = StageProblem()
+#     setSolver(sp, m.LPSOLVER)
+#     build_model!(sp)
+#
+#     # remove last theta
+#     if stage_idx == M && sp.ext[:theta] != nothing
+#         @addConstraint(sp, sp.ext[:theta] == 0)
+#     end
+#
+#     m.stage_problems[stage_idx, scenario_idx] = sp
+# end
+# addStageProblem!(build_model!::Function, m::SDDPModel, stage_idx::Int) = addStageProblem!(build_model!, m, stage_idx, 1)
+#
 # Check this is a StageProblem
 is_sp(m::JuMP.Model) = haskey(m.ext, :is_sp) && m.ext[:is_sp]
 is_sp(m) = false
@@ -251,14 +273,20 @@ end
 """
 Calculate the upper bound of the first stage problem
 """
-function set_valid_bound!{M,N,T}(m::SDDPModel{M,N,T})
+function set_valid_bound!{M,N,S,T}(m::SDDPModel{M,N,S,T})
     obj = 0.0
-    if m.initial_scenario == 0
+    if m.init_markov_state == 0
         for i=1:N
-            obj += get_transition(m, 1, m.initial_scenario, i) * getObjectiveValue(m.stage_problems[1, i])
+            for s=1:S
+                obj += get_transition(m, 1, m.init_markov_state, i) * getObjectiveValue(m.stage_problems[1, i,s])
+            end
         end
+        obj /= S
     else
-        obj += getObjectiveValue(m.stage_problems[1, m.initial_scenario])
+        for s=1:S
+            obj += getObjectiveValue(m.stage_problems[1, m.init_markov_state, s])
+        end
+        obj /= S
     end
     if m.sense==:Max && obj < getBound(m)
         setBound!(m, obj)
@@ -294,7 +322,7 @@ end
 """
 Simulate SDDP model and return variable solutions contained in [vars]
 """
-function simulate{M,N,T}(m::SDDPModel{M,N,T}, n::Int, vars::Vector{Symbol})
+function simulate{M,N,S,T}(m::SDDPModel{M,N,S,T}, n::Int, vars::Vector{Symbol})
     results = Dict{Symbol, Any}(:Objective=>zeros(Float64,n))
     for v in vars
         results[v] = Array(Vector{Any}, M)
@@ -304,22 +332,25 @@ function simulate{M,N,T}(m::SDDPModel{M,N,T}, n::Int, vars::Vector{Symbol})
     end
 
     for pass=1:n
-        if m.initial_scenario==0
-            scenario = transition(m, 1, m.initial_scenario)
+        if m.init_markov_state==0
+            markov = transition(m, 1, m.init_markov_state)
         else
-            scenario = m.initial_scenario
+            markov = m.init_markov_state
         end
         for stage=1:M
-            old_scenario = scenario
-            sp = m.stage_problems[stage, scenario]  # corresponding stage problem
-            sp.ext[:old_scenario] = old_scenario    # Lets store the scenario we just came from
+            old_markov = markov
+
+            scenario = rand(1:S)
+
+            sp = m.stage_problems[stage, markov, scenario]  # corresponding stage problem
+            # sp.ext[:old_scenario] = (old_markov, old_scenario)    # Lets store the scenario we just came from
             solve!(sp, m)                           # solve
             results[:Objective][pass] += get_true_value(sp)         # Add objective
             # pass forward if necessary
             if stage < M
-                pass_states_forward!(m, stage, old_scenario)
+                pass_states_forward!(m, stage, old_markov, scenario)
                 # transition to new scenario
-                scenario = transition(m, stage, old_scenario)
+                markov = transition(m, stage, old_markov)
             end
 
             for v in vars
@@ -334,31 +365,32 @@ end
 """
 Forward pass of the SDDP algorithm
 """
-function forward_pass!{M,N,T}(m::SDDPModel{M,N,T}, npasses::Int=1, print_info::Bool=false)
+function forward_pass!{M,N,S,T}(m::SDDPModel{M,N,S,T}, npasses::Int=1, print_info::Bool=false)
     scenario = 0                                    # Initialise variable
     obj = zeros(npasses)                            # Initialise the objective values
 
     for pass=1:npasses
-        if m.initial_scenario==0
-            scenario = transition(m, 1, m.initial_scenario)
+        if m.init_markov_state==0
+            markov = transition(m, 1, m.init_markov_state)
         else
-            scenario = m.initial_scenario
+            markov = m.init_markov_state
         end
         for stage=1:M
+            old_markov = markov
+            scenario = rand(1:S)
 
-            old_scenario = scenario
+            sp = m.stage_problems[stage, markov, scenario]  # corresponding stage problem
+            # sp.ext[:old_scenario] = (old_markov, old_scenario)              # Lets store the scenario we just came from
+            solve!(sp, m)                                   # solve
 
-            sp = m.stage_problems[stage, scenario]  # corresponding stage problem
-            sp.ext[:old_scenario] = old_scenario    # Lets store the scenario we just came from
-            solve!(sp, m)                           # solve
-            obj[pass] += get_true_value(sp)         # Add objective
+            obj[pass] += get_true_value(sp)                 # Add objective
 
             # pass forward if necessary
             if stage < M
-                pass_states_forward!(m, stage, old_scenario)
+                pass_states_forward!(m, stage, old_markov, scenario)
 
                 # transition to new scenario
-                scenario = transition(m, stage, old_scenario)
+                markov = transition(m, stage, old_markov)
             end
         end
     end
@@ -382,11 +414,11 @@ function t_test(x::Vector; conf_level=0.95)
     return (lo, hi)#, mean(x))
 end
 
-function pass_states_forward!{M,N,T}(m::SDDPModel{M,N,T}, idx::Int, scenario::Int)
+function pass_states_forward!{M,N,S,T}(m::SDDPModel{M,N,S,T}, idx::Int, markov::Int, scenario::Int)
     # assumes we have just solved the i'th SP
     @assert idx < M
-    sp1 = m.stage_problems[idx, scenario]
-    for sp2 in m.stage_problems[idx+1,:]
+    sp1 = m.stage_problems[idx, markov, scenario]
+    for sp2 in m.stage_problems[idx+1,:, :]
         for key in sp1.ext[:state_vars]
             @assert haskey(sp2.ext[:duals], key)
             chgConstrRHS(sp2.ext[:duals][key], getValue(getVar(sp1, key)))
@@ -403,42 +435,51 @@ Inputs:
 m        - an SDDPModel
 
 """
-function backward_pass!{M,N,T}(m::SDDPModel{M,N,T})
-    scenario = m.initial_scenario==0?transition(m, 1, m.initial_scenario):m.initial_scenario
-    old_scenario = m.initial_scenario
+function backward_pass!{M,N,S,T}(m::SDDPModel{M,N,S,T})
+    markov = m.init_markov_state==0?transition(m, 1, m.init_markov_state):m.init_markov_state
+    old_markov = m.init_markov_state
+    old_scenario, scenario=0,0
     for stage=1:M
-        sp = m.stage_problems[stage, scenario]  # corresponding stage problem
-        sp.ext[:old_scenario] = old_scenario    # Lets store the scenario we just came from
+        # pick a scenario
+        scenario=rand(1:S)
+
+        sp = m.stage_problems[stage, markov, scenario]      # corresponding stage problem
+        sp.ext[:old_scenario] = (old_markov, old_scenario)  # Lets store the scenario we just came from
         solve!(sp, m)                           # solve
         if stage < M
+            old_markov = markov
             old_scenario = scenario
-            pass_states_forward!(m, stage, old_scenario) # pass forward if necessary
-            scenario = transition(m, stage, old_scenario)      # transition to new scenario
+            pass_states_forward!(m, stage, old_markov, scenario)# pass forward if necessary
+            markov = transition(m, stage, old_markov)           # transition to new scenario
+
         end
     end
     # Solve all the final stage problems
-    for sp=1:N
-        sp==scenario && continue
-        solve!(m.stage_problems[M,sp], m)
+    for mkv=1:N
+        for sc in 1:S
+            mkv==markov && sc==scenario && continue
+            solve!(m.stage_problems[M,mkv,sc], m)
+        end
     end
 
     # Stepping back throught the stages
     for idx=reverse(1:(M-1))
         # Add a cut to that scenario
-        add_cut!(m, idx, old_scenario)
+        add_cut!(m, idx, old_markov)
 
         # Look up the scenario to step back to
-        old_scenario = m.stage_problems[idx, old_scenario].ext[:old_scenario]
+        old_markov, old_scenario = m.stage_problems[idx, old_markov, old_scenario].ext[:old_scenario]
 
         # Solve all the stage problems
-        for sp=1:N
-            solve!(m.stage_problems[idx,sp], m)
+        for sp in m.stage_problems[idx,:,:]
+            solve!(sp, m)
         end
     end
 
     # Calculate a new upper bound
     set_valid_bound!(m)
 end
+
 function backward_pass!(m::SDDPModel, backward_passes::Int)
     for i=1:backward_passes
         backward_pass!(m)
@@ -457,40 +498,48 @@ stage    - the stage to add the cut
 scenario - the scenario to add the cut to
 
 """
-function add_cut!(m::SDDPModel, stage::Int, scenario::Int)
-    # Get the stage problem to add the cut to
-    sp = m.stage_problems[stage, scenario]
-    if m.sense==:Max
-        @addConstraint(sp,
-            sp.ext[:theta] <= sum{
-                get_transition(m, stage, scenario, i) * (
-                    getObjectiveValue(s2) +
-                    sum{getDual(s2.ext[:duals][state]) * (
-                        getVar(sp, state) - getLower(s2.ext[:duals][state])
-                        ), state=sp.ext[:state_vars]
-                    }
-                ), (i, s2)=enumerate(m.stage_problems[stage+1,:])
-            }
-        )
-    else
-        @addConstraint(sp,
-            sp.ext[:theta] >= sum{
-                get_transition(m, stage, scenario, i) * (
-                    getObjectiveValue(s2) +
-                    sum{getDual(s2.ext[:duals][state]) * (
-                        getVar(sp, state) - getLower(s2.ext[:duals][state])
-                        ), state=sp.ext[:state_vars]
-                    }
-                ), (i, s2)=enumerate(m.stage_problems[stage+1,:])
-            }
-        )
+function add_cut!{M,N,S,T}(m::SDDPModel{M,N,S,T}, stage::Int, markov::Int)
+    # TODO we could tidy this up by collecting terms first
+    #   and then making the cuts
+    for s=1:S
+        # Get the stage problem to add the cut to
+        sp = m.stage_problems[stage, markov, s]
+        if m.sense==:Max
+            @addConstraint(sp,
+                sp.ext[:theta] <= sum{
+                    get_transition(m, stage, markov, mkv) * (
+                        sum{
+                            getObjectiveValue(sp2) +
+                            sum{
+                                getDual(sp2.ext[:duals][state]) * (
+                                getVar(sp, state) - getLower(sp2.ext[:duals][state]))
+                            , state in sp.ext[:state_vars]}
+                        , sp2 in m.stage_problems[stage+1, mkv, :]} / S
+                    )
+                , mkv=1:N}
+            )
+        else
+            @addConstraint(sp,
+                sp.ext[:theta] >= sum{
+                    get_transition(m, stage, markov, mkv) * (
+                        sum{
+                            getObjectiveValue(sp2) +
+                            sum{
+                                getDual(sp2.ext[:duals][state]) * (
+                                getVar(sp, state) - getLower(sp2.ext[:duals][state]))
+                            , state in sp.ext[:state_vars]}
+                        , sp2 in m.stage_problems[stage+1, mkv, :]} / S
+                    )
+                , mkv=1:N}
+            )
+        end
     end
 end
 
 """
 Solve the model using the SDDP algorithm.
 """
-function JuMP.solve{M,N,T}(m::SDDPModel{M,N,T}; verbosity=1, forward_passes=1, backward_passes=1)
+function JuMP.solve{M,N,S,T}(m::SDDPModel{M,N,S,T}; verbosity=1, forward_passes=1, backward_passes=1)
     print_stats_header()
     forward_pass!(m, 1)
     print_stats(m)

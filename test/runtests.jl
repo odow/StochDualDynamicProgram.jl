@@ -6,7 +6,7 @@ facts("SDDPModel") do
         markov_states=2,
         transition=[0.2 0.8;0.8 0.2]
     )
-    @fact size(m.stage_problems) --> (3,2)
+    @fact size(m.stage_problems) --> (3,2,1)
     @fact StochDualDynamicProgram.get_transition(m, 1, 1, 1) --> 0.2
 
     sp = StochDualDynamicProgram.StageProblem()
@@ -84,7 +84,7 @@ facts("Hydro Example") do
 
     context("Version Two") do
         results = solve_hydro2()
-        @fact mean(results[:Objective])--> roughly(-910, 20)
+        @fact mean(results[:Objective])--> roughly(-1440, 20)
     end
 end
 
