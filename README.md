@@ -7,7 +7,7 @@
 ## Installation
 This package is unregistered so you will need to `Pkg.clone` it as follow:
 ```julia
-Pkg.clone("https://github.com/odow/StochDualDynamicProgram.jl.git")
+Pkg.clone("https://bitbucket.org/stochdualdynamicprogramming/StochDualDynamicProgram.jl.git")
 ```
 
 ## Usage
