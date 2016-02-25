@@ -40,7 +40,8 @@ function solve_newsvendor(;
 
     solve(m,                # Solve the model using the SDDP algorithm
         forward_passes=1000,  # number of realisations in bound simulation
-        backward_passes=10   # number of cutting iterations before convergence check
+        backward_passes=10,  # number of cutting iterations before convergence check
+        max_iters=50
     )
 
     results = simulate(m,   # Simulate the policy
@@ -51,40 +52,39 @@ function solve_newsvendor(;
     return results
 end
 
-# Hydro problem with different transition matrix
-function solve_newsvendor2(;
-    Noise = Dict{Symbol, Distribution}(
-        :Demand=>TriangularDist(5, 10, 10),
-        :PurchasePrice => Uniform(5, 8)
-        ),
-    RetailPrice = 7)
-
-    # Initialise SDDP Model
-    m = SDDPModel(stages=3, markov_states=2, scenarios=3) do sp, stage, markov_state, scenario
-        @defStateVar(sp, 0 <= stock <= 100, stock0==5)
-
-        @defVar(sp, buy>=0)
-        @defVar(sp, 0 <= sell <= noise[:Demand])
-
-        if stage < 3
-            @defValueToGo(sp, theta <= 1000)
-            @setObjective(sp, Max, theta + sell * RetailPrice - buy * noise[:PurchasePrice])
-        else
-            @setObjective(sp, Max, sell * RetailPrice - buy * noise[:PurchasePrice])
-        end
-
-        @addConstraint(sp, stock == stock0 + buy - sell)
-    end
-
-    solve(m,                # Solve the model using the SDDP algorithm
-        forward_passes=1000,  # number of realisations in bound simulation
-        backward_passes=10   # number of cutting iterations before convergence check
-    )
-
-    results = simulate(m,   # Simulate the policy
-        1000,               # number of monte carlo realisations
-        [:stock, :buy, :sell]
-        )
-
-    return results
-end
+# function solve_newsvendor2(;
+#     Noise = Dict{Symbol, Distribution}(
+#         :Demand=>TriangularDist(5, 10, 10),
+#         :PurchasePrice => Uniform(5, 8)
+#         ),
+#     RetailPrice = 7)
+#
+#     # Initialise SDDP Model
+#     m = SDDPModel(stages=3, markov_states=2, scenarios=3) do sp, stage, markov_state, scenario
+#         @defStateVar(sp, 0 <= stock <= 100, stock0==5)
+#
+#         @defVar(sp, buy>=0)
+#         @defVar(sp, 0 <= sell <= noise[:Demand])
+#
+#         if stage < 3
+#             @defValueToGo(sp, theta <= 1000)
+#             @setObjective(sp, Max, theta + sell * RetailPrice - buy * noise[:PurchasePrice])
+#         else
+#             @setObjective(sp, Max, sell * RetailPrice - buy * noise[:PurchasePrice])
+#         end
+#
+#         @addConstraint(sp, stock == stock0 + buy - sell)
+#     end
+#
+#     solve(m,                # Solve the model using the SDDP algorithm
+#         forward_passes=1000,  # number of realisations in bound simulation
+#         backward_passes=10   # number of cutting iterations before convergence check
+#     )
+#
+#     results = simulate(m,   # Simulate the policy
+#         1000,               # number of monte carlo realisations
+#         [:stock, :buy, :sell]
+#         )
+#
+#     return results
+# end

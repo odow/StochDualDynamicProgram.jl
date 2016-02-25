@@ -131,7 +131,8 @@ function solve_hydro(;
 
     solve(m,                # Solve the model using the SDDP algorithm
         forward_passes=1000,  # number of realisations in bound simulation
-        backward_passes=10   # number of cutting iterations before convergence check
+        backward_passes=10,   # number of cutting iterations before convergence check
+        max_iters=50
     )
 
     results = simulate(m,   # Simulate the policy
@@ -264,7 +265,8 @@ function solve_hydro2(;
 
     solve(m,                # Solve the model using the SDDP algorithm
         forward_passes=1500,  # number of realisations in bound simulation
-        backward_passes=5   # number of cutting iterations before convergence check
+        backward_passes=5,   # number of cutting iterations before convergence check
+        max_iters=50
     )
 
     results = simulate(m,   # Simulate the policy

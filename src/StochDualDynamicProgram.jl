@@ -3,7 +3,7 @@
 module StochDualDynamicProgram
 
 importall JuMP
-using MathProgBase, Clp# , Gurobi
+using MathProgBase, Clp , Gurobi
 using Formatting
 using Distributions
 
@@ -20,8 +20,6 @@ type SDDPModel{M,N,S,T}
     valid_bound::Float64
     status::Symbol
     QUANTILE::Float64
-    ATOL::Float64
-    RELTOL::Float64
     LPSOLVER::MathProgBase.AbstractMathProgSolver
 end
 
@@ -38,8 +36,6 @@ transition - the transition matrix. Can be N*N where N is the number of scenario
 init_markov_state - the scenario at time 0. Model transitions at the start of time period 1
 conf_level - confidence level for the lower bound
 solver   - AbstractMathProgBase solver capable of returning dual variables. Defaults to Clp.
-abs_tol    - Absolute tolerance convergence criteria. DDP halts when ub - lb < abs_tol
-rel_tol    - Relative tolerance convergence criteria. DDP halts when (ub - lb) / lb < rel_tol
 """
 function SDDPModel(;
     sense=:Max,
@@ -49,9 +45,7 @@ function SDDPModel(;
     transition=nothing,
     initial_markov_state=0,
     conf_level=0.95,
-    solver=ClpSolver(),
-    abs_tol=1e-8,
-    rel_tol=1e-8)
+    solver=ClpSolver())
 
     @assert stages >= 1
     @assert markov_states >= 1
@@ -83,7 +77,7 @@ function SDDPModel(;
         end
     end
     my_inf = (sense==:Max?Inf:-Inf)
-    SDDPModel{stages,markov_states,scenarios,T}(sense, Array(JuMP.Model, (stages, markov_states, scenarios)), transition, initial_markov_state, (-my_inf, -my_inf), my_inf, :Unconverged, conf_level, abs_tol, rel_tol, solver)
+    SDDPModel{stages,markov_states,scenarios,T}(sense, Array(JuMP.Model, (stages, markov_states, scenarios)), transition, initial_markov_state, (-my_inf, -my_inf), my_inf, :Unconverged, conf_level, solver)
 end
 
 # This will probably break at some point
@@ -98,9 +92,7 @@ function SDDPModel(build_subproblem!::Function;
     transition=nothing,
     initial_markov_state=0,
     conf_level=0.95,
-    solver=ClpSolver(),
-    abs_tol=1e-8,
-    rel_tol=1e-8)
+    solver=ClpSolver())
 
     m = SDDPModel(sense=sense,
     stages=stages,
@@ -109,9 +101,7 @@ function SDDPModel(build_subproblem!::Function;
     transition=transition,
     initial_markov_state=initial_markov_state,
     conf_level=conf_level,
-    solver=solver,
-    abs_tol=abs_tol,
-    rel_tol=rel_tol)
+    solver=solver)
 
     for stage=1:stages
         for markov_state=1:markov_states
@@ -139,11 +129,11 @@ function SDDPModel(build_subproblem!::Function;
 end
 
 function Base.copy{M,N,S,T}(m::SDDPModel{M,N,S,T})
-    SDDPModel{M,N,S,T}(m.sense, deepcopy(m.stage_problems), copy(m.transition), m.init_markov_state, m.confidence_interval, m.valid_bound, m.status, m.QUANTILE, m.ATOL, m.RELTOL, m.LPSOLVER)
+    SDDPModel{M,N,S,T}(m.sense, deepcopy(m.stage_problems), copy(m.transition), m.init_markov_state, m.confidence_interval, m.valid_bound, m.status, m.QUANTILE, m.LPSOLVER)
 end
 
 function transition{M,N,S,T}(m::SDDPModel{M,N,S,T}, stage::Int, scenario::Int)
-    r = rand()
+    r = rand(Float64)
     for i=1:N
         k = get_transition(m, stage, scenario, i)
         if r <= k
@@ -154,7 +144,11 @@ function transition{M,N,S,T}(m::SDDPModel{M,N,S,T}, stage::Int, scenario::Int)
     end
 end
 function get_transition{M,N,S}(m::SDDPModel{M,N,S,2}, stage::Int, s1::Int, s2::Int)
-    s1==0?1/N : m.transition[s1,s2]
+    if s1==0
+        return 1/N
+    else
+        return m.transition[s1,s2]
+    end
 end
 function get_transition{M,N,S}(m::SDDPModel{M,N,S,1}, stage::Int, s1::Int, s2::Int)
     s1==0?1/N : m.transition[stage][s1,s2]
@@ -304,17 +298,17 @@ function solve!(sp::Model, m::SDDPModel)
     # Catch case where we aren't optimal
     status = solve(sp)
     if status != :Optimal
-        # if status == :Infeasible
-        #     info("Printing IIS")
-        #     grb_model = MathProgBase.getrawsolver(getInternalModel(sp))
-        #     Gurobi.computeIIS(grb_model)
-        #     num_constrs = Gurobi.num_constrs(grb_model)
-        #     iis_constrs = Gurobi.get_intattrarray(grb_model, "IISConstr",  1, num_constrs)
-        #     @show sp.linconstr[find(iis_constrs)]
-        # elseif status == :Unbounded
-        #     @show sp.colVal
-        #     @show Variable(sp, length(sp.colVal))
-        # end
+        if status == :Infeasible
+            info("Printing IIS")
+            grb_model = MathProgBase.getrawsolver(getInternalModel(sp))
+            Gurobi.computeIIS(grb_model)
+            num_constrs = Gurobi.num_constrs(grb_model)
+            iis_constrs = Gurobi.get_intattrarray(grb_model, "IISConstr",  1, num_constrs)
+            @show sp.linconstr[find(iis_constrs)]
+        elseif status == :Unbounded
+            @show sp.colVal
+            @show Variable(sp, length(sp.colVal))
+        end
         error("SDDP Subproblems must be feasible. Current status: $(status).")
     end
 end
@@ -539,12 +533,13 @@ end
 """
 Solve the model using the SDDP algorithm.
 """
-function JuMP.solve{M,N,S,T}(m::SDDPModel{M,N,S,T}; verbosity=1, forward_passes=1, backward_passes=1)
+function JuMP.solve{M,N,S,T}(m::SDDPModel{M,N,S,T}; verbosity=1, forward_passes=1, backward_passes=1, max_iters=1000)
     print_stats_header()
-    forward_pass!(m, 1)
-    print_stats(m)
+    # forward_pass!(m, 1)
+    # print_stats(m)
     # while not converged
-    while atol(m) > m.ATOL && rtol(m) > m.RELTOL
+    i=0
+    while i < max_iters
         # Cutting passes
         backward_pass!(m, backward_passes)
 
@@ -552,6 +547,8 @@ function JuMP.solve{M,N,S,T}(m::SDDPModel{M,N,S,T}; verbosity=1, forward_passes=
         forward_pass!(m, forward_passes)
 
         print_stats(m)
+
+        i += backward_passes
     end
 
 end
