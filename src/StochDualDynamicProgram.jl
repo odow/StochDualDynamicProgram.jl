@@ -82,7 +82,11 @@ end
 
 # This will probably break at some point
 # https://groups.google.com/forum/#!searchin/julia-users/arguments$20anonymous$20function/julia-users/QcgdNZd-sI8/dgIYSxozZzUJ
-arglength(f::Function)=length(Base.uncompressed_ast(f.code.def).args[1])
+if VERSION > v"0.5-"
+    arglength(f::Function)=length(Base.uncompressed_ast(methods(f).defs.func).args[1])-1
+else
+    arglength(f::Function)=length(Base.uncompressed_ast(f.code.def).args[1])
+end
 
 function SDDPModel(build_subproblem!::Function;
     sense=:Max,
