@@ -3,13 +3,13 @@
 module StochDualDynamicProgram
 
 importall JuMP
-using MathProgBase, Clp , Gurobi
+using MathProgBase, Clp# , Gurobi
 using Formatting
 using Distributions
 
 export SDDPModel,
     @defStateVar, @defValueToGo,
-    addStageProblem!, simulate
+    simulate # addStageProblem!,
 
 type SDDPModel{M,N,S,T}
     sense::Symbol
@@ -298,17 +298,17 @@ function solve!(sp::Model, m::SDDPModel)
     # Catch case where we aren't optimal
     status = solve(sp)
     if status != :Optimal
-        if status == :Infeasible
-            info("Printing IIS")
-            grb_model = MathProgBase.getrawsolver(getInternalModel(sp))
-            Gurobi.computeIIS(grb_model)
-            num_constrs = Gurobi.num_constrs(grb_model)
-            iis_constrs = Gurobi.get_intattrarray(grb_model, "IISConstr",  1, num_constrs)
-            @show sp.linconstr[find(iis_constrs)]
-        elseif status == :Unbounded
-            @show sp.colVal
-            @show Variable(sp, length(sp.colVal))
-        end
+        # if status == :Infeasible
+        #     info("Printing IIS")
+        #     grb_model = MathProgBase.getrawsolver(getInternalModel(sp))
+        #     Gurobi.computeIIS(grb_model)
+        #     num_constrs = Gurobi.num_constrs(grb_model)
+        #     iis_constrs = Gurobi.get_intattrarray(grb_model, "IISConstr",  1, num_constrs)
+        #     @show sp.linconstr[find(iis_constrs)]
+        # elseif status == :Unbounded
+        #     @show sp.colVal
+        #     @show Variable(sp, length(sp.colVal))
+        # end
         error("SDDP Subproblems must be feasible. Current status: $(status).")
     end
 end
@@ -533,7 +533,7 @@ end
 """
 Solve the model using the SDDP algorithm.
 """
-function JuMP.solve{M,N,S,T}(m::SDDPModel{M,N,S,T}; verbosity=1, forward_passes=1, backward_passes=1, max_iters=1000)
+function JuMP.solve{M,N,S,T}(m::SDDPModel{M,N,S,T}; forward_passes=1, backward_passes=1, max_iters=1000)
     print_stats_header()
     # forward_pass!(m, 1)
     # print_stats(m)

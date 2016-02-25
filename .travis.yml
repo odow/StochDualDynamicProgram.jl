@@ -8,10 +8,21 @@ julia:
   - nightly
 notifications:
   email: false
+cache:
+  directories:
+  - $HOME/usr
+addons:
+  apt_packages:
+  - gfortran
+env:
+  - MAKEFLAGS="-j3"
+    LD_LIBRARY_PATH=$HOME/usr/lib
 # uncomment the following lines to override the default test script
 script:
  - if [[ -a .git/shallow ]]; then git fetch --unshallow; fi
  - julia -e 'Pkg.clone(pwd()); Pkg.build("StochDualDynamicProgram"); Pkg.test("StochDualDynamicProgram"; coverage=true)'
+ before_cache:
+  - cp -R $HOME/.julia/*/Cbc/deps/usr $HOME
 after_success:
   - echo $TRAVIS_JULIA_VERSION
   - julia -e 'Pkg.add("Coverage"); cd(Pkg.dir("StochDualDynamicProgram")); using Coverage; Coveralls.submit(Coveralls.process_folder()); Codecov.submit(Codecov.process_folder())'
