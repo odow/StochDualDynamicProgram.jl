@@ -22,6 +22,7 @@ type SDDPModel{M,N,S,T}
     QUANTILE::Float64
     LPSOLVER::MathProgBase.AbstractMathProgSolver
     theta_bound::Float64
+    beta_quantile::Float64
 end
 
 include("macros.jl")
@@ -49,11 +50,14 @@ function SDDPModel(;
     initial_markov_state=0,
     conf_level=0.95,
     solver=ClpSolver(),
-    theta_bound=1000)
+    theta_bound=1000,
+    beta_quantile=1.)
 
     @assert stages >= 1
     @assert markov_states >= 1
     @assert scenarios >= 1
+    @assert beta_quantile >= 0
+    @assert beta_quantile <= 1
 
     if !(sense in [:Max, :Min])
         error("Sense must be either :Max or :Min. Currently = $(sense).")
@@ -81,7 +85,7 @@ function SDDPModel(;
         end
     end
     my_inf = (sense==:Max?Inf:-Inf)
-    SDDPModel{stages,markov_states,scenarios,T}(sense, Array(JuMP.Model, (stages, markov_states)), transition, initial_markov_state, (-my_inf, -my_inf), my_inf, :Unconverged, conf_level, solver, theta_bound)
+    SDDPModel{stages,markov_states,scenarios,T}(sense, Array(JuMP.Model, (stages, markov_states)), transition, initial_markov_state, (-my_inf, -my_inf), my_inf, :Unconverged, conf_level, solver, theta_bound, beta_quantile)
 end
 
 # This will probably break at some point
@@ -113,7 +117,8 @@ function SDDPModel(build_subproblem!::Function;
     initial_markov_state=0,
     conf_level=0.95,
     solver=ClpSolver(),
-    theta_bound=1e3)
+    theta_bound=1e3,
+    beta_quantile=1)
 
     m = SDDPModel(sense=sense,
     stages=stages,
@@ -123,7 +128,8 @@ function SDDPModel(build_subproblem!::Function;
     initial_markov_state=initial_markov_state,
     conf_level=conf_level,
     solver=solver,
-    theta_bound=theta_bound)
+    theta_bound=theta_bound,
+    beta_quantile=1)
 
 
 
@@ -166,7 +172,7 @@ function SDDPModel(build_subproblem!::Function;
 end
 
 function Base.copy{M,N,S,T}(m::SDDPModel{M,N,S,T})
-    SDDPModel{M,N,S,T}(m.sense, deepcopy(m.stage_problems), copy(m.transition), m.init_markov_state, m.confidence_interval, m.valid_bound, m.status, m.QUANTILE, m.LPSOLVER, m.theta_bound)
+    SDDPModel{M,N,S,T}(m.sense, deepcopy(m.stage_problems), copy(m.transition), m.init_markov_state, m.confidence_interval, m.valid_bound, m.status, m.QUANTILE, m.LPSOLVER, m.theta_bound, m.beta_quantile)
 end
 
 function transition{M,N,S,T}(m::SDDPModel{M,N,S,T}, stage::Int, scenario::Int)
@@ -567,15 +573,36 @@ stage    - the stage to add the cut
 scenario - the scenario to add the cut to
 
 """
+# function add_cut!{M,N,S,T}(m::SDDPModel{M,N,S,T}, stage::Int, markov::Int)
+#     # TODO we could tidy this up by collecting terms first
+#     #   and then making the cuts
+#     sp = m.stage_problems[stage, markov]
+#     @defExpr(rhs, sum{
+#         get_transition(m, stage, markov, mkv) * (
+#             mean(m.stage_problems[stage+1, mkv].ext[:LastObjectives]) +
+#             sum{
+#                 mean(m.stage_problems[stage+1, mkv].ext[:DualValues][state]) * (
+#                     getVar(sp, state) - getRHS(m.stage_problems[stage+1, mkv].ext[:duals][state])
+#                 )
+#             , state in sp.ext[:state_vars]}
+#         )
+#     , mkv=1:N}
+#     )
+#     if m.sense==:Max
+#         @addConstraint(sp, sp.ext[:theta] <= rhs)
+#     else
+#         @addConstraint(sp, sp.ext[:theta] >= rhs)
+#     end
+# end
 function add_cut!{M,N,S,T}(m::SDDPModel{M,N,S,T}, stage::Int, markov::Int)
     # TODO we could tidy this up by collecting terms first
     #   and then making the cuts
     sp = m.stage_problems[stage, markov]
     @defExpr(rhs, sum{
         get_transition(m, stage, markov, mkv) * (
-            mean(m.stage_problems[stage+1, mkv].ext[:LastObjectives]) +
+            reweight(m.stage_problems[stage+1, mkv].ext[:LastObjectives], m.beta_quantile, m.stage_problems[stage+1, mkv].ext[:LastObjectives]) +
             sum{
-                mean(m.stage_problems[stage+1, mkv].ext[:DualValues][state]) * (
+                reweight(m.stage_problems[stage+1, mkv].ext[:LastObjectives], m.beta_quantile, m.stage_problems[stage+1, mkv].ext[:DualValues][state]) * (
                     getVar(sp, state) - getRHS(m.stage_problems[stage+1, mkv].ext[:duals][state])
                 )
             , state in sp.ext[:state_vars]}
@@ -587,6 +614,25 @@ function add_cut!{M,N,S,T}(m::SDDPModel{M,N,S,T}, stage::Int, markov::Int)
     else
         @addConstraint(sp, sp.ext[:theta] >= rhs)
     end
+end
+
+
+function risk_averse_weightings(x::Vector{Float64}, p::Vector{Float64},  ß::Float64=0.5, ismax::Bool=true)
+    n = 10
+    I = sortperm(x, rev=!ismax)
+    y = similar(x)
+    q = 0.
+    for i in I
+        q >=  ß && break
+        y[i] = min(p[i],  ß - q)
+        q += y[i]
+    end
+    return y ./ ß
+end
+risk_averse_weightings(x::Vector{Float64}, beta::Float64=0.5) = risk_averse_weightings(x, ones(length(x)) / length(x), beta)
+
+function reweight(obj, beta, x)
+    dot(risk_averse_weightings(obj, beta), x)
 end
 
 function getRHS(c::ConstraintRef{LinearConstraint})
