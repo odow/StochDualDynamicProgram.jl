@@ -8,7 +8,7 @@ using Formatting
 using Distributions
 
 export SDDPModel,
-    @defStateVar, @defValueToGo,
+    @defStateVar, @defValueToGo, @addScenarioConstraint, @setStageProfit,
     simulate # addStageProblem!,
 
 type SDDPModel{M,N,S,T}
@@ -21,7 +21,10 @@ type SDDPModel{M,N,S,T}
     status::Symbol
     QUANTILE::Float64
     LPSOLVER::MathProgBase.AbstractMathProgSolver
+    theta_bound::Float64
 end
+
+include("macros.jl")
 
 """
 Creates an SDDPModel type
@@ -45,7 +48,8 @@ function SDDPModel(;
     transition=nothing,
     initial_markov_state=0,
     conf_level=0.95,
-    solver=ClpSolver())
+    solver=ClpSolver(),
+    theta_bound=1000)
 
     @assert stages >= 1
     @assert markov_states >= 1
@@ -77,7 +81,7 @@ function SDDPModel(;
         end
     end
     my_inf = (sense==:Max?Inf:-Inf)
-    SDDPModel{stages,markov_states,scenarios,T}(sense, Array(JuMP.Model, (stages, markov_states)), transition, initial_markov_state, (-my_inf, -my_inf), my_inf, :Unconverged, conf_level, solver)
+    SDDPModel{stages,markov_states,scenarios,T}(sense, Array(JuMP.Model, (stages, markov_states)), transition, initial_markov_state, (-my_inf, -my_inf), my_inf, :Unconverged, conf_level, solver, theta_bound)
 end
 
 # This will probably break at some point
@@ -88,6 +92,18 @@ else
     arglength(f::Function)=length(Base.uncompressed_ast(f.code.def).args[1])
 end
 
+function is_zero_objective{T}(ex::JuMP.GenericQuadExpr{T, JuMP.Variable})
+    return length(ex.qcoeffs) == 0 &&
+        length(ex.qvars1) == 0 &&
+        length(ex.qvars2) == 0 &&
+        is_zero_objective(ex.aff)
+end
+function is_zero_objective{T}(ex::JuMP.GenericAffExpr{T, JuMP.Variable})
+    return length(ex.coeffs) == 0 &&
+    length(ex.vars) == 0 &&
+    ex.constant == 0.0
+end
+
 function SDDPModel(build_subproblem!::Function;
     sense=:Max,
     stages=1,
@@ -96,7 +112,8 @@ function SDDPModel(build_subproblem!::Function;
     transition=nothing,
     initial_markov_state=0,
     conf_level=0.95,
-    solver=ClpSolver())
+    solver=ClpSolver(),
+    theta_bound=1e3)
 
     m = SDDPModel(sense=sense,
     stages=stages,
@@ -105,25 +122,43 @@ function SDDPModel(build_subproblem!::Function;
     transition=transition,
     initial_markov_state=initial_markov_state,
     conf_level=conf_level,
-    solver=solver)
+    solver=solver,
+    theta_bound=theta_bound)
+
+
 
     for stage=1:stages
         for markov_state=1:markov_states
-            for scenario=1:scenarios
-                sp = StageProblem()
-                setSolver(sp, m.LPSOLVER)
-                if arglength(build_subproblem!)==3
-                    @assert markov_states == 1
-                    build_subproblem!(sp, stage, markov_state)
-                elseif arglength(build_subproblem!)==2
-                    @assert markov_states == 1
-                    @assert scenarios == 1
-                    build_subproblem!(sp, stage)
-                else
-                    error("Invalid number of arguments")
-                end
-                m.stage_problems[stage, markov_state] = sp
+            # for scenario=1:scenarios
+            sp = StageProblem(scenarios)
+            setSolver(sp, m.LPSOLVER)
+            if arglength(build_subproblem!)==3
+                build_subproblem!(sp, stage, markov_state)
+            elseif arglength(build_subproblem!)==2
+                @assert markov_states == 1
+                build_subproblem!(sp, stage)
+            else
+                error("Invalid number of arguments")
             end
+
+            for v in sp.ext[:state_vars]
+                sp.ext[:DualValues][v] = zeros(scenarios)
+            end
+
+            if is_zero_objective(getObjective(sp))
+                if stage==stages
+                    @setObjective(sp, sense, sp.ext[:StageProfit])
+                else
+                    if sense==:Max
+                        @defValueToGo(sp, theta <= theta_bound)
+                    else
+                        @defValueToGo(sp, theta >= theta_bound)
+                    end
+                    @setObjective(sp, sense, sp.ext[:StageProfit] + theta)
+                end
+            end
+            m.stage_problems[stage, markov_state] = sp
+            # end
         end
     end
 
@@ -131,7 +166,7 @@ function SDDPModel(build_subproblem!::Function;
 end
 
 function Base.copy{M,N,S,T}(m::SDDPModel{M,N,S,T})
-    SDDPModel{M,N,S,T}(m.sense, deepcopy(m.stage_problems), copy(m.transition), m.init_markov_state, m.confidence_interval, m.valid_bound, m.status, m.QUANTILE, m.LPSOLVER)
+    SDDPModel{M,N,S,T}(m.sense, deepcopy(m.stage_problems), copy(m.transition), m.init_markov_state, m.confidence_interval, m.valid_bound, m.status, m.QUANTILE, m.LPSOLVER, m.theta_bound)
 end
 
 function transition{M,N,S,T}(m::SDDPModel{M,N,S,T}, stage::Int, scenario::Int)
@@ -160,7 +195,7 @@ end
 Instaniates a new StageProblem which is a JuMP.Model object with an extension
 dictionary.
 """
-function StageProblem()
+function StageProblem(scenarios::Int=1)
     sp = Model()
     sp.ext[:is_sp] = true
     sp.ext[:state_vars] = Symbol[]
@@ -170,7 +205,8 @@ function StageProblem()
     sp.ext[:Scenarios] = Tuple{Any, Vector{Any}}[]
     sp.ext[:LastScenario] = 0
     sp.ext[:CurrentScenario] = 0
-    sp.ext[:LastObjectives] = Float64[]
+    sp.ext[:LastObjectives] = zeros(scenarios)
+    sp.ext[:DualValues] = Dict{Symbol, Vector{Float64}}()
     return sp
 end
 
@@ -317,11 +353,16 @@ function solve!(sp::Model, m::SDDPModel)
         # end
         error("SDDP Subproblems must be feasible. Current status: $(status).")
     end
-    sp.ext[:LastObjectives][sp.ext[:CurrentScenario]] = getObjectiveValue(sp)
+    s = sp.ext[:CurrentScenario]
+    sp.ext[:LastObjectives][s] = getObjectiveValue(sp)
+    for v in sp.ext[:state_vars]
+        sp.ext[:DualValues][v][s] = getDual(sp.ext[:duals][v])
+    end
+    return
 end
 
-function load_scenario!(sp::Model, scenario::Int)
-    sp.ext[:LastScenario] = sp.ext[:CurrentScenario]
+function load_scenario!(m::Model, scenario::Int)
+    m.ext[:LastScenario] = m.ext[:CurrentScenario]
     for (c, Ω) in m.ext[:Scenarios]
         if m.ext[:LastScenario] == 0
             old_scenario = 0.
@@ -330,7 +371,7 @@ function load_scenario!(sp::Model, scenario::Int)
         end
         chgConstrRHS(c, getRHS(c) - old_scenario + Ω[scenario])
     end
-    m.ext[:LastScenario] = scenario
+    m.ext[:CurrentScenario] = scenario
     return
 end
 
@@ -408,7 +449,7 @@ function forward_pass!{M,N,S,T}(m::SDDPModel{M,N,S,T}, npasses::Int=1, print_inf
 
             # pass forward if necessary
             if stage < M
-                pass_states_forward!(m, stage, old_markov, scenario)
+                pass_states_forward!(m, stage, old_markov)
 
                 # transition to new scenario
                 markov = transition(m, stage, old_markov)
@@ -472,7 +513,7 @@ function backward_pass!{M,N,S,T}(m::SDDPModel{M,N,S,T})
         if stage < M
             old_markov = markov
             old_scenario = scenario
-            pass_states_forward!(m, stage, old_markov, scenario)# pass forward if necessary
+            pass_states_forward!(m, stage, old_markov)# pass forward if necessary
             markov = transition(m, stage, old_markov)           # transition to new scenario
 
         end
@@ -529,39 +570,39 @@ scenario - the scenario to add the cut to
 function add_cut!{M,N,S,T}(m::SDDPModel{M,N,S,T}, stage::Int, markov::Int)
     # TODO we could tidy this up by collecting terms first
     #   and then making the cuts
-    for s=1:S
-        # Get the stage problem to add the cut to
-        sp = m.stage_problems[stage, markov, s]
-        if m.sense==:Max
-            @addConstraint(sp,
-                sp.ext[:theta] <= sum{
-                    get_transition(m, stage, markov, mkv) * (
-                        sum{
-                            getObjectiveValue(sp2) +
-                            sum{
-                                getDual(sp2.ext[:duals][state]) * (
-                                getVar(sp, state) - getLower(sp2.ext[:duals][state]))
-                            , state in sp.ext[:state_vars]}
-                        , sp2 in m.stage_problems[stage+1, mkv, :]} / S
-                    )
-                , mkv=1:N}
-            )
-        else
-            @addConstraint(sp,
-                sp.ext[:theta] >= sum{
-                    get_transition(m, stage, markov, mkv) * (
-                        sum{
-                            getObjectiveValue(sp2) +
-                            sum{
-                                getDual(sp2.ext[:duals][state]) * (
-                                getVar(sp, state) - getLower(sp2.ext[:duals][state]))
-                            , state in sp.ext[:state_vars]}
-                        , sp2 in m.stage_problems[stage+1, mkv, :]} / S
-                    )
-                , mkv=1:N}
-            )
-        end
+    sp = m.stage_problems[stage, markov]
+    @defExpr(rhs, sum{
+        get_transition(m, stage, markov, mkv) * (
+            mean(m.stage_problems[stage+1, mkv].ext[:LastObjectives]) +
+            sum{
+                mean(m.stage_problems[stage+1, mkv].ext[:DualValues][state]) * (
+                    getVar(sp, state) - getRHS(m.stage_problems[stage+1, mkv].ext[:duals][state])
+                )
+            , state in sp.ext[:state_vars]}
+        )
+    , mkv=1:N}
+    )
+    if m.sense==:Max
+        @addConstraint(sp, sp.ext[:theta] <= rhs)
+    else
+        @addConstraint(sp, sp.ext[:theta] >= rhs)
     end
+end
+
+function getRHS(c::ConstraintRef{LinearConstraint})
+    constr = c.m.linconstr[c.idx]
+    sen = JuMP.sense(constr)
+    if sen==:range
+        error("Range constraints not supported for Scenarios")
+    elseif sen == :(==)
+        @assert constr.lb == constr.ub
+        return constr.ub
+    elseif sen == :>=
+        return constr.lb
+    elseif sen == :<=
+        return constr.ub
+    end
+    error("Sense $(sen) not supported")
 end
 
 """
@@ -593,7 +634,5 @@ end
 function print_stats_header()
     printfmt("{1:22s} | {2:10s} | {3:6s}\n", "Expected Objective", "Valid Bound", "% Gap")
 end
-
-include("macros.jl")
 
 end

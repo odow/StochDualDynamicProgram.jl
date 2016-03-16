@@ -63,3 +63,25 @@ macro defValueToGo(m, x)
         $m.ext[:theta] = @defVar $m $(esc(x))
     end
 end
+
+"""
+Right now you can only add an additive RHS with no coefficient. ie
+    @addScenarioConstraint(m, rhs=[1,2,3], (...) <= (...) + rhs
+"""
+macro addScenarioConstraint(m, kw, c)
+    m = esc(m)
+    v = esc(kw.args[2])
+    quote
+        @assert length(collect($v)) == length($m.ext[:LastObjectives])
+        $(esc(kw.args[1])) = 0
+        con = @addConstraint($m, $(esc(c)))
+        push!($m.ext[:Scenarios], (con, collect($v)))
+    end
+end
+
+macro setStageProfit(m, ex)
+    m = esc(m)
+    quote
+        $m.ext[:StageProfit] = @defExpr $(esc(gensym())) $(esc(ex))
+    end
+end

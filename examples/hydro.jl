@@ -14,12 +14,12 @@ There are two reservoirs (upper and lower). In each time period, a reservoir can
 Each turbine has an identical piecewise linear response function.
     f(water units) = electricity units
 """
-function solve_hydro(;
+function solve_hydro()
     # Names of the reservoirs
-    RESERVOIRS = [:upper, :lower],
+    RESERVOIRS = [:upper, :lower]
 
     # Knots of the turbine response function
-    A = [(50, 55), (60, 65), (70, 70)],
+    A = [(50, 55), (60, 65), (70, 70)]
 
 
     # Prices[stage, markov state]
@@ -27,35 +27,34 @@ function solve_hydro(;
         1 2;
         2 1;
         3 4
-    ],
+    ]
 
     # Transition matrix
     Transition = [
         0.6 0.4;
         0.3 0.7
-    ],
+    ]
 
     # Price of purchasing and spilling water
     #   ($/Unit)
-    M = 1000,
+    M = 1000
 
     # Maximum level
     reservoir_max = Dict{Symbol, Float64}(
         :upper => 200,
         :lower => 200
-        ),
+        )
 
     # Initial fill
     reservoir_initial = Dict{Symbol, Float64}(
         :upper => 200,
         :lower => 200
         )
-    )
 
     n = length(A)
 
     # Initialise SDDP Model
-    m = SDDPModel(stages=3, markov_states=2, scenarios=1, transition=Transition) do sp, stage, markov_state, scenario
+    m = SDDPModel(stages=3, markov_states=2, scenarios=1, transition=Transition) do sp, stage, markov_state
         # ------------------------------------------------------------------
         #   SDDP State Variables
         # Level of upper reservoir
@@ -148,48 +147,47 @@ function solve_hydro(;
 end
 
 # Hydro problem with different transition matrix
-function solve_hydro2(;
+function solve_hydro2()
     # Names of the reservoirs
-    RESERVOIRS = [:upper, :lower],
+    RESERVOIRS = [:upper, :lower]
 
     # Knots of the turbine response function
-    A = [(50, 55), (60, 65), (70, 70)],
+    A = [(50, 55), (60, 65), (70, 70)]
 
 
     # Prices[markov state, scenario]
     Price = [
         5 5.5 6;    # high price
         1 2 3       # low price
-    ],
+    ]
 
     # Transition matrix
     Transition = Array{Float64, 2}[
         [0.6 0.4;0.3 0.7],
         [0.3 0.7;0.3 0.7],
         [0.5 0.5;0.5 0.5]
-      ],
+      ]
 
     # Price of purchasing and spilling water
     #   ($/Unit)
-    M = 1000,
+    M = 2000
 
     # Maximum level
     reservoir_max = Dict{Symbol, Float64}(
         :upper => 200,
         :lower => 200
-        ),
+        )
 
     # Initial fill
     reservoir_initial = Dict{Symbol, Float64}(
         :upper => 200,
         :lower => 200
         )
-    )
 
     n = length(A)
 
     # Initialise SDDP Model
-    m = SDDPModel(sense=:Min, stages=3, markov_states=2, scenarios=3, transition=Transition) do sp, stage, markov_state, scenario
+    m = SDDPModel(sense=:Min, stages=3, markov_states=2, transition=Transition, theta_bound=-1500) do sp, stage, markov_state
         # ------------------------------------------------------------------
         #   SDDP State Variables
         # Level of upper reservoir
@@ -205,13 +203,6 @@ function solve_hydro2(;
         )
 
         # ------------------------------------------------------------------
-        #   SDDP Value to Go
-        @defValueToGo(sp, value_to_go >= -M)
-        if stage==3
-            # No value to go in last stage
-            @addConstraint(sp, value_to_go==0)
-        end
-        # ------------------------------------------------------------------
         #   Additional variables
         # Quantity to flow through turbine of reservoir r
         @defVar(sp, outflow[r=RESERVOIRS] >= 0)
@@ -224,6 +215,10 @@ function solve_hydro2(;
 
         # Proportion of levels to dispatch on
         @defVar(sp, 0 <= dispatch[reservoir=RESERVOIRS, level=1:n] <= 1)
+
+        # ------------------------------------------------------------------
+        #   Objective Function
+        @setStageProfit(sp, -Price[markov_state, stage]*generation_quantity)
 
         # ------------------------------------------------------------------
         # Conservation constraints
@@ -255,17 +250,11 @@ function solve_hydro2(;
             reservoir=RESERVOIRS, level=1:n}
         )
 
-        # ------------------------------------------------------------------
-        #   Objective Function
-        @setObjective(sp, Min,
-            -Price[markov_state, scenario]*generation_quantity +
-            value_to_go
-        )
     end
 
     solve(m,                # Solve the model using the SDDP algorithm
-        forward_passes=1500,  # number of realisations in bound simulation
-        backward_passes=5,   # number of cutting iterations before convergence check
+        forward_passes=2000,  # number of realisations in bound simulation
+        backward_passes=10,   # number of cutting iterations before convergence check
         max_iters=50
     )
 
