@@ -661,7 +661,26 @@ function add_cut!{M,N,S,T}(m::SDDPModel{M,N,S,T}, stage::Int, markov::Int)
     sp = m.stage_problems[stage, markov]
 
     Prob = risk_weightings(m, stage, markov)
-
+    @assert abs(sum(Prob) - 1) < 1e-5
+    # if abs(sum(Prob) - 1) > 1e-5
+    #     @show stage, markov
+    #     @show Prob
+    #     @show [sp.ext[:LastObjectives] for sp in m.stage_problems[stage+1, :]]
+    #     P = zeros(S*N)
+    #     i=1
+    #     for mkv=1:N
+    #         for s=1:S
+    #             P[i] = get_transition(m, stage, markov, mkv)/S
+    #             i+=1
+    #         end
+    #     end
+    #
+    #     @assert abs(sum(P) - 1) < 1e-5
+    #
+    #     w = risk_averse_weightings(vcat([sp.ext[:LastObjectives] for sp in m.stage_problems[stage+1, :]]...), P,  m.beta_quantile, m.sense==:Max)
+    #     @show w
+    #     error()
+    # end
     @defExpr(rhs, sum{
         sum{
             Prob[mkv, s] * (
@@ -676,7 +695,6 @@ function add_cut!{M,N,S,T}(m::SDDPModel{M,N,S,T}, stage::Int, markov::Int)
     , mkv=1:N}
     )
 
-    S==2 && @show(rhs)
     if m.sense==:Max
         @addConstraint(sp, sp.ext[:theta] <= rhs)
     else
@@ -685,9 +703,8 @@ function add_cut!{M,N,S,T}(m::SDDPModel{M,N,S,T}, stage::Int, markov::Int)
 end
 
 function risk_averse_weightings{T}(x::Vector{T}, p::Vector{T},  ß::Float64=0.5, ismax::Bool=true)
-    n = 10
     I = sortperm(x, rev=!ismax)
-    y = similar(x)
+    y = zeros(length(x))
     q = 0.
     for i in I
         q >=  ß && break
@@ -697,10 +714,6 @@ function risk_averse_weightings{T}(x::Vector{T}, p::Vector{T},  ß::Float64=0.5,
     return y ./ ß
 end
 risk_averse_weightings{T}(x::Vector{T}, beta::Float64=0.5) = risk_averse_weightings(x, ones(length(x)) / length(x), beta)
-
-function reweight(obj, beta, x)
-    dot(risk_averse_weightings(obj, beta), x)
-end
 
 function getRHS(c::ConstraintRef{LinearConstraint})
     constr = c.m.linconstr[c.idx]
