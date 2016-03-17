@@ -336,6 +336,44 @@ function set_valid_bound!{M,N,S,T}(m::SDDPModel{M,N,S,T})
         setBound!(m, obj)
     end
 end
+# function set_valid_bound!{M,N,S,T}(m::SDDPModel{M,N,S,T})
+#     obj = 0.0
+#     if m.init_markov_state == 0
+#
+#         P = zeros(S*N)
+#         i=1
+#         for mkv=1:N
+#             for s=1:S
+#                 P[i] = get_transition(m, 1, m.init_markov_state, mkv)/S
+#                 i+=1
+#             end
+#         end
+#         w = risk_averse_weightings(vcat([sp.ext[:LastObjectives] for sp in m.stage_problems[1, :]]...), P,  m.beta_quantile, m.sense==:Max)
+#         i=1
+#         for mkv=1:N
+#             for s=1:S
+#                 obj += w[i] * m.stage_problems[1, mkv].ext[:LastObjectives][s]
+#                 i+=1
+#             end
+#         end
+#
+#     else
+#
+#         P = ones(S) / S
+#         w = risk_averse_weightings(m.stage_problems[1, m.init_markov_state].ext[:LastObjectives], P,  m.beta_quantile, m.sense==:Max)
+#         for s=1:S
+#             obj += w[s] * m.stage_problems[1, m.init_markov_state].ext[:LastObjectives][s]
+#         end
+#
+#     end
+#
+#
+#     if m.sense==:Max && obj < getBound(m)
+#         setBound!(m, obj)
+#     elseif m.sense==:Min && obj > getBound(m)
+#         setBound!(m, obj)
+#     end
+# end
 
 """
 Solve a StageProblem.
@@ -594,21 +632,51 @@ scenario - the scenario to add the cut to
 #         @addConstraint(sp, sp.ext[:theta] >= rhs)
 #     end
 # end
+function risk_weightings{M,N,S,T}(m::SDDPModel{M,N,S,T}, stage::Int, markov::Int)
+    P = zeros(S*N)
+    i=1
+    for mkv=1:N
+        for s=1:S
+            P[i] = get_transition(m, stage, markov, mkv)/S
+            i+=1
+        end
+    end
+
+    @assert abs(sum(P) - 1) < 1e-5
+
+    w = risk_averse_weightings(vcat([sp.ext[:LastObjectives] for sp in m.stage_problems[stage+1, :]]...), P,  m.beta_quantile, m.sense==:Max)
+
+    Prob = zeros(N,S)
+    i=1
+    for mkv=1:N
+        for s=1:S
+            Prob[mkv, s] = w[i]
+            i+=1
+        end
+    end
+    return Prob
+end
+
 function add_cut!{M,N,S,T}(m::SDDPModel{M,N,S,T}, stage::Int, markov::Int)
-    # TODO we could tidy this up by collecting terms first
-    #   and then making the cuts
     sp = m.stage_problems[stage, markov]
+
+    Prob = risk_weightings(m, stage, markov)
+
     @defExpr(rhs, sum{
-        get_transition(m, stage, markov, mkv) * (
-            reweight(m.stage_problems[stage+1, mkv].ext[:LastObjectives], m.beta_quantile, m.stage_problems[stage+1, mkv].ext[:LastObjectives]) +
-            sum{
-                reweight(m.stage_problems[stage+1, mkv].ext[:LastObjectives], m.beta_quantile, m.stage_problems[stage+1, mkv].ext[:DualValues][state]) * (
-                    getVar(sp, state) - getRHS(m.stage_problems[stage+1, mkv].ext[:duals][state])
-                )
-            , state in sp.ext[:state_vars]}
-        )
+        sum{
+            Prob[mkv, s] * (
+                m.stage_problems[stage+1, mkv].ext[:LastObjectives][s] +
+                sum{
+                    m.stage_problems[stage+1, mkv].ext[:DualValues][state][s] * (
+                        getVar(sp, state) - getRHS(m.stage_problems[stage+1, mkv].ext[:duals][state])
+                    )
+                , state in sp.ext[:state_vars]}
+            )
+        ,s=1:S; Prob[mkv, s] > 1e-6}
     , mkv=1:N}
     )
+
+    S==2 && @show(rhs)
     if m.sense==:Max
         @addConstraint(sp, sp.ext[:theta] <= rhs)
     else
@@ -616,8 +684,7 @@ function add_cut!{M,N,S,T}(m::SDDPModel{M,N,S,T}, stage::Int, markov::Int)
     end
 end
 
-
-function risk_averse_weightings(x::Vector{Float64}, p::Vector{Float64},  ß::Float64=0.5, ismax::Bool=true)
+function risk_averse_weightings{T}(x::Vector{T}, p::Vector{T},  ß::Float64=0.5, ismax::Bool=true)
     n = 10
     I = sortperm(x, rev=!ismax)
     y = similar(x)
@@ -629,7 +696,7 @@ function risk_averse_weightings(x::Vector{Float64}, p::Vector{Float64},  ß::Flo
     end
     return y ./ ß
 end
-risk_averse_weightings(x::Vector{Float64}, beta::Float64=0.5) = risk_averse_weightings(x, ones(length(x)) / length(x), beta)
+risk_averse_weightings{T}(x::Vector{T}, beta::Float64=0.5) = risk_averse_weightings(x, ones(length(x)) / length(x), beta)
 
 function reweight(obj, beta, x)
     dot(risk_averse_weightings(obj, beta), x)
@@ -654,11 +721,12 @@ end
 """
 Solve the model using the SDDP algorithm.
 """
-function JuMP.solve{M,N,S,T}(m::SDDPModel{M,N,S,T}; forward_passes=1, backward_passes=1, max_iters=1000)
+function JuMP.solve{M,N,S,T}(m::SDDPModel{M,N,S,T}; forward_passes=1, backward_passes=1, max_iters=1000, beta_quantile=1)
     print_stats_header()
     # forward_pass!(m, 1)
     # print_stats(m)
     # while not converged
+    m.beta_quantile = beta_quantile
     i=0
     while i < max_iters
         # Cutting passes
