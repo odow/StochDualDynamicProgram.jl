@@ -23,6 +23,7 @@ type SDDPModel{M,N,S,T}
     LPSOLVER::MathProgBase.AbstractMathProgSolver
     theta_bound::Float64
     beta_quantile::Float64
+    risk_lambda::Float64
 end
 
 include("macros.jl")
@@ -50,14 +51,11 @@ function SDDPModel(;
     initial_markov_state=0,
     conf_level=0.95,
     solver=ClpSolver(),
-    theta_bound=1000,
-    beta_quantile=1.)
+    theta_bound=1000)
 
     @assert stages >= 1
     @assert markov_states >= 1
     @assert scenarios >= 1
-    @assert beta_quantile >= 0
-    @assert beta_quantile <= 1
 
     if !(sense in [:Max, :Min])
         error("Sense must be either :Max or :Min. Currently = $(sense).")
@@ -85,7 +83,7 @@ function SDDPModel(;
         end
     end
     my_inf = (sense==:Max?Inf:-Inf)
-    SDDPModel{stages,markov_states,scenarios,T}(sense, Array(JuMP.Model, (stages, markov_states)), transition, initial_markov_state, (-my_inf, -my_inf), my_inf, :Unconverged, conf_level, solver, theta_bound, beta_quantile)
+    SDDPModel{stages,markov_states,scenarios,T}(sense, Array(JuMP.Model, (stages, markov_states)), transition, initial_markov_state, (-my_inf, -my_inf), my_inf, :Unconverged, conf_level, solver, theta_bound, 1., 1.)
 end
 
 # This will probably break at some point
@@ -117,8 +115,7 @@ function SDDPModel(build_subproblem!::Function;
     initial_markov_state=0,
     conf_level=0.95,
     solver=ClpSolver(),
-    theta_bound=1e3,
-    beta_quantile=1)
+    theta_bound=1e3)
 
     m = SDDPModel(sense=sense,
     stages=stages,
@@ -128,10 +125,7 @@ function SDDPModel(build_subproblem!::Function;
     initial_markov_state=initial_markov_state,
     conf_level=conf_level,
     solver=solver,
-    theta_bound=theta_bound,
-    beta_quantile=1)
-
-
+    theta_bound=theta_bound)
 
     for stage=1:stages
         for markov_state=1:markov_states
@@ -172,7 +166,7 @@ function SDDPModel(build_subproblem!::Function;
 end
 
 function Base.copy{M,N,S,T}(m::SDDPModel{M,N,S,T})
-    SDDPModel{M,N,S,T}(m.sense, deepcopy(m.stage_problems), copy(m.transition), m.init_markov_state, m.confidence_interval, m.valid_bound, m.status, m.QUANTILE, m.LPSOLVER, m.theta_bound, m.beta_quantile)
+    SDDPModel{M,N,S,T}(m.sense, deepcopy(m.stage_problems), copy(m.transition), m.init_markov_state, m.confidence_interval, m.valid_bound, m.status, m.QUANTILE, m.LPSOLVER, m.theta_bound, m.beta_quantile, m.risk_lambda)
 end
 
 function transition{M,N,S,T}(m::SDDPModel{M,N,S,T}, stage::Int, scenario::Int)
@@ -502,16 +496,38 @@ function forward_pass!{M,N,S,T}(m::SDDPModel{M,N,S,T}, npasses::Int=1, print_inf
     end
 
     # set new lower bound
-    if npasses > 1
-        _obj = t_test(obj, conf_level=m.QUANTILE)
+    if abs(m.risk_lambda - 1) < 1e-5
+        if npasses > 1
+            _obj = t_test(obj, conf_level=m.QUANTILE)
+        else
+            _obj = (obj[1], obj[1])
+        end
     else
-        _obj = (obj[1], obj[1])
+        _obj = cvar_estimate(obj, m.beta_quantile, m.risk_lambda)
     end
     if (m.sense==:Max && _obj[1] > getFarCIBound(m)) || (m.sense==:Min && _obj[2] < getFarCIBound(m))
         setCI!(m, _obj)
     end
 
 end
+
+function cvar_estimate(x, beta=1., lambda=1., n=1000)
+    y = zeros(100)#div(length(x), 100))
+    z = zeros(n)
+    for i=1:n
+        rand!(y, x)
+        z[i] = cvar(y, beta, lambda)
+    end
+    t_test(z)
+end
+
+function cvar{T}(x::Vector{T}, beta::Float64=1., lambda::Float64=1.)
+    @assert beta >= 0 && beta <= 1.
+    @assert lambda >= 0 && lambda <= 1.
+    lambda * mean(x) + (1 - lambda) * mean(x[x.<quantile(x, beta)])
+end
+
+
 
 function t_test(x::Vector; conf_level=0.95)
     tstar = quantile(TDist(length(x)-1), 1 - (1 - conf_level)/2)
@@ -650,7 +666,7 @@ function risk_weightings{M,N,S,T}(m::SDDPModel{M,N,S,T}, stage::Int, markov::Int
     i=1
     for mkv=1:N
         for s=1:S
-            Prob[mkv, s] = w[i]
+            Prob[mkv, s] = m.risk_lambda * P[i] + (1-m.risk_lambda) * w[i]
             i+=1
         end
     end
@@ -734,12 +750,13 @@ end
 """
 Solve the model using the SDDP algorithm.
 """
-function JuMP.solve{M,N,S,T}(m::SDDPModel{M,N,S,T}; forward_passes=1, backward_passes=1, max_iters=1000, beta_quantile=1)
+function JuMP.solve{M,N,S,T}(m::SDDPModel{M,N,S,T}; forward_passes=1, backward_passes=1, max_iters=1000, beta_quantile=1, risk_lambda=1)
     print_stats_header()
     # forward_pass!(m, 1)
     # print_stats(m)
     # while not converged
     m.beta_quantile = beta_quantile
+    m.risk_lambda = risk_lambda
     i=0
     while i < max_iters
         # Cutting passes

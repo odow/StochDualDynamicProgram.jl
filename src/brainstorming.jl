@@ -34,6 +34,12 @@ end
 risk_averse_weightings(x::Vector{Float64}, beta::Float64=0.5) = risk_averse_weightings(x, ones(length(x)) / length(x), beta)
 
 
+x = rand(10)
+y = risk_averse_weightings(x, 0.5)
+dot(x, y)
+mean(x)
+
+
 function add_cut!{M,N,S,T}(m::SDDPModel{M,N,S,T}, stage::Int, markov::Int)
     sp = m.stage_problems[stage, markov]
 
@@ -120,3 +126,46 @@ function set_valid_bound!{M,N,S,T}(m::SDDPModel{M,N,S,T})
         setBound!(m, obj)
     end
 end
+
+
+
+function t_test(x::Vector; conf_level=0.95)
+    tstar = quantile(TDist(length(x)-1), 1 - (1 - conf_level)/2)
+    SE = std(x)/sqrt(length(x))
+    lo, hi = mean(x) + [-1, 1] * tstar * SE
+    return (lo, hi)#, mean(x))
+end
+
+using Distributions
+
+function cvar_estimate(x, beta, lambda, n=1000)
+    y = zeros(100)#div(length(x), 100))
+    z = zeros(n)
+    for i=1:n
+        rand!(y, x)
+        z[i] = cvar(y, beta, lambda)
+    end
+    t_test(z)
+end
+
+function cvar{T}(x::Vector{T}, beta::Float64=1., lambda::Float64=1.)
+    @assert beta >= 0 && beta <= 1.
+    @assert lambda >= 0 && lambda <= 1.
+    lambda * mean(x) + (1 - lambda) * mean(x[x.<quantile(x, beta)])
+end
+
+using Gadfly
+
+x = randn(2000)
+b = 0.05
+l = 0.
+
+
+function plotstuff(n)
+    plot(
+    layer(xintercept=[cvar(x, b, l)], Geom.vline, Theme(line_width=2pt, default_color=colorant"slategray")),
+    layer(x=cvar_estimate(x, b, l,n), Geom.histogram, Theme(default_color=colorant"red")),
+    layer(x=x, Geom.histogram)
+    )
+end
+plotstuff(1000)
