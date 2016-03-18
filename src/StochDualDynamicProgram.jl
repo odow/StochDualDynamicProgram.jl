@@ -22,6 +22,8 @@ type SDDPModel{M,N,S,T}
     QUANTILE::Float64
     LPSOLVER::MathProgBase.AbstractMathProgSolver
     theta_bound::Float64
+    beta_quantile::Float64
+    risk_lambda::Float64
 end
 
 include("macros.jl")
@@ -81,7 +83,7 @@ function SDDPModel(;
         end
     end
     my_inf = (sense==:Max?Inf:-Inf)
-    SDDPModel{stages,markov_states,scenarios,T}(sense, Array(JuMP.Model, (stages, markov_states)), transition, initial_markov_state, (-my_inf, -my_inf), my_inf, :Unconverged, conf_level, solver, theta_bound)
+    SDDPModel{stages,markov_states,scenarios,T}(sense, Array(JuMP.Model, (stages, markov_states)), transition, initial_markov_state, (-my_inf, -my_inf), my_inf, :Unconverged, conf_level, solver, theta_bound, 1., 1.)
 end
 
 # This will probably break at some point
@@ -125,8 +127,6 @@ function SDDPModel(build_subproblem!::Function;
     solver=solver,
     theta_bound=theta_bound)
 
-
-
     for stage=1:stages
         for markov_state=1:markov_states
             # for scenario=1:scenarios
@@ -166,7 +166,7 @@ function SDDPModel(build_subproblem!::Function;
 end
 
 function Base.copy{M,N,S,T}(m::SDDPModel{M,N,S,T})
-    SDDPModel{M,N,S,T}(m.sense, deepcopy(m.stage_problems), copy(m.transition), m.init_markov_state, m.confidence_interval, m.valid_bound, m.status, m.QUANTILE, m.LPSOLVER, m.theta_bound)
+    SDDPModel{M,N,S,T}(m.sense, deepcopy(m.stage_problems), copy(m.transition), m.init_markov_state, m.confidence_interval, m.valid_bound, m.status, m.QUANTILE, m.LPSOLVER, m.theta_bound, m.beta_quantile, m.risk_lambda)
 end
 
 function transition{M,N,S,T}(m::SDDPModel{M,N,S,T}, stage::Int, scenario::Int)
@@ -330,6 +330,44 @@ function set_valid_bound!{M,N,S,T}(m::SDDPModel{M,N,S,T})
         setBound!(m, obj)
     end
 end
+# function set_valid_bound!{M,N,S,T}(m::SDDPModel{M,N,S,T})
+#     obj = 0.0
+#     if m.init_markov_state == 0
+#
+#         P = zeros(S*N)
+#         i=1
+#         for mkv=1:N
+#             for s=1:S
+#                 P[i] = get_transition(m, 1, m.init_markov_state, mkv)/S
+#                 i+=1
+#             end
+#         end
+#         w = risk_averse_weightings(vcat([sp.ext[:LastObjectives] for sp in m.stage_problems[1, :]]...), P,  m.beta_quantile, m.sense==:Max)
+#         i=1
+#         for mkv=1:N
+#             for s=1:S
+#                 obj += w[i] * m.stage_problems[1, mkv].ext[:LastObjectives][s]
+#                 i+=1
+#             end
+#         end
+#
+#     else
+#
+#         P = ones(S) / S
+#         w = risk_averse_weightings(m.stage_problems[1, m.init_markov_state].ext[:LastObjectives], P,  m.beta_quantile, m.sense==:Max)
+#         for s=1:S
+#             obj += w[s] * m.stage_problems[1, m.init_markov_state].ext[:LastObjectives][s]
+#         end
+#
+#     end
+#
+#
+#     if m.sense==:Max && obj < getBound(m)
+#         setBound!(m, obj)
+#     elseif m.sense==:Min && obj > getBound(m)
+#         setBound!(m, obj)
+#     end
+# end
 
 """
 Solve a StageProblem.
@@ -458,16 +496,38 @@ function forward_pass!{M,N,S,T}(m::SDDPModel{M,N,S,T}, npasses::Int=1, print_inf
     end
 
     # set new lower bound
-    if npasses > 1
-        _obj = t_test(obj, conf_level=m.QUANTILE)
+    if abs(m.risk_lambda - 1) < 1e-5
+        if npasses > 1
+            _obj = t_test(obj, conf_level=m.QUANTILE)
+        else
+            _obj = (obj[1], obj[1])
+        end
     else
-        _obj = (obj[1], obj[1])
+        _obj = cvar_estimate(obj, m.beta_quantile, m.risk_lambda)
     end
     if (m.sense==:Max && _obj[1] > getFarCIBound(m)) || (m.sense==:Min && _obj[2] < getFarCIBound(m))
         setCI!(m, _obj)
     end
 
 end
+
+function cvar_estimate(x, beta=1., lambda=1., n=1000)
+    y = zeros(100)#div(length(x), 100))
+    z = zeros(n)
+    for i=1:n
+        rand!(y, x)
+        z[i] = cvar(y, beta, lambda)
+    end
+    t_test(z)
+end
+
+function cvar{T}(x::Vector{T}, beta::Float64=1., lambda::Float64=1.)
+    @assert beta >= 0 && beta <= 1.
+    @assert lambda >= 0 && lambda <= 1.
+    lambda * mean(x) + (1 - lambda) * mean(x[x.<quantile(x, beta)])
+end
+
+
 
 function t_test(x::Vector; conf_level=0.95)
     tstar = quantile(TDist(length(x)-1), 1 - (1 - conf_level)/2)
@@ -567,27 +627,109 @@ stage    - the stage to add the cut
 scenario - the scenario to add the cut to
 
 """
+# function add_cut!{M,N,S,T}(m::SDDPModel{M,N,S,T}, stage::Int, markov::Int)
+#     # TODO we could tidy this up by collecting terms first
+#     #   and then making the cuts
+#     sp = m.stage_problems[stage, markov]
+#     @defExpr(rhs, sum{
+#         get_transition(m, stage, markov, mkv) * (
+#             mean(m.stage_problems[stage+1, mkv].ext[:LastObjectives]) +
+#             sum{
+#                 mean(m.stage_problems[stage+1, mkv].ext[:DualValues][state]) * (
+#                     getVar(sp, state) - getRHS(m.stage_problems[stage+1, mkv].ext[:duals][state])
+#                 )
+#             , state in sp.ext[:state_vars]}
+#         )
+#     , mkv=1:N}
+#     )
+#     if m.sense==:Max
+#         @addConstraint(sp, sp.ext[:theta] <= rhs)
+#     else
+#         @addConstraint(sp, sp.ext[:theta] >= rhs)
+#     end
+# end
+function risk_weightings{M,N,S,T}(m::SDDPModel{M,N,S,T}, stage::Int, markov::Int)
+    P = zeros(S*N)
+    i=1
+    for mkv=1:N
+        for s=1:S
+            P[i] = get_transition(m, stage, markov, mkv)/S
+            i+=1
+        end
+    end
+
+    @assert abs(sum(P) - 1) < 1e-5
+
+    w = risk_averse_weightings(vcat([sp.ext[:LastObjectives] for sp in m.stage_problems[stage+1, :]]...), P,  m.beta_quantile, m.sense==:Max)
+
+    Prob = zeros(N,S)
+    i=1
+    for mkv=1:N
+        for s=1:S
+            Prob[mkv, s] = m.risk_lambda * P[i] + (1-m.risk_lambda) * w[i]
+            i+=1
+        end
+    end
+    return Prob
+end
+
 function add_cut!{M,N,S,T}(m::SDDPModel{M,N,S,T}, stage::Int, markov::Int)
-    # TODO we could tidy this up by collecting terms first
-    #   and then making the cuts
     sp = m.stage_problems[stage, markov]
+
+    Prob = risk_weightings(m, stage, markov)
+    @assert abs(sum(Prob) - 1) < 1e-5
+    # if abs(sum(Prob) - 1) > 1e-5
+    #     @show stage, markov
+    #     @show Prob
+    #     @show [sp.ext[:LastObjectives] for sp in m.stage_problems[stage+1, :]]
+    #     P = zeros(S*N)
+    #     i=1
+    #     for mkv=1:N
+    #         for s=1:S
+    #             P[i] = get_transition(m, stage, markov, mkv)/S
+    #             i+=1
+    #         end
+    #     end
+    #
+    #     @assert abs(sum(P) - 1) < 1e-5
+    #
+    #     w = risk_averse_weightings(vcat([sp.ext[:LastObjectives] for sp in m.stage_problems[stage+1, :]]...), P,  m.beta_quantile, m.sense==:Max)
+    #     @show w
+    #     error()
+    # end
     @defExpr(rhs, sum{
-        get_transition(m, stage, markov, mkv) * (
-            mean(m.stage_problems[stage+1, mkv].ext[:LastObjectives]) +
-            sum{
-                mean(m.stage_problems[stage+1, mkv].ext[:DualValues][state]) * (
-                    getVar(sp, state) - getRHS(m.stage_problems[stage+1, mkv].ext[:duals][state])
-                )
-            , state in sp.ext[:state_vars]}
-        )
+        sum{
+            Prob[mkv, s] * (
+                m.stage_problems[stage+1, mkv].ext[:LastObjectives][s] +
+                sum{
+                    m.stage_problems[stage+1, mkv].ext[:DualValues][state][s] * (
+                        getVar(sp, state) - getRHS(m.stage_problems[stage+1, mkv].ext[:duals][state])
+                    )
+                , state in sp.ext[:state_vars]}
+            )
+        ,s=1:S; Prob[mkv, s] > 1e-6}
     , mkv=1:N}
     )
+
     if m.sense==:Max
         @addConstraint(sp, sp.ext[:theta] <= rhs)
     else
         @addConstraint(sp, sp.ext[:theta] >= rhs)
     end
 end
+
+function risk_averse_weightings{T}(x::Vector{T}, p::Vector{T},  ß::Float64=0.5, ismax::Bool=true)
+    I = sortperm(x, rev=!ismax)
+    y = zeros(length(x))
+    q = 0.
+    for i in I
+        q >=  ß && break
+        y[i] = min(p[i],  ß - q)
+        q += y[i]
+    end
+    return y ./ ß
+end
+risk_averse_weightings{T}(x::Vector{T}, beta::Float64=0.5) = risk_averse_weightings(x, ones(length(x)) / length(x), beta)
 
 function getRHS(c::ConstraintRef{LinearConstraint})
     constr = c.m.linconstr[c.idx]
@@ -608,11 +750,13 @@ end
 """
 Solve the model using the SDDP algorithm.
 """
-function JuMP.solve{M,N,S,T}(m::SDDPModel{M,N,S,T}; forward_passes=1, backward_passes=1, max_iters=1000)
+function JuMP.solve{M,N,S,T}(m::SDDPModel{M,N,S,T}; forward_passes=1, backward_passes=1, max_iters=1000, beta_quantile=1, risk_lambda=1)
     print_stats_header()
     # forward_pass!(m, 1)
     # print_stats(m)
     # while not converged
+    m.beta_quantile = beta_quantile
+    m.risk_lambda = risk_lambda
     i=0
     while i < max_iters
         # Cutting passes

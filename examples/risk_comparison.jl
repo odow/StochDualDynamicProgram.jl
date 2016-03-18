@@ -1,15 +1,15 @@
-using StochDualDynamicProgram, JuMP
+using StochDualDynamicProgram, JuMP, Gadfly, DataFrames
 
 # Hydro problem with different transition matrix
-function solve_newsvendor()
+function solve_newsvendor(Demand, beta_quant=0.5, lambda=1.)
     # Demand for newspapers
     # There are two equally probable scenarios in each stage
     #   Demand[stage, scenario]
-    Demand = [
-        10. 15.;
-        12. 20.;
-        8.  20.
-    ]
+    # Demand = [
+    #     10. 15.;
+    #     12. 20.;
+    #     8.  20.
+    # ]
 
     # Markov state purchase prices
     PurchasePrice = [5., 8.]
@@ -27,7 +27,7 @@ function solve_newsvendor()
     m = SDDPModel(
             stages=3,
             markov_states=2,
-            scenarios=2,
+            scenarios=size(Demand)[2],
             transition=Transition,
             initial_markov_state=1,
             theta_bound = 1000
@@ -59,15 +59,39 @@ function solve_newsvendor()
     solve(m,                # Solve the model using the SDDP algorithm
         forward_passes=1000,  # number of realisations in bound simulation
         backward_passes=10,  # number of cutting iterations before convergence check
-        beta_quantile=0.6,
-        risk_lambda = 0.5,
-        max_iters=100
+        beta_quantile=beta_quant,
+        risk_lambda = lambda,
+        max_iters=500
     )
 
     results = simulate(m,   # Simulate the policy
-        1000,               # number of monte carlo realisations
+        3000,               # number of monte carlo realisations
         [:stock, :buy, :sell]
         )
 
     return results
 end
+
+Demand = 20 * rand(3,30)
+
+r1 = solve_newsvendor(Demand, 0.125, 0.)
+r2 = solve_newsvendor(Demand, 0.125, 0.5)
+r3  = solve_newsvendor(Demand, 0.125, 1.)
+
+obj = DataFrame(
+a = r1[:Objective],
+b = r2[:Objective],
+c = r3[:Objective]
+)
+names!(obj, [symbol("Risk (β, λ) = (0.1, 0.0)"), symbol("Risk (β, λ) = (0.1, 0.5)") , symbol("Risk (β, λ) = (0.1, 1.0)")])
+
+plot(
+    melt(obj),
+    x=:value, color=:variable,
+    Geom.density,
+    Theme(line_width=2pt),
+    Guide.colorkey(""),
+    Guide.title("max λ*E(x) + (1-λ) * CVarᵦ(x)"),
+    Guide.xlabel("Profit (\$)"),
+    Guide.ylabel("Frequency")
+)
