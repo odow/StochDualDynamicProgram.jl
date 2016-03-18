@@ -30,7 +30,7 @@ function solve_newsvendor()
             scenarios=2,
             transition=Transition,
             initial_markov_state=1,
-            theta_bound = 1000
+            value_to_go_bound = 1000
         ) do sp, stage, markov_state
 
         # ====================
@@ -61,7 +61,7 @@ function solve_newsvendor()
         backward_passes=10,  # number of cutting iterations before convergence check
         beta_quantile=0.6,
         risk_lambda = 0.5,
-        max_iters=100
+        max_iterations=5
     )
 
     results = simulate(m,   # Simulate the policy

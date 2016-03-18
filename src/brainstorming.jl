@@ -6,13 +6,13 @@
 #         @defExpr(ex0, $(c.args[1]) - $(c.args[3]))
 #
 #         con = @addConstraint($m, $c)
-#         push!(m.ext[:Scenarios], (con, -(ex1 - ex0).constant, $(kw.args[2])))
+#         push!(m.ext[:scenario_constraints], (con, -(ex1 - ex0).constant, $(kw.args[2])))
 #     end
 # end
 m=Model()
 @defVar(m, x)
 Ω = rand(3)
-m.ext[:Scenarios] = Tuple{Any, Vector{Any}}[]
+m.ext[:scenario_constraints] = Tuple{Any, Vector{Any}}[]
 m.ext[:LastScenario] = 0
 @addScenarioConstraint(m,rhs=Ω, 2x<=rhs)
 display(m.linconstr[1])
@@ -51,7 +51,7 @@ function add_cut!{M,N,S,T}(m::SDDPModel{M,N,S,T}, stage::Int, markov::Int)
             i+=1
         end
     end
-    w = risk_averse_weightings([sp.ext[:LastObjectives] for sp in m.stage_problems[stage+1, :]], P,  m.beta_quantile)
+    w = risk_averse_weightings([sp.ext[:objective_value] for sp in m.stage_problems[stage+1, :]], P,  m.beta_quantile)
 
     Prob = zeros(M,S)
     i=1
@@ -65,10 +65,10 @@ function add_cut!{M,N,S,T}(m::SDDPModel{M,N,S,T}, stage::Int, markov::Int)
     @defExpr(rhs, sum{
         sum{
             Prob[mkv, s] * (
-                m.stage_problems[stage+1, mkv].ext[:LastObjectives][s] +
+                m.stage_problems[stage+1, mkv].ext[:objective_value][s] +
                 sum{
-                    m.stage_problems[stage+1, mkv].ext[:DualValues][state][s] * (
-                        getVar(sp, state) - getRHS(m.stage_problems[stage+1, mkv].ext[:duals][state])
+                    m.stage_problems[stage+1, mkv].ext[:dual_values][state][s] * (
+                        getVar(sp, state) - getRHS(m.stage_problems[stage+1, mkv].ext[:dual_constraints][state])
                     )
                 , state in sp.ext[:state_vars]}
             )
@@ -100,11 +100,11 @@ function set_valid_bound!{M,N,S,T}(m::SDDPModel{M,N,S,T})
                 i+=1
             end
         end
-        w = risk_averse_weightings(vcat([sp.ext[:LastObjectives] for sp in m.stage_problems[1, :]]...), P,  m.beta_quantile, m.sense==:Max)
+        w = risk_averse_weightings(vcat([sp.ext[:objective_value] for sp in m.stage_problems[1, :]]...), P,  m.beta_quantile, m.sense==:Max)
         i=1
         for mkv=1:N
             for s=1:S
-                obj += w[i] * m.stage_problems[1, mkv].ext[:LastObjectives][s]
+                obj += w[i] * m.stage_problems[1, mkv].ext[:objective_value][s]
                 i+=1
             end
         end
@@ -112,9 +112,9 @@ function set_valid_bound!{M,N,S,T}(m::SDDPModel{M,N,S,T})
     else
 
         P = ones(S) / S
-        w = risk_averse_weightings(m.stage_problems[1, m.init_markov_state]sp.ext[:LastObjectives], P,  m.beta_quantile, m.sense==:Max)
+        w = risk_averse_weightings(m.stage_problems[1, m.init_markov_state]sp.ext[:objective_value], P,  m.beta_quantile, m.sense==:Max)
         for s=1:S
-            obj += w[s] * m.stage_problems[1, m.init_markov_state].ext[:LastObjectives][s]
+            obj += w[s] * m.stage_problems[1, m.init_markov_state].ext[:objective_value][s]
         end
 
     end
@@ -216,7 +216,7 @@ function solve_newsvendor(Demand, beta_quant=0.5)
             scenarios=size(Demand)[2],
             transition=Transition,
             initial_markov_state=1,
-            theta_bound = 1000
+            value_to_go_bound = 1000
         ) do sp, stage, markov_state
 
         # ====================

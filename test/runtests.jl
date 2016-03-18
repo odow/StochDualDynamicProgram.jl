@@ -28,27 +28,27 @@ facts("@defStateVar") do
     @fact :x in m.ext[:state_vars] --> true
     @fact m.colLower --> roughly([0, -Inf], 1e-4)
     @fact m.colUpper --> roughly([3, Inf], 1e-4)
-    @fact haskey(m.ext[:duals], :x) --> true
-    @fact getLower(m.ext[:duals][:x]) --> 2.5
-    @fact getUpper(m.ext[:duals][:x]) --> 2.5
+    @fact haskey(m.ext[:dual_constraints], :x) --> true
+    @fact getLower(m.ext[:dual_constraints][:x]) --> 2.5
+    @fact getUpper(m.ext[:dual_constraints][:x]) --> 2.5
 
     m = StochDualDynamicProgram.StageProblem()
     @defStateVar(m, y <= 1, y0==1.0)
     @fact :y in m.ext[:state_vars] --> true
     @fact m.colLower --> roughly([-Inf, -Inf], 1e-4)
     @fact m.colUpper --> roughly([1, Inf], 1e-4)
-    @fact haskey(m.ext[:duals], :y) --> true
-    @fact getLower(m.ext[:duals][:y]) --> 1.0
-    @fact getUpper(m.ext[:duals][:y]) --> 1.0
+    @fact haskey(m.ext[:dual_constraints], :y) --> true
+    @fact getLower(m.ext[:dual_constraints][:y]) --> 1.0
+    @fact getUpper(m.ext[:dual_constraints][:y]) --> 1.0
 
     m = StochDualDynamicProgram.StageProblem()
     @defStateVar(m, z, z0==1.0)
     @fact :z in m.ext[:state_vars] --> true
     @fact m.colLower --> roughly([-Inf, -Inf], 1e-4)
     @fact m.colUpper --> roughly([Inf, Inf], 1e-4)
-    @fact haskey(m.ext[:duals], :z) --> true
-    @fact getLower(m.ext[:duals][:z]) --> 1.0
-    @fact getUpper(m.ext[:duals][:z]) --> 1.0
+    @fact haskey(m.ext[:dual_constraints], :z) --> true
+    @fact getLower(m.ext[:dual_constraints][:z]) --> 1.0
+    @fact getUpper(m.ext[:dual_constraints][:z]) --> 1.0
 end
 
 facts("@defValueToGo") do
