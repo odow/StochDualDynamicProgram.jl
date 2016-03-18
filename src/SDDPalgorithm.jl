@@ -148,6 +148,25 @@ function add_cut!{M,N,S,T}(m::SDDPModel{M,N,S,T}, stage::Int, markov_state::Int)
     else
         @addConstraint(sp, sp.ext[:theta] >= rhs)
     end
+    # TODO :: Add cut > file
+    write_cut("C:/temp/cuts.csv", sp, stage, markov_state, rhs)
+end
+
+function write_cut(filename::ASCIIString, sp::Model, stage::Int, markov_state::Int, rhs::JuMP.GenericAffExpr)
+    n = length(rhs.vars)
+    open(filename, "a") do f
+        write(f, string(stage, ", ", markov_state, ", ", rhs.constant))
+        for v in sp.ext[:state_vars]
+            y = 0.
+            for i in 1:n
+                if getVar(sp, v) == rhs.vars[i]
+                    y += rhs.coeffs[i]
+                end
+            end
+            write(f, string(", ", y))
+        end
+        write(f, "\n")
+    end
 end
 
 """
