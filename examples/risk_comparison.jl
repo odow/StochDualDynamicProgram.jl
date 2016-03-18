@@ -61,7 +61,7 @@ function solve_newsvendor(Demand, beta_quant=0.5, lambda=1.)
         backward_passes=10,  # number of cutting iterations before convergence check
         beta_quantile=beta_quant,
         risk_lambda = lambda,
-        max_iters=100
+        max_iters=500
     )
 
     results = simulate(m,   # Simulate the policy
@@ -74,9 +74,9 @@ end
 
 Demand = 20 * rand(3,30)
 
-r1 = solve_newsvendor(Demand, 0.1, 0.)
-r2 = solve_newsvendor(Demand, 0.1, 0.5)
-r3  = solve_newsvendor(Demand, 0.1, 1.)
+r1 = solve_newsvendor(Demand, 0.125, 0.)
+r2 = solve_newsvendor(Demand, 0.125, 0.5)
+r3  = solve_newsvendor(Demand, 0.125, 1.)
 
 obj = DataFrame(
 a = r1[:Objective],

@@ -13,6 +13,8 @@ Pkg.clone("https://github.com/odow/StochDualDynamicProgram.jl.git")
 ## Usage
 See the `/examples` folder for example usage. But briefly:
 
+# This is now all out of date... just look at the examples
+
 ### `SDDPModel`
 
 This function creates a new SDDP model object. `SDDPModel()` takes the following keyword arguments:
