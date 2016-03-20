@@ -1,4 +1,8 @@
-# TODO at the moment we assume uniform scenario probability in each markov state
+# TODO
+#  - at the moment we assume uniform scenario probability in each markov state
+#  - cut selection [de Matos, Philpott, Finardi (2015). Improving the performance of stochastic dual dynamic programming]
+#  - cut addition. why add a cut twice?
+#  - bound estimation when risk averse
 
 module StochDualDynamicProgram
 
@@ -9,7 +13,7 @@ using Distributions
 
 export SDDPModel,
     @defStateVar, @defValueToGo, @addScenarioConstraint, @setStageProfit,
-    simulate
+    simulate, load_cuts!
 
 include("macros.jl")
 include("SDDPModel.jl")

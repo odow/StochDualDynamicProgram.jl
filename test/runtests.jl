@@ -90,7 +90,7 @@ end
 
 facts("Newsvendor Example") do
     include("../examples/newsvendor.jl")
-
+    warn("Estimating the CI of bound is fraught")
     results = solve_newsvendor()
     # @fact mean(results[:Objective]) --> roughly(95., 0.5)
 end

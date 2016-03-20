@@ -148,10 +148,15 @@ function add_cut!{M,N,S,T}(m::SDDPModel{M,N,S,T}, stage::Int, markov_state::Int)
     else
         @addConstraint(sp, sp.ext[:theta] >= rhs)
     end
-    # TODO :: Add cut > file
-    write_cut("C:/temp/cuts.csv", sp, stage, markov_state, rhs)
+
+    if m.cuts_filename != nothing
+        write_cut(m.cuts_filename, sp, stage, markov_state, rhs)
+    end
 end
 
+"""
+This function writes the coefficits of a cut to file
+"""
 function write_cut(filename::ASCIIString, sp::Model, stage::Int, markov_state::Int, rhs::JuMP.GenericAffExpr)
     n = length(rhs.vars)
     open(filename, "a") do f

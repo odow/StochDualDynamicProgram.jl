@@ -11,6 +11,7 @@ type SDDPModel{M,N,S,T}
     beta_quantile::Float64
     risk_lambda::Float64
     weightings_matrix::Array{Float64, 2}
+    cuts_filename::Union{Void, ASCIIString}
 end
 
 """
@@ -20,6 +21,7 @@ Creates an SDDPModel type
 
 Keyword Arguments:
 conf_level        - confidence level for the lower bound
+cuts_filename     - ASCIIString filename for cut output. If specified cuts will be written.
 initial_markov_state - the scenario at time 0. Model transitions at the start of time period 1
 markov_states     - the number of markov states
 scenarios         - the number of stagewise independent scenarios in a markov state
@@ -31,6 +33,7 @@ value_to_go_bound - Initial bound on value to go
 """
 function SDDPModel(;
     conf_level=0.95,
+    cuts_filename=nothing,
     initial_markov_state=0,
     markov_states=1,
     scenarios=1,
@@ -68,7 +71,7 @@ function SDDPModel(;
     # TODO :: Case where Transition matrix is Array{Float64, 3}
 
     my_inf = (sense==:Max?Inf:-Inf)
-    SDDPModel{stages,markov_states,scenarios,T}(sense, Array(JuMP.Model, (stages, markov_states)), transition, initial_markov_state, (-my_inf, -my_inf), my_inf, conf_level, solver, value_to_go_bound, 1., 1., zeros(markov_states, scenarios))
+    SDDPModel{stages,markov_states,scenarios,T}(sense, Array(JuMP.Model, (stages, markov_states)), transition, initial_markov_state, (-my_inf, -my_inf), my_inf, conf_level, solver, value_to_go_bound, 1., 1., zeros(markov_states, scenarios), cuts_filename)
 end
 
 """
@@ -104,13 +107,14 @@ end
 
 function SDDPModel(
     build_subproblem!::Function;
-    sense=:Max,
-    stages=1,
+    conf_level=0.95,
+    cuts_filename=nothing,
+    initial_markov_state=0,
     markov_states=1,
     scenarios=1,
+    sense=:Max,
+    stages=1,
     transition=nothing,
-    initial_markov_state=0,
-    conf_level=0.95,
     solver=ClpSolver(),
     value_to_go_bound=1e3
     )
@@ -125,7 +129,8 @@ function SDDPModel(
         initial_markov_state=initial_markov_state,
         conf_level=conf_level,
         solver=solver,
-        value_to_go_bound=value_to_go_bound
+        value_to_go_bound=value_to_go_bound,
+        cuts_filename=cuts_filename
     )
 
     # For every stage
@@ -185,7 +190,7 @@ end
 So we can copy an SDDPModel
 """
 function Base.copy{M,N,S,T}(m::SDDPModel{M,N,S,T})
-    SDDPModel{M,N,S,T}(m.sense, deepcopy(m.stage_problems), copy(m.transition), m.init_markov_state, m.confidence_interval, m.valid_bound, m.QUANTILE, m.LPSOLVER, m.value_to_go_bound, m.beta_quantile, m.risk_lambda, m.weightings_matrix)
+    SDDPModel{M,N,S,T}(m.sense, deepcopy(m.stage_problems), copy(m.transition), m.init_markov_state, m.confidence_interval, m.valid_bound, m.QUANTILE, m.LPSOLVER, m.value_to_go_bound, m.beta_quantile, m.risk_lambda, m.weightings_matrix, m.cuts_filename)
 end
 
 """
@@ -247,3 +252,36 @@ end
 # Check this is a StageProblem
 is_sp(m::JuMP.Model) = haskey(m.ext, :is_sp) && m.ext[:is_sp]
 is_sp(m) = false
+
+
+"""
+This function loads cuts from a file.
+"""
+function load_cuts!{M,N,S,T}(m::SDDPModel{M,N,S,T}, filename::ASCIIString)
+    open(filename, "r") do f
+        while true
+            line = readline(f)
+            (line == nothing || line == "") && break
+            line = split(strip(line), ",")
+            @assert length(line) >= 3
+            stage = parse(Int, line[1])
+            markov_state = parse(Int, line[2])
+            sp = m.stage_problems[stage, markov_state]
+            theta = parse(Float64, line[3])
+
+            @assert length(line) == (3 + length(sp.ext[:state_vars]))
+            if length(line) > 4
+                xcoeff = map(x->parse(Float64, x), line[4:end])
+            else
+                xcoeff = [parse(Float64, line[4])]
+            end
+            @addConstraint(sp, sp.ext[:theta] <= theta + sum{xcoeff[i]*getVar(sp, v), (i, v) in enumerate(sp.ext[:state_vars])})
+        end
+    end
+end
+function load_cuts!{M,N,S,T}(m::SDDPModel{M,N,S,T})
+    if m.cuts_filename == nothing
+        error("Please specify a file to load cuts from.")
+    end
+    load_cuts!(m, m.cuts_filename)
+end
