@@ -31,7 +31,7 @@ macro defStateVar(m, x, x0)
         @defVar $m $x
         @defVar $m $(esc(k))
         push!($m.ext[:state_vars], $(Expr(:quote, x_sym)))
-        $m.ext[:duals][$(Expr(:quote, x_sym))] = (@addConstraint $m $(esc(x0)))
+        $m.ext[:dual_constraints][$(Expr(:quote, x_sym))] = (@addConstraint $m $(esc(x0)))
     end
 end
 
@@ -72,10 +72,10 @@ macro addScenarioConstraint(m, kw, c)
     m = esc(m)
     v = esc(kw.args[2])
     quote
-        @assert length(collect($v)) == length($m.ext[:LastObjectives])
+        @assert length(collect($v)) == length($m.ext[:objective_value])
         $(esc(kw.args[1])) = 0
         con = @addConstraint($m, $(esc(c)))
-        push!($m.ext[:Scenarios], (con, collect($v)))
+        push!($m.ext[:scenario_constraints], (con, collect($v)))
     end
 end
 

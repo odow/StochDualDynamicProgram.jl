@@ -131,7 +131,7 @@ function solve_hydro()
     solve(m,                # Solve the model using the SDDP algorithm
         forward_passes=1000,  # number of realisations in bound simulation
         backward_passes=10,   # number of cutting iterations before convergence check
-        max_iters=50
+        max_iterations=5
     )
 
     results = simulate(m,   # Simulate the policy
@@ -187,7 +187,7 @@ function solve_hydro2()
     n = length(A)
 
     # Initialise SDDP Model
-    m = SDDPModel(sense=:Min, stages=3, markov_states=2, transition=Transition, theta_bound=-1500) do sp, stage, markov_state
+    m = SDDPModel(sense=:Min, stages=3, markov_states=2, transition=Transition, value_to_go_bound=-1500) do sp, stage, markov_state
         # ------------------------------------------------------------------
         #   SDDP State Variables
         # Level of upper reservoir
@@ -255,7 +255,7 @@ function solve_hydro2()
     solve(m,                # Solve the model using the SDDP algorithm
         forward_passes=2000,  # number of realisations in bound simulation
         backward_passes=10,   # number of cutting iterations before convergence check
-        max_iters=50
+        max_iterations=5
     )
 
     results = simulate(m,   # Simulate the policy
