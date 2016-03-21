@@ -10,6 +10,10 @@
 #
 # Currently only able to handle single variables. Will break easily.
 # """
+
+# Much of the functionality in @defStateVar is shamelessly copied from
+# both the JuMP @defVar and JuMPer @defUnc(https://github.com/IainNZ/JuMPeR.jl/blob/master/src/robustmacro.jl)
+
 import JuMP: assert_validmodel, validmodel, esc_nonconstant
 import JuMP: getloopedcode, buildrefsets, getname, registervar
 import JuMP: storecontainerdata, isdependent, JuMPContainerData, pushmeta!, JuMPContainer
@@ -17,17 +21,14 @@ import JuMP: EMPTYSTRING
 using Base.Meta
 
 function State(m::Model, lower::Number, upper::Number, name)
-    Variable(m,lower,upper,:Cont,utf8(string(name)),NaN)
+    v = Variable(m,lower,upper,:Cont,utf8(string(name)),NaN)
+    push!(m.ext[:state_vars], v)
+    return v
 end
 
 function State0(m::Model, init, name, name0)
     v0 = Variable(m,-Inf,Inf,:Cont,utf8(string(name0)),init)
-    c = @addConstraint(m, v0 == init)
-    if haskey(m.ext[:dual_constraints], name)
-        push!(m.ext[:dual_constraints][name], c)
-    else
-        m.ext[:dual_constraints][name] = ConstraintRef[c]
-    end
+    push!(m.ext[:dual_constraints], @addConstraint(m, v0 == init))
     return v0
 end
 
@@ -111,7 +112,7 @@ macro defStateVar(args...)
         return assert_validmodel(m, quote
             $(esc(var)) = State($m, $lb, $ub, $quotvarname)
             registervar($m, $quotvarname, $escvarname)
-            push!($m.ext[:state_vars], $quotvarname)
+            # push!($m.ext[:state_vars], $quotvarname)
 
             $(esc(x0_name)) = State0($m, $x0_value, $quotvarname, $quotx0name)
             registervar($m, $quotx0name, $escx0name)
@@ -144,7 +145,7 @@ macro defStateVar(args...)
     return assert_validmodel(m, quote
         $looped1
         push!($(m).dictList, $escvarname)
-        push!($m.ext[:state_vars], $quotvarname)
+        # push!($m.ext[:state_vars], $quotvarname)
         registervar($m, $quotvarname, $escvarname)
         storecontainerdata($m, $escvarname, $quotvarname,
                            $(Expr(:tuple,map(clear_dependencies1,1:length(idxsets1))...)),

@@ -158,15 +158,8 @@ function SDDPModel(
             end
 
             # Initialise storage for scenario duals now we know the number of state variables
-            for v in sp.ext[:state_vars]
-                if isa(getVar(sp, v), JuMP.Variable)
-                    sp.ext[:dual_values][v] = zeros(scenarios)
-                else
-                    sp.ext[:dual_values][v] = Vector{Float64}[]
-                    for i in getVar(sp, v)
-                        push!(sp.ext[:dual_values][v], zeros(scenarios))
-                    end
-                end
+            for i in 1:length(sp.ext[:state_vars])
+                push!(sp.ext[:dual_values], zeros(scenarios))
             end
 
             # If the user hasn't specified an objective
@@ -244,16 +237,15 @@ dictionary.
 function StageProblem(scenarios::Int=1)
     sp = Model()
     sp.ext[:is_sp] = true
-    sp.ext[:state_vars] = Any[]
-    sp.ext[:complex_state_vars] = Any[]
-    sp.ext[:dual_constraints] = Dict{Any, Vector{ConstraintRef}}()
+    sp.ext[:state_vars] = JuMP.Variable[]
+    sp.ext[:dual_constraints] = JuMP.ConstraintRef[]
     sp.ext[:theta] = nothing
     sp.ext[:old_scenario] = (0,0)
     sp.ext[:scenario_constraints] = Tuple{Any, Vector{Any}}[]
     sp.ext[:LastScenario] = 0
     sp.ext[:CurrentScenario] = 0
     sp.ext[:objective_value] = zeros(scenarios)
-    sp.ext[:dual_values] = Dict{Any, Vector{Vector{Float64}}}()
+    sp.ext[:dual_values] = Vector{Float64}[]
     return sp
 end
 
