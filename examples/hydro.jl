@@ -58,16 +58,13 @@ function solve_hydro()
         # ------------------------------------------------------------------
         #   SDDP State Variables
         # Level of upper reservoir
-        @defStateVar(sp,
-            0 <= upper_reservoir <= reservoir_max[:upper],
-            upper_reservoir0==reservoir_initial[:upper]
-        )
+        @defStateVar(sp, 0 <= reservoir[r=RESERVOIRS] <= reservoir_max[r], reservoir0=reservoir_initial[r])
 
         # Level of lower reservoir
-        @defStateVar(sp,
-            0 <= lower_reservoir <= reservoir_max[:lower],
-            lower_reservoir0==reservoir_initial[:lower]
-        )
+        # @defStateVar(sp,
+        #     0 <= lower_reservoir <= reservoir_max[:lower],
+        #     lower_reservoir0==reservoir_initial[:lower]
+        # )
 
         # ------------------------------------------------------------------
         #   SDDP Value to Go
@@ -92,11 +89,11 @@ function solve_hydro()
 
         # ------------------------------------------------------------------
         # Conservation constraints
-        @addConstraint(sp, upper_reservoir == upper_reservoir0 -
+        @addConstraint(sp, reservoir[:upper] == reservoir0[:upper] -
             (outflow[:upper] + spill[:upper])
         )
 
-        @addConstraint(sp, lower_reservoir == lower_reservoir0 +
+        @addConstraint(sp, reservoir[:lower] == reservoir0[:lower] +
             (outflow[:upper] + spill[:upper]) -
             (outflow[:lower] + spill[:lower])
         )
@@ -193,13 +190,13 @@ function solve_hydro2()
         # Level of upper reservoir
         @defStateVar(sp,
             0 <= upper_reservoir <= reservoir_max[:upper],
-            upper_reservoir0==reservoir_initial[:upper]
+            upper_reservoir0=reservoir_initial[:upper]
         )
 
         # Level of lower reservoir
         @defStateVar(sp,
             0 <= lower_reservoir <= reservoir_max[:lower],
-            lower_reservoir0==reservoir_initial[:lower]
+            lower_reservoir0=reservoir_initial[:lower]
         )
 
         # ------------------------------------------------------------------

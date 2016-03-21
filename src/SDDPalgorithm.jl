@@ -21,8 +21,20 @@ function pass_states_forward!{M,N,S,T}(m::SDDPModel{M,N,S,T}, stage::Int, markov
             # Check sanity
             @assert haskey(next_sp.ext[:dual_constraints], state)
 
-            # Change RHS on dummy constraint
-            chgConstrRHS(next_sp.ext[:dual_constraints][state], getValue(getVar(sp, state)))
+            vstar = getValue(getVar(sp, state))
+
+            if isa(vstar, Vector)
+                for (i, val) in enumerate(vstar)
+                    chgConstrRHS(next_sp.ext[:dual_constraints][state][i], val)
+                end
+            elseif isa(vstar, JuMP.JuMPArray)
+                for (i, (key, val)) in enumerate(vstar)
+                    chgConstrRHS(next_sp.ext[:dual_constraints][state][i], val)
+                end
+            elseif isa(vstar, Number)
+                # Change RHS on dummy constraint
+                chgConstrRHS(next_sp.ext[:dual_constraints][state][1], vstar)
+            end
         end
     end
 end

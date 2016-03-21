@@ -31,12 +31,12 @@ function solve_newsvendor()
             transition=Transition,
             initial_markov_state=1,
             value_to_go_bound = 1000,
-            cuts_filename="C:/temp/news_vendor.csv"
+            cuts_filename="news_vendor.csv"
         ) do sp, stage, markov_state
 
         # ====================
         #   State variable
-        @defStateVar(sp, 0 <= stock <= 100, stock0==5)
+        @defStateVar(sp, 0 <= stock <= 100, stock0=5)
 
         # ====================
         #   Other variables
@@ -57,7 +57,7 @@ function solve_newsvendor()
 
     end
 
-    load_cuts!(m)
+    # load_cuts!(m)
 
     solve(m,                # Solve the model using the SDDP algorithm
         forward_passes=1000,  # number of realisations in bound simulation

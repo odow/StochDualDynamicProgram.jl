@@ -1,32 +1,14 @@
-# This function contains JuMP extension macros
-# """
-# Define a new state variable in the stage problem.
-#
-# Usage:
-#
-#     @defStateVar(m, 0<=x<=1, x0==0.5)
-#     @defStateVar(m, y<=1, y0==0.5)
-#     @defStateVar(m, z, z0==0.5)
-#
-# Currently only able to handle single variables. Will break easily.
-# """
-import JuMP: assert_validmodel, validmodel, esc_nonconstant
-import JuMP: getloopedcode, buildrefsets, getname, registervar
-import JuMP: storecontainerdata, isdependent, JuMPContainerData, pushmeta!, JuMPContainer
-import JuMP: EMPTYSTRING
-using Base.Meta
-
 function State(m::Model, lower::Number, upper::Number, name)
     Variable(m,lower,upper,:Cont,utf8(string(name)),NaN)
 end
 
-function State0(m::Model, init, name, name0)
+function State0(m::Model, init::Number, name, name0)
     v0 = Variable(m,-Inf,Inf,:Cont,utf8(string(name0)),init)
     c = @addConstraint(m, v0 == init)
     if haskey(m.ext[:dual_constraints], name)
         push!(m.ext[:dual_constraints][name], c)
     else
-        m.ext[:dual_constraints][name] = ConstraintRef[c]
+        m.ext[:dual_constraints][name] = Any[c]
     end
     return v0
 end
@@ -98,7 +80,7 @@ macro defStateVar(args...)
 
     # process keyword arguments
     x0_name = x0.args[1]
-    x0_value = esc(x0.args[2])
+    x0_value = x0.args[2]
 
     quotx0name = quot(getname(x0_name))
     escx0name = esc(getname(x0_name))
@@ -115,6 +97,8 @@ macro defStateVar(args...)
 
             $(esc(x0_name)) = State0($m, $x0_value, $quotvarname, $quotx0name)
             registervar($m, $quotx0name, $escx0name)
+
+            $m.ext[:dual_constraints][$quotvarname] = [@addConstraint(m, $(esc(x0_name)) == $x0_value)]
 
             $(esc(var)), $(esc(x0_name))
         end)
@@ -165,78 +149,43 @@ macro defStateVar(args...)
 
 end
 
-# macro defStateVar(m, x, x0)
-#     m = esc(m)
-#     @assert x0.head == :comparison
-#     if typeof(x) == Symbol
-#         x_sym = x
-#     elseif x.head == :comparison
-#         if length(x.args)  == 5 # Two sided
-#             x_sym = x.args[3]
-#         elseif length(x.args) == 3 # One sided
-#             x_sym = x.args[1]
-#         else
-#             error("Too many arguments for $(x.args)")
-#         end
-#     end
-#     x = esc(x)
-#     k = x0.args[1]
-#     quote
-#         @assert is_sp($m)
-#         @defVar $m $x
-#         @defVar $m $(esc(k))
-#         push!($m.ext[:state_vars], $(Expr(:quote, x_sym)))
-#         $m.ext[:dual_constraints][$(Expr(:quote, x_sym))] = (@addConstraint $m $(esc(x0)))
-#     end
-# end
-
-"""
-Define the value to go variable.
-
-Usage:
-
-    @defValueToGo(m, 0<=theta<=1)
-    @defStateVar(m, theta<=1)
-    @defStateVar(m, theta)
-
-"""
-macro defValueToGo(m, x)
-    m = esc(m)
-    if typeof(x) == Symbol
-        x_sym = x
-    elseif x.head == :comparison
-        if length(x.args)  == 5 # Two sided
-            x_sym = x.args[3]
-        elseif length(x.args) == 3 # One sided
-            x_sym = x.args[1]
-        else
-            error("Too many arguments for $(x.args)")
-        end
-    end
-    quote
-        @assert is_sp($m)
-        $m.ext[:theta] = @defVar $m $(esc(x))
-    end
+function StageProblem(scenarios::Int=1)
+    sp = Model()
+    sp.ext[:is_sp] = true
+    sp.ext[:state_vars] = Any[]
+    sp.ext[:dual_constraints] = Dict{Any, Vector{ConstraintRef}}()
+    sp.ext[:theta] = nothing
+    sp.ext[:old_scenario] = (0,0)
+    sp.ext[:scenario_constraints] = Tuple{Any, Vector{Any}}[]
+    sp.ext[:LastScenario] = 0
+    sp.ext[:CurrentScenario] = 0
+    sp.ext[:objective_value] = zeros(scenarios)
+    sp.ext[:dual_values] = Dict{Any, Vector{Float64}}()
+    return sp
 end
 
-"""
-Right now you can only add an additive RHS with no coefficient. ie
-    @addScenarioConstraint(m, rhs=[1,2,3], (...) <= (...) + rhs
-"""
-macro addScenarioConstraint(m, kw, c)
-    m = esc(m)
-    v = esc(kw.args[2])
-    quote
-        @assert length(collect($v)) == length($m.ext[:objective_value])
-        $(esc(kw.args[1])) = 0
-        con = @addConstraint($m, $(esc(c)))
-        push!($m.ext[:scenario_constraints], (con, collect($v)))
-    end
-end
+sp = StageProblem()
+@defStateVar(sp, 0 <= x <= 1, y0=0.5)
 
-macro setStageProfit(m, ex)
-    m = esc(m)
-    quote
-        $m.ext[:StageProfit] = @defExpr $(esc(gensym())) $(esc(ex))
-    end
-end
+sp.ext
+m=Model();m.ext[:state_vars] = Symbol[];m.ext[:dual_constraints] = Dict{Any, Any}()
+@JuMPdefStateVar(m, x>=0, x0=1.12)
+solve(m)
+getValue(x0)
+m.ext
+
+
+
+m=Model();m.ext[:state_vars] = Symbol[];m.ext[:dual_constraints] = Dict{Symbol, Any}()
+
+S = [:upper, :lower]
+A = Dict{Symbol, Float64}(:upper=>2., :lower=>1.)
+
+@defStateVar(m, x[r=S]>=A[r], x0=A[r])
+m.ext
+m.colLower
+solve(m)
+getValue(x0[:lower])
+
+
+println("The End.")

@@ -3,6 +3,7 @@
 #  - cut selection [de Matos, Philpott, Finardi (2015). Improving the performance of stochastic dual dynamic programming]
 #  - cut addition. why add a cut twice?
 #  - bound estimation when risk averse
+#  - vectorise state variables
 
 module StochDualDynamicProgram
 
