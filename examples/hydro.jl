@@ -58,24 +58,8 @@ function solve_hydro()
         # ------------------------------------------------------------------
         #   SDDP State Variables
         # Level of upper reservoir
-        @defStateVar(sp,
-            0 <= upper_reservoir <= reservoir_max[:upper],
-            upper_reservoir0==reservoir_initial[:upper]
-        )
+        @defStateVar(sp, 0 <= reservoir[r=RESERVOIRS] <= reservoir_max[r], reservoir0=reservoir_initial[r])
 
-        # Level of lower reservoir
-        @defStateVar(sp,
-            0 <= lower_reservoir <= reservoir_max[:lower],
-            lower_reservoir0==reservoir_initial[:lower]
-        )
-
-        # ------------------------------------------------------------------
-        #   SDDP Value to Go
-        @defValueToGo(sp, value_to_go <= M)
-        if stage==3
-            # No value to go in last stage
-            @addConstraint(sp, value_to_go==0)
-        end
         # ------------------------------------------------------------------
         #   Additional variables
         # Quantity to flow through turbine of reservoir r
@@ -92,11 +76,11 @@ function solve_hydro()
 
         # ------------------------------------------------------------------
         # Conservation constraints
-        @addConstraint(sp, upper_reservoir == upper_reservoir0 -
+        @addConstraint(sp, reservoir[:upper] == reservoir0[:upper] -
             (outflow[:upper] + spill[:upper])
         )
 
-        @addConstraint(sp, lower_reservoir == lower_reservoir0 +
+        @addConstraint(sp, reservoir[:lower] == reservoir0[:lower] +
             (outflow[:upper] + spill[:upper]) -
             (outflow[:lower] + spill[:lower])
         )
@@ -122,10 +106,8 @@ function solve_hydro()
 
         # ------------------------------------------------------------------
         #   Objective Function
-        @setObjective(sp, Max,
-            Price[stage, markov_state]*generation_quantity +
-            value_to_go
-        )
+        @setStageProfit(sp, Price[stage, markov_state]*generation_quantity)
+
     end
 
     solve(m,                # Solve the model using the SDDP algorithm
@@ -136,8 +118,7 @@ function solve_hydro()
 
     results = simulate(m,   # Simulate the policy
         1000,               # number of monte carlo realisations
-        [:lower_reservoir,  # variables to return
-        :upper_reservoir,
+        [:reservoir,  # variables to return
         :dispatch,
         :outflow,
         :spill]
@@ -193,13 +174,13 @@ function solve_hydro2()
         # Level of upper reservoir
         @defStateVar(sp,
             0 <= upper_reservoir <= reservoir_max[:upper],
-            upper_reservoir0==reservoir_initial[:upper]
+            upper_reservoir0=reservoir_initial[:upper]
         )
 
         # Level of lower reservoir
         @defStateVar(sp,
             0 <= lower_reservoir <= reservoir_max[:lower],
-            lower_reservoir0==reservoir_initial[:lower]
+            lower_reservoir0=reservoir_initial[:lower]
         )
 
         # ------------------------------------------------------------------

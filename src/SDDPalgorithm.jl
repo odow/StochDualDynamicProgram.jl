@@ -16,13 +16,12 @@ function pass_states_forward!{M,N,S,T}(m::SDDPModel{M,N,S,T}, stage::Int, markov
 
     # For each of the problems in the next stage
     for next_sp in m.stage_problems[stage+1,:]
-        # For each state variable
-        for state in next_sp.ext[:state_vars]
-            # Check sanity
-            @assert haskey(next_sp.ext[:dual_constraints], state)
+        # Check sanity
+        @assert length(sp.ext[:dual_constraints]) == length(next_sp.ext[:dual_constraints]) == length(next_sp.ext[:state_vars])
 
-            # Change RHS on dummy constraint
-            chgConstrRHS(next_sp.ext[:dual_constraints][state], getValue(getVar(sp, state)))
+        # For each state variable
+        for i in 1:length(next_sp.ext[:state_vars])
+            chgConstrRHS(next_sp.ext[:dual_constraints][i], getValue(sp.ext[:state_vars][i]))
         end
     end
 end
@@ -134,10 +133,10 @@ function add_cut!{M,N,S,T}(m::SDDPModel{M,N,S,T}, stage::Int, markov_state::Int)
             m.weightings_matrix[new_markov, scenario] * (
                 new_sp.ext[:objective_value][scenario] +
                 sum{
-                    new_sp.ext[:dual_values][state][scenario] * (
-                        getVar(sp, state) - getRHS(new_sp.ext[:dual_constraints][state])
+                    new_sp.ext[:dual_values][i][scenario] * (
+                        sp.ext[:state_vars][i] - getRHS(new_sp.ext[:dual_constraints][i])
                     )
-                , state in sp.ext[:state_vars]}
+                , i in 1:length(sp.ext[:state_vars])}
             )
         ,scenario in 1:S; m.weightings_matrix[new_markov, scenario] > 1e-6}
     , (new_markov, new_sp) in enumerate(m.stage_problems[stage+1, :])}
@@ -164,7 +163,7 @@ function write_cut(filename::ASCIIString, sp::Model, stage::Int, markov_state::I
         for v in sp.ext[:state_vars]
             y = 0.
             for i in 1:n
-                if getVar(sp, v) == rhs.vars[i]
+                if v == rhs.vars[i]
                     y += rhs.coeffs[i]
                 end
             end
@@ -306,8 +305,8 @@ function solve!(sp::Model)
     sp.ext[:objective_value][s] = getObjectiveValue(sp)
 
     # store the dual value for each of the state variables
-    for v in sp.ext[:state_vars]
-        sp.ext[:dual_values][v][s] = getDual(sp.ext[:dual_constraints][v])
+    for i in 1:length(sp.ext[:state_vars])
+        sp.ext[:dual_values][i][s] = getDual(sp.ext[:dual_constraints][i])
     end
 
     return

@@ -36,7 +36,7 @@ function solve_newsvendor(Demand, beta_quant=0.5, lambda=1.)
 
         # ====================
         #   State variable
-        @defStateVar(sp, 0 <= stock <= 100, stock0==5)
+        @defStateVar(sp, 0 <= stock <= 100, stock0=5)
 
         # ====================
         #   Other variables
