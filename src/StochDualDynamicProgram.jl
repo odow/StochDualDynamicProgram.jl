@@ -2,8 +2,6 @@
 #  - at the moment we assume uniform scenario probability in each markov state
 #  - cut selection [de Matos, Philpott, Finardi (2015). Improving the performance of stochastic dual dynamic programming]
 #  - cut addition. why add a cut twice?
-#  - bound estimation when risk averse
-#  - vectorise state variables
 
 module StochDualDynamicProgram
 
@@ -24,32 +22,30 @@ include("SDDPalgorithm.jl")
 Solve the model using the SDDP algorithm.
 
 Inputs:
-m               - the SDDP model object
-forward_passes  - the number of realisations to conduct when testing for convergence
-backward_passes - the number of cuttting passes to conduct before testing for convergence
-max_iterations  - the maximum number of iterations (cutting passes, convergence testing) to complete before termination
-beta_quantile   - CVar quantile for nested risk aversion
-risk_lambda     - Weighting on convex combination of Expectation and CVar
+m                  - the SDDP model object
+simulation_passes  - the number of realisations to conduct when testing for convergence
+maximum_iterations - the maximum number of iterations (cutting passes, convergence testing) to complete before termination
+log_frequency      - simulate bound (using n=simulation_passes) every [log_frequency] iterations and output to user
+beta_quantile      - CVar quantile for nested risk aversion
+risk_lambda        - Weighting on convex combination of Expectation and CVar
     risk_lambda * Expectation + (1 - risk_lambda) * CVar
 """
-function JuMP.solve{M,N,S,T}(m::SDDPModel{M,N,S,T}; forward_passes=1, backward_passes=1, max_iterations=1000, beta_quantile=1, risk_lambda=1)
+function JuMP.solve{M,N,S,T}(m::SDDPModel{M,N,S,T}; simulation_passes=1, log_frequency=1, maximum_iterations=1, beta_quantile=1, risk_lambda=1)
     print_stats_header()
 
     # Set risk aversion parameters
     m.beta_quantile = beta_quantile
     m.risk_lambda = risk_lambda
 
-    i=0
-    while i < max_iterations
+    for i =1:maximum_iterations
         # Cutting passes
-        backward_pass!(m, backward_passes)
+        backward_pass!(m)
 
-        # Simulate
-        forward_pass!(m, forward_passes)
-
-        print_stats(m)
-
-        i += 1
+        if mod(i, log_frequency) == 0
+            # Simulate
+            forward_pass!(m, simulation_passes)
+            print_stats(m)
+        end
     end
 
 end

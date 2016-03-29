@@ -58,11 +58,11 @@ function solve_newsvendor(Demand, beta_quant=0.5, lambda=1.)
     end
 
     solve(m,                # Solve the model using the SDDP algorithm
-        forward_passes=1000,  # number of realisations in bound simulation
-        backward_passes=10,  # number of cutting iterations before convergence check
+        simulation_passes=1000,
+        log_frequency=10,
+        maximum_iterations=50,
         beta_quantile=beta_quant,
-        risk_lambda = lambda,
-        max_iterations=50
+        risk_lambda = lambda
     )
 
     results = simulate(m,   # Simulate the policy

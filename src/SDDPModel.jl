@@ -116,8 +116,11 @@ function SDDPModel(
     stages=1,
     transition=nothing,
     solver=ClpSolver(),
-    value_to_go_bound=1e3
+    value_to_go_bound=NaN
     )
+    if isnan(value_to_go_bound)
+        error("You must specify the option [value_to_go_bound] when creating an SDDPModel.")
+    end
 
     # Initialise SDDPModel object
     m = SDDPModel(
