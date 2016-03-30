@@ -256,7 +256,6 @@ end
 is_sp(m::JuMP.Model) = haskey(m.ext, :is_sp) && m.ext[:is_sp]
 is_sp(m) = false
 
-
 """
 This function loads cuts from a file.
 """
