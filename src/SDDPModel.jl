@@ -116,8 +116,11 @@ function SDDPModel(
     stages=1,
     transition=nothing,
     solver=ClpSolver(),
-    value_to_go_bound=1e3
+    value_to_go_bound=NaN
     )
+    if isnan(value_to_go_bound)
+        error("You must specify the option [value_to_go_bound] when creating an SDDPModel.")
+    end
 
     # Initialise SDDPModel object
     m = SDDPModel(
@@ -252,7 +255,6 @@ end
 # Check this is a StageProblem
 is_sp(m::JuMP.Model) = haskey(m.ext, :is_sp) && m.ext[:is_sp]
 is_sp(m) = false
-
 
 """
 This function loads cuts from a file.

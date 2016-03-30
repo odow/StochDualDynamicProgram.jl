@@ -499,8 +499,8 @@ function forward_pass!{M,N,S,T}(m::SDDPModel{M,N,S,T}, npasses::Int=1)
             _obj = (obj[1], obj[1])
         end
     else
-        # Bootstrap estimate of CVar
-        _obj = cvar_bootstrap(obj, m.beta_quantile, m.risk_lambda)
+        # estimate of CVar
+        _obj = cvar(obj, m.beta_quantile, m.risk_lambda)
     end
 
     # Update lower bound
@@ -510,23 +510,14 @@ function forward_pass!{M,N,S,T}(m::SDDPModel{M,N,S,T}, npasses::Int=1)
 
 end
 
-function cvar_bootstrap(x, beta=1., lambda=1., n=1000)
-    y = zeros(100)#div(length(x), 100))
-    z = zeros(n)
-    for i=1:n
-        rand!(y, x)
-        z[i] = cvar(y, beta, lambda)
-    end
-    t_test(z)
-end
-
 """
 Calculate Expected objective
 """
 function cvar{T}(x::Vector{T}, beta::Float64=1., lambda::Float64=1.)
     @assert beta >= 0 && beta <= 1.
     @assert lambda >= 0 && lambda <= 1.
-    lambda * mean(x) + (1 - lambda) * mean(x[x.<quantile(x, beta)])
+    cv = lambda * mean(x) + (1 - lambda) * mean(x[x.<quantile(x, beta)])
+    return (cv, cv)
 end
 
 function t_test(x::Vector; conf_level=0.95)

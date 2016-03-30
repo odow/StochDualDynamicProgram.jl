@@ -60,11 +60,11 @@ function solve_newsvendor()
     # load_cuts!(m)
 
     solve(m,                # Solve the model using the SDDP algorithm
-        forward_passes=1000,  # number of realisations in bound simulation
-        backward_passes=10,  # number of cutting iterations before convergence check
+        simulation_passes=1000,
+        log_frequency=10,
+        maximum_iterations=50,
         beta_quantile=0.6,
-        risk_lambda = 0.5,
-        max_iterations=5
+        risk_lambda = 0.5
     )
 
     results = simulate(m,   # Simulate the policy
