@@ -113,7 +113,7 @@ function solve_hydro()
     solve(m,                # Solve the model using the SDDP algorithm
         simulation_passes=1000,
         log_frequency=10,
-        maximum_iterations=50
+        maximum_iterations=200
     )
 
     results = simulate(m,   # Simulate the policy
