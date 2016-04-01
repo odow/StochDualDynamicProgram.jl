@@ -59,30 +59,24 @@ function solve_newsvendor(Demand, beta_quant=0.5, lambda=1.)
 
     solve(m,                # Solve the model using the SDDP algorithm
         simulation_passes=1000,
-        log_frequency=10,
-        maximum_iterations=50,
+        log_frequency=50,
+        maximum_iterations=500,
         beta_quantile=beta_quant,
         risk_lambda = lambda
     )
 
     results = simulate(m,   # Simulate the policy
-        3000,               # number of monte carlo realisations
-        [:stock, :buy, :sell]
+        3000               # number of monte carlo realisations
         )
 
     return results
 end
 
 Demand = 20 * rand(3,30)
-
-r1 = solve_newsvendor(Demand, 0.1, 0.)
-r2 = solve_newsvendor(Demand, 0.1, 0.5)
-r3  = solve_newsvendor(Demand, 0.1, 1.)
-
 obj = DataFrame(
-a = r1[:Objective],
-b = r2[:Objective],
-c = r3[:Objective]
+a = solve_newsvendor(Demand, 0.1, 0.)[:Objective],
+b = solve_newsvendor(Demand, 0.1, 0.5)[:Objective],
+c = solve_newsvendor(Demand, 0.1, 1.)[:Objective]
 )
 names!(obj, [symbol("Risk (β, λ) = (0.1, 0.0)"), symbol("Risk (β, λ) = (0.1, 0.5)") , symbol("Risk (β, λ) = (0.1, 1.0)")])
 

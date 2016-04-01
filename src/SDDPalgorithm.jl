@@ -531,7 +531,7 @@ end
 """
 Simulate SDDP model and return variable solutions contained in [vars]
 """
-function simulate{M,N,S,T}(m::SDDPModel{M,N,S,T}, n::Int, vars::Vector{Symbol})
+function simulate{M,N,S,T}(m::SDDPModel{M,N,S,T}, n::Int, vars::Vector{Symbol}=Symbol[])
     results = Dict{Symbol, Any}(:Objective=>zeros(Float64,n))
     for v in vars
         results[v] = Array(Vector{Any}, M)
