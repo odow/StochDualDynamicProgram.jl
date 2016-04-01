@@ -25,63 +25,60 @@ end
 facts("@defStateVar") do
     m = StochDualDynamicProgram.StageProblem()
     @defStateVar(m, 0 <= x <= 3, x0=2.5)
-    # @fact getVar(m, :x) --> m.ext[:state_vars][1]
+    # @fact getVar(m, :x) --> stagedata(m).state_vars[1]
     @fact m.colLower --> roughly([0, -Inf], 1e-4)
     @fact m.colUpper --> roughly([3, Inf], 1e-4)
-    @fact length(m.ext[:dual_constraints]) --> 1
-    @fact getLower(m.ext[:dual_constraints][1]) --> 2.5
-    @fact getUpper(m.ext[:dual_constraints][1]) --> 2.5
+    @fact length(StochDualDynamicProgram.stagedata(m).dual_constraints) --> 1
+    @fact getLower(StochDualDynamicProgram.stagedata(m).dual_constraints[1]) --> 2.5
+    @fact getUpper(StochDualDynamicProgram.stagedata(m).dual_constraints[1]) --> 2.5
 
     m = StochDualDynamicProgram.StageProblem()
     @defStateVar(m, y <= 1, y0=1.0)
-    # @fact getVar(m, :y) --> m.ext[:state_vars][1]
+    # @fact getVar(m, :y) --> stagedata(m).state_vars[1]
     @fact m.colLower --> roughly([-Inf, -Inf], 1e-4)
     @fact m.colUpper --> roughly([1, Inf], 1e-4)
-    @fact length(m.ext[:dual_constraints]) --> 1
-    @fact getLower(m.ext[:dual_constraints][1]) --> 1.0
-    @fact getUpper(m.ext[:dual_constraints][1]) --> 1.0
+    @fact length(StochDualDynamicProgram.stagedata(m).dual_constraints) --> 1
+    @fact getLower(StochDualDynamicProgram.stagedata(m).dual_constraints[1]) --> 1.0
+    @fact getUpper(StochDualDynamicProgram.stagedata(m).dual_constraints[1]) --> 1.0
 
     m = StochDualDynamicProgram.StageProblem()
     @defStateVar(m, z, z0=1.0)
-    # @fact getVar(m, :z) --> m.ext[:state_vars][1]
+    # @fact getVar(m, :z) --> stagedata(m).state_vars[1]
     @fact m.colLower --> roughly([-Inf, -Inf], 1e-4)
     @fact m.colUpper --> roughly([Inf, Inf], 1e-4)
-    @fact length(m.ext[:dual_constraints]) --> 1
-    @fact getLower(m.ext[:dual_constraints][1]) --> 1.0
-    @fact getUpper(m.ext[:dual_constraints][1]) --> 1.0
+    @fact length(StochDualDynamicProgram.stagedata(m).dual_constraints) --> 1
+    @fact getLower(StochDualDynamicProgram.stagedata(m).dual_constraints[1]) --> 1.0
+    @fact getUpper(StochDualDynamicProgram.stagedata(m).dual_constraints[1]) --> 1.0
 
     m = StochDualDynamicProgram.StageProblem()
     T = [:a, :b]
     rhs = Dict{Symbol, Float64}(:a=>1., :b=>2.)
     @defStateVar(m, x[t=T] >= 0., x0=rhs[t])
-    # @fact getVar(m, :x) --> m.ext[:state_vars][1]
+    # @fact getVar(m, :x) --> stagedata(m).state_vars[1]
     @fact m.colLower --> roughly([0., 0., -Inf, -Inf], 1e-4)
     @fact m.colUpper --> roughly([Inf, Inf, Inf, Inf], 1e-4)
-    @fact length(m.ext[:dual_constraints]) --> 2
-    @fact getLower(m.ext[:dual_constraints][1]) --> rhs[:a]
-    @fact getUpper(m.ext[:dual_constraints][2]) --> rhs[:b]
+    @fact length(StochDualDynamicProgram.stagedata(m).dual_constraints) --> 2
+    @fact getLower(StochDualDynamicProgram.stagedata(m).dual_constraints[1]) --> rhs[:a]
+    @fact getUpper(StochDualDynamicProgram.stagedata(m).dual_constraints[2]) --> rhs[:b]
 
 end
 
 facts("@defValueToGo") do
     m = StochDualDynamicProgram.StageProblem()
     @defValueToGo(m, theta)
-    @fact haskey(m.ext, :theta) --> true
-    @fact typeof(m.ext[:theta]) --> Variable
+    @fact typeof(StochDualDynamicProgram.stagedata(m).theta) --> Variable
     @fact m.colLower --> roughly([-Inf], 1e-4)
     @fact m.colUpper --> roughly([Inf], 1e-4)
 
     m = StochDualDynamicProgram.StageProblem()
     @defValueToGo(m, theta <= 10)
-    @fact haskey(m.ext, :theta) --> true
-    @fact typeof(m.ext[:theta]) --> Variable
+    @fact typeof(StochDualDynamicProgram.stagedata(m).theta) --> Variable
     @fact m.colLower --> roughly([-Inf], 1e-4)
     @fact m.colUpper --> roughly([10], 1e-4)
 
     m = StochDualDynamicProgram.StageProblem()
     @defValueToGo(m, 0 <= theta <= 10)
-    @fact haskey(m.ext, :theta) --> true
-    @fact typeof(m.ext[:theta]) --> Variable
+    @fact typeof(StochDualDynamicProgram.stagedata(m).theta) --> Variable
     @fact m.colLower --> roughly([0], 1e-4)
     @fact m.colUpper --> roughly([10], 1e-4)
 end

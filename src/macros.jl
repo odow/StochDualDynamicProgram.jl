@@ -22,13 +22,13 @@ using Base.Meta
 
 function State(m::Model, lower::Number, upper::Number, name)
     v = Variable(m,lower,upper,:Cont,utf8(string(name)),NaN)
-    push!(m.ext[:state_vars], v)
+    push!(stagedata(m).state_vars, v)
     return v
 end
 
 function State0(m::Model, init, name, name0)
     v0 = Variable(m,-Inf,Inf,:Cont,utf8(string(name0)),init)
-    push!(m.ext[:dual_constraints], @addConstraint(m, v0 == init))
+    push!(stagedata(m).dual_constraints, @addConstraint(m, v0 == init))
     return v0
 end
 
@@ -112,7 +112,7 @@ macro defStateVar(args...)
         return assert_validmodel(m, quote
             $(esc(var)) = State($m, $lb, $ub, $quotvarname)
             registervar($m, $quotvarname, $escvarname)
-            # push!($m.ext[:state_vars], $quotvarname)
+            # push!($stagedata(m).state_vars, $quotvarname)
 
             $(esc(x0_name)) = State0($m, $x0_value, $quotvarname, $quotx0name)
             registervar($m, $quotx0name, $escx0name)
@@ -145,7 +145,7 @@ macro defStateVar(args...)
     return assert_validmodel(m, quote
         $looped1
         push!($(m).dictList, $escvarname)
-        # push!($m.ext[:state_vars], $quotvarname)
+        # push!($stagedata(m).state_vars, $quotvarname)
         registervar($m, $quotvarname, $escvarname)
         storecontainerdata($m, $escvarname, $quotvarname,
                            $(Expr(:tuple,map(clear_dependencies1,1:length(idxsets1))...)),
@@ -186,8 +186,8 @@ end
 #         @assert is_sp($m)
 #         @defVar $m $x
 #         @defVar $m $(esc(k))
-#         push!($m.ext[:state_vars], $(Expr(:quote, x_sym)))
-#         $m.ext[:dual_constraints][$(Expr(:quote, x_sym))] = (@addConstraint $m $(esc(x0)))
+#         push!($stagedata(m).state_vars, $(Expr(:quote, x_sym)))
+#         $stagedata(m).dual_constraints[$(Expr(:quote, x_sym))] = (@addConstraint $m $(esc(x0)))
 #     end
 # end
 
@@ -216,7 +216,7 @@ macro defValueToGo(m, x)
     end
     quote
         @assert is_sp($m)
-        $m.ext[:theta] = @defVar $m $(esc(x))
+        stagedata($m).theta = @defVar $m $(esc(x))
     end
 end
 
@@ -228,16 +228,16 @@ macro addScenarioConstraint(m, kw, c)
     m = esc(m)
     v = esc(kw.args[2])
     quote
-        @assert length(collect($v)) == length($m.ext[:objective_value])
+        @assert length(collect($v)) == length(stagedata($m).objective_value)
         $(esc(kw.args[1])) = 0
         con = @addConstraint($m, $(esc(c)))
-        push!($m.ext[:scenario_constraints], (con, collect($v)))
+        push!(stagedata($m).scenario_constraints, (con, collect($v)))
     end
 end
 
 macro setStageProfit(m, ex)
     m = esc(m)
     quote
-        $m.ext[:StageProfit] = @defExpr $(esc(gensym())) $(esc(ex))
+        stagedata($m).stage_profit = @defExpr $(esc(gensym())) $(esc(ex))
     end
 end

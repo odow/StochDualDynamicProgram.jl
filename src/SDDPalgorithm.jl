@@ -17,11 +17,11 @@ function pass_states_forward!{M,N,S,T}(m::SDDPModel{M,N,S,T}, stage::Int, markov
     # For each of the problems in the next stage
     for next_sp in m.stage_problems[stage+1,:]
         # Check sanity
-        @assert length(sp.ext[:dual_constraints]) == length(next_sp.ext[:dual_constraints]) == length(next_sp.ext[:state_vars])
+        @assert length(stagedata(sp).dual_constraints) == length(stagedata(next_sp).dual_constraints) == length(stagedata(next_sp).state_vars)
 
         # For each state variable
-        for i in 1:length(next_sp.ext[:state_vars])
-            chgConstrRHS(next_sp.ext[:dual_constraints][i], getValue(sp.ext[:state_vars][i]))
+        for i in 1:length(stagedata(next_sp).state_vars)
+            chgConstrRHS(stagedata(next_sp).dual_constraints[i], getValue(stagedata(sp).state_vars[i]))
         end
     end
 end
@@ -57,7 +57,7 @@ function backward_pass!{M,N,S,T}(m::SDDPModel{M,N,S,T})
         load_scenario!(sp, scenario)
 
         # Lets store the scenario we just came from
-        sp.ext[:old_scenario] = (old_markov, old_scenario)
+        stagedata(sp).old_scenario = (old_markov, old_scenario)
 
         # solve
         solve!(sp)
@@ -81,7 +81,7 @@ function backward_pass!{M,N,S,T}(m::SDDPModel{M,N,S,T})
         add_cut!(m, stage, old_markov)
 
         # Look up the scenario to step back to
-        old_markov, old_scenario = m.stage_problems[stage, old_markov].ext[:old_scenario]
+        old_markov, old_scenario = stagedata(m.stage_problems[stage, old_markov]).old_scenario
 
         # Solve all the stage problems
         solve_all_stage_problems!(m, stage)
@@ -131,21 +131,21 @@ function add_cut!{M,N,S,T}(m::SDDPModel{M,N,S,T}, stage::Int, markov_state::Int)
     @defExpr(rhs, sum{
         sum{
             m.weightings_matrix[new_markov, scenario] * (
-                new_sp.ext[:objective_value][scenario] +
+                stagedata(new_sp).objective_value[scenario] +
                 sum{
-                    new_sp.ext[:dual_values][i][scenario] * (
-                        sp.ext[:state_vars][i] - getRHS(new_sp.ext[:dual_constraints][i])
+                    stagedata(new_sp).dual_values[i][scenario] * (
+                        stagedata(sp).state_vars[i] - getRHS(stagedata(new_sp).dual_constraints[i])
                     )
-                , i in 1:length(sp.ext[:state_vars])}
+                , i in 1:length(stagedata(sp).state_vars)}
             )
         ,scenario in 1:S; m.weightings_matrix[new_markov, scenario] > 1e-6}
     , (new_markov, new_sp) in enumerate(m.stage_problems[stage+1, :])}
     )
 
     if m.sense==:Max
-        @addConstraint(sp, sp.ext[:theta] <= rhs)
+        @addConstraint(sp, stagedata(sp).theta <= rhs)
     else
-        @addConstraint(sp, sp.ext[:theta] >= rhs)
+        @addConstraint(sp, stagedata(sp).theta >= rhs)
     end
 
     if m.cuts_filename != nothing
@@ -160,7 +160,7 @@ function write_cut(filename::ASCIIString, sp::Model, stage::Int, markov_state::I
     n = length(rhs.vars)
     open(filename, "a") do f
         write(f, string(stage, ", ", markov_state, ", ", rhs.constant))
-        for v in sp.ext[:state_vars]
+        for v in stagedata(sp).state_vars
             y = 0.
             for i in 1:n
                 if v == rhs.vars[i]
@@ -204,7 +204,7 @@ function risk_weightings!{M,N,S,T}(m::SDDPModel{M,N,S,T}, stage::Int, markov::In
         @assert abs(sum(P) - 1) < 1e-5
 
         # Construct risk averse weightings for CVar
-        w = risk_averse_weightings(vcat([sp.ext[:objective_value] for sp in m.stage_problems[stage+1, :]]...), P,  m.beta_quantile, m.sense==:Max)
+        w = risk_averse_weightings(vcat([stagedata(sp).objective_value for sp in m.stage_problems[stage+1, :]]...), P,  m.beta_quantile, m.sense==:Max)
 
         # Construct weightings as a convex combination of Expectation (P) and risk averse (w)
         i=1
@@ -299,14 +299,14 @@ function solve!(sp::Model)
     end
 
     # Get current scenario
-    s = sp.ext[:CurrentScenario]
+    s = stagedata(sp).current_scenario
 
     # store the objective value
-    sp.ext[:objective_value][s] = getObjectiveValue(sp)
+    stagedata(sp).objective_value[s] = getObjectiveValue(sp)
 
     # store the dual value for each of the state variables
-    for i in 1:length(sp.ext[:state_vars])
-        sp.ext[:dual_values][i][s] = getDual(sp.ext[:dual_constraints][i])
+    for i in 1:length(stagedata(sp).state_vars)
+        stagedata(sp).dual_values[i][s] = getDual(stagedata(sp).dual_constraints[i])
     end
 
     return
@@ -319,19 +319,19 @@ Input:
 m        - Stage problem
 scenario - the scenario to load
 """
-function load_scenario!(m::Model, scenario::Int)
+function load_scenario!(sp::Model, scenario::Int)
     # Store old scenario
-    m.ext[:LastScenario] = m.ext[:CurrentScenario]
+    stagedata(sp).last_scenario = stagedata(sp).current_scenario
 
     # for each scenario constraint
-    for (constr, Ω) in m.ext[:scenario_constraints]
+    for (constr, Ω) in stagedata(sp).scenario_constraints
         # Look up last scenario.
-        if m.ext[:LastScenario] == 0
+        if stagedata(sp).last_scenario == 0
             # No old scenario loaded so zero constant
             old_scenario = 0.
         else
             # Look up old constant from scenario set Ω
-            old_scenario = Ω[m.ext[:LastScenario]]
+            old_scenario = Ω[stagedata(sp).last_scenario]
         end
 
         # Update RHS
@@ -339,7 +339,7 @@ function load_scenario!(m::Model, scenario::Int)
     end
 
     # Store new scenario
-    m.ext[:CurrentScenario] = scenario
+    stagedata(sp).current_scenario = scenario
 
     return
 end
@@ -407,13 +407,12 @@ end
 """
 Get the value of the current stage (i.e. not including the value to go)
 """
-function get_true_value(m::Model)
-    @assert is_sp(m)
-    if m.ext[:theta] != nothing
-        # TODO: is this correct for minimisation
-        return getObjectiveValue(m) - getValue(m.ext[:theta])
+function get_true_value(sp::Model)
+    @assert is_sp(sp)
+    if stagedata(sp).theta != nothing
+        return (getObjectiveValue(sp) - getValue(stagedata(sp).theta))::Float64
     else
-        return getObjectiveValue(m)
+        return getObjectiveValue(sp)::Float64
     end
 end
 
@@ -426,24 +425,26 @@ function set_valid_bound!{M,N,S,T}(m::SDDPModel{M,N,S,T})
 
     if m.init_markov_state == 0
         # Lets average over all first stage probles (markov states x scenarios)
-        for i=1:N
-            for s=1:S
-                obj += get_transition(m, 1, m.init_markov_state, i) * m.stage_problems[1, i].ext[:objective_value][s]
+        for i=1:Int(N)
+            for s=1:Int(S)
+                obj += get_transition(m, 1, m.init_markov_state, i) * stagedata(m.stage_problems[1, i]).objective_value[s]::Float64
             end
         end
-        obj /= S
+        obj /= Float64(S)
     else
         # Lets just  average over the scenarios in the initial markov state
-        for s=1:S
-            obj += m.stage_problems[1, m.init_markov_state].ext[:objective_value][s]
+        for s=1:Int(S)
+            obj += stagedata(m.stage_problems[1, m.init_markov_state]).objective_value[s]::Float64
         end
-        obj /= S
+        obj /= Float64(S)
     end
 
     # Update the bound
     if (m.sense==:Max && obj < getBound(m)) || (m.sense==:Min && obj > getBound(m))
         setBound!(m, obj)
     end
+
+    return
 end
 
 """
@@ -451,7 +452,7 @@ Forward pass of the SDDP algorithm
 """
 function forward_pass!{M,N,S,T}(m::SDDPModel{M,N,S,T}, npasses::Int=1)
     # Initialise scenario
-    scenario = 0
+    markov, old_markov, scenario = 0, 0, 0
 
     # Initialise the objective storage
     obj = zeros(npasses)
@@ -494,20 +495,16 @@ function forward_pass!{M,N,S,T}(m::SDDPModel{M,N,S,T}, npasses::Int=1)
     if abs(m.risk_lambda - 1) < 1e-5
         # Not risk averse so Normal Dist CI
         if npasses > 1
-            _obj = t_test(obj, conf_level=m.QUANTILE)
+            setCI!(m, t_test(obj, conf_level=m.QUANTILE))
         else
-            _obj = (obj[1], obj[1])
+            setCI!(m, (obj[1], obj[1]))
         end
     else
         # estimate of CVar
-        _obj = cvar(obj, m.beta_quantile, m.risk_lambda)
+        setCI!(m, cvar(obj, m.beta_quantile, m.risk_lambda))
     end
 
-    # Update lower bound
-    # if (m.sense==:Max && _obj[1] > getFarCIBound(m)) || (m.sense==:Min && _obj[2] < getFarCIBound(m))
-        setCI!(m, _obj)
-    # end
-
+    return
 end
 
 """
@@ -539,6 +536,8 @@ function simulate{M,N,S,T}(m::SDDPModel{M,N,S,T}, n::Int, vars::Vector{Symbol}=S
             results[v][i] = Array(Any, n)
         end
     end
+
+    markov, old_markov = 0, 0
 
     for pass=1:n
         if m.init_markov_state==0

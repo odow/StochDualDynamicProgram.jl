@@ -1,3 +1,36 @@
+type StageData
+    state_vars::Vector{JuMP.Variable}
+    dual_constraints::Vector{JuMP.ConstraintRef}
+    theta::Union{Void, JuMP.Variable}
+    old_scenario::Tuple{Int, Int}
+    scenario_constraints::Vector{Tuple{Any, Vector{Any}}}
+    last_scenario::Int
+    current_scenario::Int
+    objective_value::Vector{Float64}
+    dual_values::Vector{Vector{Float64}}
+    stage_profit
+end
+StageData(scenarios::Int=1) = StageData(Variable[], ConstraintRef[], nothing, (0,0), Tuple{Any, Vector{Any}}[], 0, 0, zeros(scenarios), Vector{Float64}[], nothing)
+
+"""
+Instaniates a new StageProblem which is a JuMP.Model object with an extension
+dictionary.
+"""
+function StageProblem(scenarios::Int=1)
+    sp = Model()
+    sp.ext[:data] = StageData(scenarios)
+    return sp
+end
+
+function stagedata(m::Model)
+    @assert haskey(m.ext, :data)
+    return m.ext[:data]::StageData
+end
+
+# Check this is a StageProblem
+is_sp(m::JuMP.Model) = isa(stagedata(m), StageData)
+is_sp(m) = false
+
 type SDDPModel{M,N,S,T}
     sense::Symbol
     stage_problems::Array{JuMP.Model}
@@ -161,15 +194,15 @@ function SDDPModel(
             end
 
             # Initialise storage for scenario duals now we know the number of state variables
-            for i in 1:length(sp.ext[:state_vars])
-                push!(sp.ext[:dual_values], zeros(scenarios))
+            for i in 1:length(stagedata(sp).state_vars)
+                push!(stagedata(sp).dual_values, zeros(scenarios))
             end
 
             # If the user hasn't specified an objective
             if is_zero_objective(getObjective(sp))
                 if stage==stages
                     # If its the last stage then its just the stage profit
-                    @setObjective(sp, sense, sp.ext[:StageProfit])
+                    @setObjective(sp, sense, stagedata(sp).stage_profit)
                 else
                     # Otherwise create a value/cost to go variable
                     if sense==:Max
@@ -178,7 +211,7 @@ function SDDPModel(
                         @defValueToGo(sp, theta >= value_to_go_bound)
                     end
                     # Set the objective
-                    @setObjective(sp, sense, sp.ext[:StageProfit] + theta)
+                    @setObjective(sp, sense, stagedata(sp).stage_profit + theta)
                 end
             end
             # Store the stage problem
@@ -217,44 +250,22 @@ function transition{M,N,S,T}(m::SDDPModel{M,N,S,T}, stage::Int, markov_state::In
             r -= k
         end
     end
+    return N
 end
 function get_transition{M,N,S}(m::SDDPModel{M,N,S,2}, stage::Int, current_markov_state::Int, new_markov_state::Int)
     if current_markov_state==0
-        return 1/N
+        return 1./N
     else
-        return m.transition[current_markov_state,new_markov_state]
+        return m.transition[current_markov_state,new_markov_state]::Float64
     end
 end
 function get_transition{M,N,S}(m::SDDPModel{M,N,S,1}, stage::Int, current_markov_state::Int, new_markov_state::Int)
     if current_markov_state==0
-        1/N
+        1./N
     else
-        m.transition[stage][current_markov_state,new_markov_state]
+        m.transition[stage][current_markov_state,new_markov_state]::Float64
     end
 end
-
-"""
-Instaniates a new StageProblem which is a JuMP.Model object with an extension
-dictionary.
-"""
-function StageProblem(scenarios::Int=1)
-    sp = Model()
-    sp.ext[:is_sp] = true
-    sp.ext[:state_vars] = JuMP.Variable[]
-    sp.ext[:dual_constraints] = JuMP.ConstraintRef[]
-    sp.ext[:theta] = nothing
-    sp.ext[:old_scenario] = (0,0)
-    sp.ext[:scenario_constraints] = Tuple{Any, Vector{Any}}[]
-    sp.ext[:LastScenario] = 0
-    sp.ext[:CurrentScenario] = 0
-    sp.ext[:objective_value] = zeros(scenarios)
-    sp.ext[:dual_values] = Vector{Float64}[]
-    return sp
-end
-
-# Check this is a StageProblem
-is_sp(m::JuMP.Model) = haskey(m.ext, :is_sp) && m.ext[:is_sp]
-is_sp(m) = false
 
 """
 This function loads cuts from a file.
@@ -271,13 +282,13 @@ function load_cuts!{M,N,S,T}(m::SDDPModel{M,N,S,T}, filename::ASCIIString)
             sp = m.stage_problems[stage, markov_state]
             theta = parse(Float64, line[3])
 
-            @assert length(line) == (3 + length(sp.ext[:state_vars]))
+            @assert length(line) == (3 + length(stagedata(sp).state_vars))
             if length(line) > 4
                 xcoeff = map(x->parse(Float64, x), line[4:end])
             else
                 xcoeff = [parse(Float64, line[4])]
             end
-            @addConstraint(sp, sp.ext[:theta] <= theta + sum{xcoeff[i]*getVar(sp, v), (i, v) in enumerate(sp.ext[:state_vars])})
+            @addConstraint(sp, stagedata(sp).theta <= theta + sum{xcoeff[i]*getVar(sp, v), (i, v) in enumerate(stagedata(sp).state_vars)})
         end
     end
 end
