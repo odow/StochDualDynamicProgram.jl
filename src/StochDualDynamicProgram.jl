@@ -43,21 +43,19 @@ function JuMP.solve{M,N,S,T}(m::SDDPModel{M,N,S,T}; simulation_passes=1, log_fre
 
         if mod(i, log_frequency) == 0
             # Simulate
-            if !forward_pass!(m, simulation_passes)
-                print_stats(m)
-                return
-            end
-            print_stats(m)
+            (_flag, n) = forward_pass!(m, simulation_passes)
+            print_stats(m, n)
+            !_flag && return
         end
     end
     return
 end
 
-function print_stats(m::SDDPModel)
-    printfmt("({1:8.2f}, {2:8.2f}) | {3:8.2f} | {4:3.2f}\n", m.confidence_interval[1], m.confidence_interval[2], m.valid_bound, 100*rtol(m))
+function print_stats(m::SDDPModel, n)
+    printfmt("({1:8.2f}, {2:8.2f}) | {3:8.2f} | {4:3.2f} | {5:10d}\n", m.confidence_interval[1], m.confidence_interval[2], m.valid_bound, 100*rtol(m), round(Int, n))
 end
 function print_stats_header()
-    printfmt("{1:22s} | {2:10s} | {3:6s}\n", "Expected Objective", "Valid Bound", "% Gap")
+    printfmt("{1:22s} | {2:10s} | {3:6s} | {4:10s}\n", "Expected Objective", "Valid Bound", "% Gap", "# Samples")
 end
 
 end

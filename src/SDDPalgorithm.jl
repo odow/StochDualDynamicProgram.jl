@@ -513,7 +513,7 @@ function forward_pass!{M,N,S,T}(m::SDDPModel{M,N,S,T}, npasses::Int=1)
     # set new lower bound
     test_and_set_ci!(m, obj)
 
-    return true
+    return (true, npasses)
 end
 
 function forward_pass!{M,N,S,T}(m::SDDPModel{M,N,S,T}, npasses::Range)
@@ -524,12 +524,12 @@ function forward_pass!{M,N,S,T}(m::SDDPModel{M,N,S,T}, npasses::Range)
         test_and_set_ci!(m, OBJ)
 
         if rtol(m) > 0.
-            return true
+            return (true, n)
         end
         # info("Simulation confidence (n=$n)")
     end
 
-    return false
+    return (false, npasses[end])
 end
 
 """
