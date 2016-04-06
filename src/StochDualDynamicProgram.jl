@@ -43,11 +43,14 @@ function JuMP.solve{M,N,S,T}(m::SDDPModel{M,N,S,T}; simulation_passes=1, log_fre
 
         if mod(i, log_frequency) == 0
             # Simulate
-            forward_pass!(m, simulation_passes)
+            if !forward_pass!(m, simulation_passes)
+                print_stats(m)
+                return
+            end
             print_stats(m)
         end
     end
-
+    return
 end
 
 function print_stats(m::SDDPModel)
