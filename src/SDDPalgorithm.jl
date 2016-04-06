@@ -493,21 +493,25 @@ function forward_pass_kernel!{M,N,S,T}(m::SDDPModel{M,N,S,T}, n::Int)
     return obj
 end
 
-function forward_pass!{M,N,S,T}(m::SDDPModel{M,N,S,T}, npasses::Int=1)
-    obj = forward_pass_kernel!(m, npasses)
-
-    # set new lower bound
+function test_and_set_ci!(m::SDDPModel, obj::Vector)
     if abs(m.risk_lambda - 1) < 1e-5
         # Not risk averse so Normal Dist CI
-        if npasses > 1
+        if length(obj) > 1
             setCI!(m, t_test(obj, conf_level=m.QUANTILE))
         else
             setCI!(m, (obj[1], obj[1]))
         end
     else
         # estimate of CVar
-        # setCI!(m, cvar(obj, m.beta_quantile, m.risk_lambda))
+        setCI!(m, cvar(obj, m.beta_quantile, m.risk_lambda))
     end
+end
+
+function forward_pass!{M,N,S,T}(m::SDDPModel{M,N,S,T}, npasses::Int=1)
+    obj = forward_pass_kernel!(m, npasses)
+
+    # set new lower bound
+    test_and_set_ci!(m, obj)
 
     return true
 end
@@ -515,21 +519,9 @@ end
 function forward_pass!{M,N,S,T}(m::SDDPModel{M,N,S,T}, npasses::Range)
     OBJ = Float64[]
     for n in npasses
-        n_pass = round(Int, n) - length(OBJ)
-        push!(OBJ, forward_pass_kernel!(m, n_pass)...)
+        push!(OBJ, forward_pass_kernel!(m, round(Int, n) - length(OBJ))...)
 
-        # set new lower bound
-        if abs(m.risk_lambda - 1) < 1e-5
-            # Not risk averse so Normal Dist CI
-            if length(OBJ) > 1
-                setCI!(m, t_test(OBJ, conf_level=m.QUANTILE))
-            else
-                setCI!(m, (OBJ[1], obj[1]))
-            end
-        else
-            # estimate of CVar
-            setCI!(m, cvar(OBJ, m.beta_quantile, m.risk_lambda))
-        end
+        test_and_set_ci!(m, OBJ)
 
         if rtol(m) > 0.
             return true
