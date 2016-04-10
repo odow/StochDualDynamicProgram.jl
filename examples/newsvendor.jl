@@ -129,11 +129,25 @@ function solve_newsvendor2()
 
     end
 
-    solve(m,                # Solve the model using the SDDP algorithm
+    m2 = copy(m)
+
+    srand(11111)
+    info("Adding 20 cuts")
+    @time solve(m,                # Solve the model using the SDDP algorithm
+        simulation_passes=10000,
+        log_frequency=20,
+        maximum_iterations=20
+    )
+
+    srand(11111)
+    info("Solving using varying number of simulation passes")
+    @time solve(m2,                # Solve the model using the SDDP algorithm
         simulation_passes=linspace(100, 10000, 10),
         log_frequency=1,
         maximum_iterations=50
     )
+
+
 
     results = simulate(m,   # Simulate the policy
         1000,               # number of monte carlo realisations
