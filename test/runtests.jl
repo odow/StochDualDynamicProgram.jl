@@ -102,6 +102,10 @@ facts("Newsvendor Example") do
     warn("Estimating the CI of bound is fraught")
     results = solve_newsvendor()
     # @fact mean(results[:Objective]) --> roughly(95., 0.5)
+
+    context("Fancy improvements of simulated bound") do
+        results = solve_newsvendor2()
+    end
 end
 
 FactCheck.exitstatus()
