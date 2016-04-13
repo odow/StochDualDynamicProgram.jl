@@ -9,8 +9,9 @@ type StageData
     objective_value::Vector{Float64}
     dual_values::Vector{Vector{Float64}}
     stage_profit
+    cut_data::Dict{Tuple{Float64, Float64}, Vector{Vector{Float64}}}
 end
-StageData(scenarios::Int=1) = StageData(Variable[], ConstraintRef[], nothing, (0,0), Tuple{Any, Vector{Any}}[], 0, 0, zeros(scenarios), Vector{Float64}[], nothing)
+StageData(scenarios::Int=1) = StageData(Variable[], ConstraintRef[], nothing, (0,0), Tuple{Any, Vector{Any}}[], 0, 0, zeros(scenarios), Vector{Float64}[], nothing, Dict{Tuple{Float64, Float64}, Vector{Vector{Float64}}}())
 
 """
 Instaniates a new StageProblem which is a JuMP.Model object with an extension
@@ -27,20 +28,28 @@ function stagedata(m::Model)
     return m.ext[:data]::StageData
 end
 
+function Base.copy(sd::StageData)
+    return StageData(sd.state_vars, sd.dual_constraints, sd.theta, sd.old_scenario, sd.scenario_constraints, sd.last_scenario, sd.current_scenario, sd.objective_value, sd.dual_values, sd.stage_profit, sd.cut_data)
+end
+
 # Check this is a StageProblem
 is_sp(m::JuMP.Model) = isa(stagedata(m), StageData)
 is_sp(m) = false
 
-type SDDPModel{M,N,S,T}
-    sense::Symbol
+type SDDPModel{T<:Union{Array{Float64,2}, Vector{Array{Float64, 2}}}, M<:Real}
+    stages::Int
+    markov_states::Int
+    scenarios::Int
+    sense::Union{Type{Val{:Min}}, Type{Val{:Max}}}
+
     stage_problems::Array{JuMP.Model}
-    transition::Array{Union{Float64, Array{Float64, 2}}, T}
+    transition::T#Array{Union{Float64, Array{Float64, 2}}, T}
     init_markov_state::Int
     confidence_interval::Tuple{Float64, Float64}
     valid_bound::Float64
     QUANTILE::Float64
     LPSOLVER::MathProgBase.AbstractMathProgSolver
-    value_to_go_bound::Float64
+    value_to_go_bound::M
     beta_quantile::Float64
     risk_lambda::Float64
     weightings_matrix::Array{Float64, 2}
@@ -74,7 +83,7 @@ function SDDPModel(;
     solver=ClpSolver(),
     stages=1,
     transition=nothing,
-    value_to_go_bound=1000
+    value_to_go_bound=1000.
     )
 
     # Check non-zero stages, markov states and scenarios
@@ -104,7 +113,8 @@ function SDDPModel(;
     # TODO :: Case where Transition matrix is Array{Float64, 3}
 
     my_inf = (sense==:Max?Inf:-Inf)
-    SDDPModel{stages,markov_states,scenarios,T}(sense, Array(JuMP.Model, (stages, markov_states)), transition, initial_markov_state, (-my_inf, -my_inf), my_inf, conf_level, solver, value_to_go_bound, 1., 1., zeros(markov_states, scenarios), cuts_filename)
+    sense_type = (sense==:Max?Val{:Max}:Val{:Min})
+    SDDPModel(stages,markov_states,scenarios, sense_type, Array(JuMP.Model, (stages, markov_states)), transition, initial_markov_state, (-my_inf, -my_inf), my_inf, conf_level, solver, value_to_go_bound, 1., 1., zeros(markov_states, scenarios), cuts_filename)
 end
 
 """
@@ -168,13 +178,18 @@ function SDDPModel(
         value_to_go_bound=value_to_go_bound,
         cuts_filename=cuts_filename
     )
+    add_subproblems!(m, build_subproblem!, value_to_go_bound)
 
+    return m
+end
+
+function add_subproblems!(m::SDDPModel, build_subproblem!, value_to_go_bound)
     # For every stage
-    for stage=1:stages
+    for stage=1:m.stages
         # For every markov state
-        for markov_state=1:markov_states
+        for markov_state=1:m.markov_states
             # Create a new stage problem with [scenarios] number of scenarios
-            sp = StageProblem(scenarios)
+            sp = StageProblem(m.scenarios)
 
             # Set the solver
             setSolver(sp, m.LPSOLVER)
@@ -195,23 +210,17 @@ function SDDPModel(
 
             # Initialise storage for scenario duals now we know the number of state variables
             for i in 1:length(stagedata(sp).state_vars)
-                push!(stagedata(sp).dual_values, zeros(scenarios))
+                push!(stagedata(sp).dual_values, zeros(m.scenarios))
             end
 
             # If the user hasn't specified an objective
             if is_zero_objective(getObjective(sp))
-                if stage==stages
+                if stage==m.stages
                     # If its the last stage then its just the stage profit
-                    @setObjective(sp, sense, stagedata(sp).stage_profit)
+                    set_objective!(m.sense, sp)
                 else
                     # Otherwise create a value/cost to go variable
-                    if sense==:Max
-                        @defValueToGo(sp, theta <= value_to_go_bound)
-                    else
-                        @defValueToGo(sp, theta >= value_to_go_bound)
-                    end
-                    # Set the objective
-                    @setObjective(sp, sense, stagedata(sp).stage_profit + theta)
+                    set_objective!(m.sense, sp, value_to_go_bound)
                 end
             end
             # Store the stage problem
@@ -219,14 +228,29 @@ function SDDPModel(
         end
     end
 
-    return m
+    return
+end
+
+function set_objective!(::Type{Val{:Min}}, sp::Model, value_to_go_bound)
+    stagedata(sp).theta = @defVar(sp, theta >= value_to_go_bound)
+    @setObjective(sp, Min, stagedata(sp).stage_profit + stagedata(sp).theta)
+end
+function set_objective!(::Type{Val{:Max}}, sp::Model, value_to_go_bound)
+    stagedata(sp).theta = @defVar(sp, theta <= value_to_go_bound)
+    @setObjective(sp, Max, stagedata(sp).stage_profit + stagedata(sp).theta)
+end
+function set_objective!(::Type{Val{:Min}}, sp::Model)
+    @setObjective(sp, Min, stagedata(sp).stage_profit)
+end
+function set_objective!(::Type{Val{:Max}}, sp::Model)
+    @setObjective(sp, Max, stagedata(sp).stage_profit)
 end
 
 """
 So we can copy an SDDPModel
 """
-function Base.copy{M,N,S,T}(m::SDDPModel{M,N,S,T})
-    SDDPModel{M,N,S,T}(m.sense, deepcopy(m.stage_problems), copy(m.transition), m.init_markov_state, m.confidence_interval, m.valid_bound, m.QUANTILE, m.LPSOLVER, m.value_to_go_bound, m.beta_quantile, m.risk_lambda, m.weightings_matrix, m.cuts_filename)
+function Base.copy(m::SDDPModel)
+    SDDPModel(m.stages, m.markov_states, m.scenarios, m.sense, deepcopy(m.stage_problems), copy(m.transition), m.init_markov_state, m.confidence_interval, m.valid_bound, m.QUANTILE, m.LPSOLVER, m.value_to_go_bound, m.beta_quantile, m.risk_lambda, m.weightings_matrix, m.cuts_filename)
 end
 
 """
@@ -240,9 +264,9 @@ markov_state - the current markov state
 Returns:
     the new markov state::Int
 """
-function transition{M,N,S,T}(m::SDDPModel{M,N,S,T}, stage::Int, markov_state::Int)
+function transition(m::SDDPModel, stage::Int, markov_state::Int)
     r = rand(Float64)
-    for new_markov_state=1:N
+    for new_markov_state=1:m.markov_states
         k = get_transition(m, stage, markov_state, new_markov_state)
         if r <= k
             return new_markov_state
@@ -250,18 +274,18 @@ function transition{M,N,S,T}(m::SDDPModel{M,N,S,T}, stage::Int, markov_state::In
             r -= k
         end
     end
-    return N
+    return m.markov_states
 end
-function get_transition{M,N,S}(m::SDDPModel{M,N,S,2}, stage::Int, current_markov_state::Int, new_markov_state::Int)
+function get_transition(m::SDDPModel{Array{Float64, 2}}, stage::Int, current_markov_state::Int, new_markov_state::Int)
     if current_markov_state==0
-        return 1./N
+        return 1./m.markov_states
     else
         return m.transition[current_markov_state,new_markov_state]::Float64
     end
 end
-function get_transition{M,N,S}(m::SDDPModel{M,N,S,1}, stage::Int, current_markov_state::Int, new_markov_state::Int)
+function get_transition(m::SDDPModel{Array{Array{Float64, 2}, 1}}, stage::Int, current_markov_state::Int, new_markov_state::Int)
     if current_markov_state==0
-        1./N
+        1./m.markov_states
     else
         m.transition[stage][current_markov_state,new_markov_state]::Float64
     end
@@ -270,7 +294,7 @@ end
 """
 This function loads cuts from a file.
 """
-function load_cuts!{M,N,S,T}(m::SDDPModel{M,N,S,T}, filename::ASCIIString)
+function load_cuts!(m::SDDPModel, filename::ASCIIString)
     open(filename, "r") do f
         while true
             line = readline(f)
@@ -292,7 +316,7 @@ function load_cuts!{M,N,S,T}(m::SDDPModel{M,N,S,T}, filename::ASCIIString)
         end
     end
 end
-function load_cuts!{M,N,S,T}(m::SDDPModel{M,N,S,T})
+function load_cuts!(m::SDDPModel)
     if m.cuts_filename == nothing
         error("Please specify a file to load cuts from.")
     end

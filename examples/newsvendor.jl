@@ -129,14 +129,24 @@ function solve_newsvendor2()
 
     end
 
+    m1 = copy(m)
     m2 = copy(m)
 
     srand(11111)
-    info("Adding 20 cuts")
+    info("Don't check for duplicate cuts")
     @time solve(m,                # Solve the model using the SDDP algorithm
         simulation_passes=10000,
-        log_frequency=20,
-        maximum_iterations=20
+        log_frequency=30,
+        maximum_iterations=30
+    )
+
+    srand(11111)
+    info("Check for duplicate cuts")
+    @time solve(m1,                # Solve the model using the SDDP algorithm
+        simulation_passes=10000,
+        log_frequency=30,
+        maximum_iterations=30,
+        check_duplicate_cuts=true
     )
 
     srand(11111)

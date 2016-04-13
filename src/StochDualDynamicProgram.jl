@@ -29,17 +29,18 @@ log_frequency      - simulate bound (using n=simulation_passes) every [log_frequ
 beta_quantile      - CVar quantile for nested risk aversion
 risk_lambda        - Weighting on convex combination of Expectation and CVar
     risk_lambda * Expectation + (1 - risk_lambda) * CVar
+check_duplicate_cuts - Checks cut before adding to see if duplicate
 """
-function JuMP.solve{M,N,S,T}(m::SDDPModel{M,N,S,T}; simulation_passes=1, log_frequency=1, maximum_iterations=1, beta_quantile=1, risk_lambda=1)
+function JuMP.solve(m::SDDPModel; simulation_passes=1, log_frequency=1, maximum_iterations=1, beta_quantile=1, risk_lambda=1,  check_duplicate_cuts=false)
     print_stats_header()
 
     # Set risk aversion parameters
     m.beta_quantile = beta_quantile
     m.risk_lambda = risk_lambda
-    try
+    # try
         for i =1:maximum_iterations
             # Cutting passes
-            backward_pass!(m)
+            backward_pass!(m, check_duplicate_cuts)
 
             if mod(i, log_frequency) == 0
                 # Simulate
@@ -48,9 +49,9 @@ function JuMP.solve{M,N,S,T}(m::SDDPModel{M,N,S,T}; simulation_passes=1, log_fre
                 !_flag && return
             end
         end
-    catch InterruptException
-        warn("Terminating early")
-    end
+    # catch InterruptException
+        # warn("Terminating early")
+    # end
     return
 end
 

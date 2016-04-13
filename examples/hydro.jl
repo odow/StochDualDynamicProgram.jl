@@ -110,6 +110,7 @@ function solve_hydro()
 
     end
 
+    info("Sanity check. Perform more iterations than needed to check bounds do not cross.")
     solve(m,                # Solve the model using the SDDP algorithm
         simulation_passes=1000,
         log_frequency=10,
