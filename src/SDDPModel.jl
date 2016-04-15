@@ -44,6 +44,7 @@ type SDDPModel{T<:Union{Array{Float64,2}, Vector{Array{Float64, 2}}}, M<:Real}
 
     stage_problems::Array{JuMP.Model}
     transition::T#Array{Union{Float64, Array{Float64, 2}}, T}
+    scenario_probability::WeightVec
     init_markov_state::Int
     confidence_interval::Tuple{Float64, Float64}
     valid_bound::Float64
@@ -67,6 +68,7 @@ cuts_filename     - ASCIIString filename for cut output. If specified cuts will 
 initial_markov_state - the scenario at time 0. Model transitions at the start of time period 1
 markov_states     - the number of markov states
 scenarios         - the number of stagewise independent scenarios in a markov state
+scenario_probability - vector with probability of each scenario occuring
 sense             - :Max or :Min
 solver            - AbstractMathProgBase solver capable of returning dual variables. Defaults to Clp.
 stages            - the number of stages
@@ -79,6 +81,7 @@ function SDDPModel(;
     initial_markov_state=0,
     markov_states=1,
     scenarios=1,
+    scenario_probability=nothing,
     sense=:Max,
     solver=ClpSolver(),
     stages=1,
@@ -112,9 +115,15 @@ function SDDPModel(;
     end
     # TODO :: Case where Transition matrix is Array{Float64, 3}
 
+    if scenario_probability == nothing
+        scenario_probability = ones(scenarios) / scenarios
+    else
+        @assert abs(sum(scenario_probability) - 1) < 1e-5
+    end
+
     my_inf = (sense==:Max?Inf:-Inf)
     sense_type = (sense==:Max?Val{:Max}:Val{:Min})
-    SDDPModel(stages,markov_states,scenarios, sense_type, Array(JuMP.Model, (stages, markov_states)), transition, initial_markov_state, (-my_inf, -my_inf), my_inf, conf_level, solver, value_to_go_bound, 1., 1., zeros(markov_states, scenarios), cuts_filename)
+    SDDPModel(stages,markov_states,scenarios, sense_type, Array(JuMP.Model, (stages, markov_states)), transition, WeightVec(scenario_probability), initial_markov_state, (-my_inf, -my_inf), my_inf, conf_level, solver, value_to_go_bound, 1., 1., zeros(markov_states, scenarios), cuts_filename)
 end
 
 """
@@ -155,6 +164,7 @@ function SDDPModel(
     initial_markov_state=0,
     markov_states=1,
     scenarios=1,
+    scenario_probability=nothing,
     sense=:Max,
     stages=1,
     transition=nothing,
@@ -171,6 +181,7 @@ function SDDPModel(
         stages=stages,
         markov_states=markov_states,
         scenarios=scenarios,
+        scenario_probability=scenario_probability,
         transition=transition,
         initial_markov_state=initial_markov_state,
         conf_level=conf_level,
@@ -250,7 +261,7 @@ end
 So we can copy an SDDPModel
 """
 function Base.copy(m::SDDPModel)
-    SDDPModel(m.stages, m.markov_states, m.scenarios, m.sense, deepcopy(m.stage_problems), copy(m.transition), m.init_markov_state, m.confidence_interval, m.valid_bound, m.QUANTILE, m.LPSOLVER, m.value_to_go_bound, m.beta_quantile, m.risk_lambda, m.weightings_matrix, m.cuts_filename)
+    SDDPModel(m.stages, m.markov_states, m.scenarios, m.sense, deepcopy(m.stage_problems), copy(m.transition), m.scenario_probability, m.init_markov_state, m.confidence_interval, m.valid_bound, m.QUANTILE, m.LPSOLVER, m.value_to_go_bound, m.beta_quantile, m.risk_lambda, m.weightings_matrix, m.cuts_filename)
 end
 
 """

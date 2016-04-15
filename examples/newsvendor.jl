@@ -157,8 +157,6 @@ function solve_newsvendor2()
         maximum_iterations=50
     )
 
-
-
     results = simulate(m,   # Simulate the policy
         1000,               # number of monte carlo realisations
         [:stock, :buy, :sell]

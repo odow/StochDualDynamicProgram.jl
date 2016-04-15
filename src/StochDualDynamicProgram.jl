@@ -1,14 +1,13 @@
 # TODO
 #  - at the moment we assume uniform scenario probability in each markov state
 #  - cut selection [de Matos, Philpott, Finardi (2015). Improving the performance of stochastic dual dynamic programming]
-#  - cut addition. why add a cut twice?
 
 module StochDualDynamicProgram
 
 importall JuMP
 using MathProgBase, Clp
 using Formatting
-using Distributions
+using Distributions, StatsBase
 
 export SDDPModel,
     @defStateVar, @defValueToGo, @addScenarioConstraint, @setStageProfit,

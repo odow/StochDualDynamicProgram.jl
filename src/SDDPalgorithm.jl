@@ -35,6 +35,11 @@ Inputs:
 m        - an SDDPModel
 
 """
+function load_scenario!(m::SDDPModel, sp::Model)
+    scenario = sample(1:m.scenarios, m.scenario_probability)
+    load_scenario!(sp, scenario)
+    return scenario
+end
 function backward_pass!(m::SDDPModel, check_duplicate_cuts::Bool)
     # Initialise markov state
     markov = 0
@@ -53,8 +58,7 @@ function backward_pass!(m::SDDPModel, check_duplicate_cuts::Bool)
         sp = m.stage_problems[stage, markov]
 
         # pick a scenario
-        scenario=rand(1:m.scenarios)
-        load_scenario!(sp, scenario)
+        scenario = load_scenario!(m, sp)
 
         # Lets store the scenario we just came from
         stagedata(sp).old_scenario = (old_markov, old_scenario)
@@ -259,7 +263,7 @@ function risk_weightings!(m::SDDPModel, stage::Int, markov::Int)
         i=1
         for mkv=1:m.markov_states
             for s=1:m.scenarios
-                P[i] = get_transition(m, stage, markov, mkv)/m.scenarios
+                P[i] = get_transition(m, stage, markov, mkv)*m.scenario_probability[s]
                 i+=1
             end
         end
@@ -281,7 +285,9 @@ function risk_weightings!(m::SDDPModel, stage::Int, markov::Int)
     else
         # We are just under expectation
         for mkv=1:m.markov_states
-            m.weightings_matrix[mkv, :] = get_transition(m, stage, markov, mkv)/m.scenarios
+            for s=1:m.scenarios
+                m.weightings_matrix[mkv, s] = get_transition(m, stage, markov, mkv)*m.scenario_probability[s]
+            end
         end
     end
 
@@ -513,10 +519,30 @@ function decide_set_bound!(::Type{Val{:Max}}, m::SDDPModel, obj)
 end
 decide_set_bound!(m::SDDPModel, obj) = decide_set_bound!(m.sense, m, obj)
 
-"""
-Forward pass of the SDDP algorithm
-"""
-function forward_pass_kernel!(m::SDDPModel, n::Int)
+function test_and_set_ci!(m::SDDPModel, obj::Vector)
+    if abs(m.risk_lambda - 1) < 1e-5
+        # Not risk averse so Normal Dist CI
+        if length(obj) > 1
+            setCI!(m, t_test(obj, conf_level=m.QUANTILE))
+        else
+            setCI!(m, (obj[1], obj[1]))
+        end
+    else
+        # estimate of CVar
+        setCI!(m, cvar(obj, m.beta_quantile, m.risk_lambda))
+    end
+end
+
+@inline store_results!(results::Void, vars, sp, stage, pass, scenario) = nothing
+function store_results!(results::Dict{Symbol, Any}, vars, sp, stage, pass, scenario)
+    results[:Objective][pass] += get_true_value(sp)         # Add objective
+    results[:Scenario][stage][pass] = scenario
+    for v in vars
+        results[v][stage][pass] = getValue(getVar(sp, v))
+    end
+end
+
+function forward_pass_kernel!(m::SDDPModel, n::Int, results::Union{Void, Dict{Symbol, Any}}=nothing, vars::Vector{Symbol}=Symbol[])
     # Initialise scenario
     markov, old_markov, scenario = 0, 0, 0
 
@@ -538,8 +564,7 @@ function forward_pass_kernel!(m::SDDPModel, n::Int)
 
             # realise on scenario
             sp = m.stage_problems[stage, markov]
-            scenario = rand(1:m.scenarios)
-            load_scenario!(sp, scenario)
+            scenario = load_scenario!(m, sp)
 
             # solve
             solve!(sp)
@@ -554,23 +579,11 @@ function forward_pass_kernel!(m::SDDPModel, n::Int)
                 # transition to new scenario
                 markov = transition(m, stage, old_markov)
             end
+
+            store_results!(results, vars, sp, stage, pass, scenario)
         end
     end
     return obj
-end
-
-function test_and_set_ci!(m::SDDPModel, obj::Vector)
-    if abs(m.risk_lambda - 1) < 1e-5
-        # Not risk averse so Normal Dist CI
-        if length(obj) > 1
-            setCI!(m, t_test(obj, conf_level=m.QUANTILE))
-        else
-            setCI!(m, (obj[1], obj[1]))
-        end
-    else
-        # estimate of CVar
-        setCI!(m, cvar(obj, m.beta_quantile, m.risk_lambda))
-    end
 end
 
 function forward_pass!(m::SDDPModel, npasses::Int=1)
@@ -598,6 +611,28 @@ function forward_pass!(m::SDDPModel, npasses::Range)
     return (false, npasses[end])
 end
 
+
+"""
+Simulate SDDP model and return variable solutions contained in [vars]
+"""
+function simulate(m::SDDPModel, n::Int, vars::Vector{Symbol}=Symbol[])
+    results = Dict{Symbol, Any}(:Objective=>zeros(Float64,n))
+    for v in vars
+        results[v] = Array(Vector{Any}, m.stages)
+        for i=1:m.stages
+            results[v][i] = Array(Any, n)
+        end
+    end
+    results[:Scenario] = Array(Vector{Int}, m.stages)
+    for i=1:m.stages
+        results[:Scenario][i] = zeros(n)
+    end
+
+    forward_pass_kernel!(m, n, results, vars)
+
+    return results
+end
+
 """
 Calculate Expected objective
 """
@@ -613,55 +648,6 @@ function t_test(x::Vector; conf_level=0.95)
     SE = std(x)/sqrt(length(x))
     lo, hi = mean(x) + [-1, 1] * tstar * SE
     return (lo, hi)#, mean(x))
-end
-
-
-"""
-Simulate SDDP model and return variable solutions contained in [vars]
-"""
-function simulate(m::SDDPModel, n::Int, vars::Vector{Symbol}=Symbol[])
-    results = Dict{Symbol, Any}(:Objective=>zeros(Float64,n))
-    for v in vars
-        results[v] = Array(Vector{Any}, m.stages)
-        for i=1:m.stages
-            results[v][i] = Array(Any, n)
-        end
-    end
-
-    markov, old_markov = 0, 0
-
-    for pass=1:n
-        if m.init_markov_state==0
-            markov = transition(m, 1, m.init_markov_state)
-        else
-            markov = m.init_markov_state
-        end
-        for stage=1:m.stages
-            old_markov = markov
-
-            scenario = rand(1:m.scenarios)
-
-            sp = m.stage_problems[stage, markov]  # corresponding stage problem
-            load_scenario!(sp, scenario)
-
-            solve!(sp)                           # solve
-
-            results[:Objective][pass] += get_true_value(sp)         # Add objective
-
-            # pass forward if necessary
-            if stage < m.stages
-                pass_states_forward!(m, stage, old_markov)
-                # transition to new scenario
-                markov = transition(m, stage, old_markov)
-            end
-
-            for v in vars
-                results[v][stage][pass] = getValue(getVar(sp, v))
-            end
-
-        end
-    end
-    return results
 end
 
 # @defVar(m, x[1:10])
