@@ -24,6 +24,8 @@ function pass_states_forward!(m::SDDPModel, stage::Int, markov_state::Int)
             chgConstrRHS(stagedata(next_sp).dual_constraints[i], getValue(stagedata(sp).state_vars[i]))
         end
     end
+
+    addsamplepoint!(m.stagecuts[stage, markov_state], map(getValue, stagedata(sp).state_vars))
 end
 
 """
@@ -145,9 +147,13 @@ function add_cut!(m::SDDPModel, stage::Int, markov_state::Int, check_duplicate_c
         return
     end
 
-    size(m.stagecuts)[2] > 0 && add_cut!(m.sense, sp, rhs, m.stagecuts[stage, markov_state])
-
-    add_cut!(m.sense, sp, rhs)
+    if size(m.stagecuts)[2] > 0
+        if add_cut!(m.sense, sp, rhs, m.stagecuts[stage, markov_state])
+            add_cut!(m.sense, sp, rhs)
+        end
+    else
+        add_cut!(m.sense, sp, rhs)
+    end
 
     m.cuts_filename != nothing && write_cut(m.cuts_filename, sp, stage, markov_state, rhs)
 

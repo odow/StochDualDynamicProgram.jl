@@ -1,3 +1,14 @@
+import Base.dot
+function Base.dot{T<:Real, N}(x::Vector{T}, y::NTuple{N, T})
+    @assert length(x) == N
+    z = zero(T)
+    @inbounds for i=1:N
+        z += x[i] * y[i]
+    end
+    z
+end
+Base.dot{T<:Real, N}(y::Vector{T}, x::NTuple{N, T}) = dot(x,y)
+
 """
 A single cut
 """
@@ -9,49 +20,68 @@ end
 """
 Cuts in a single stage problem
 """
-type StageCuts
-    n::Int                      # Number of cuts in stage problem
-    X::Array{Float64, 2}        # x to evaluate at
-    cuts::Vector{Cut}           # list of cuts in stage problem. length(cuts) == n
-    nondominated::Vector{Int}   # number of points cut is nondominated at length(nondomindated) == n
-    active_cut::Vector{Int}   # index of cut that is active at point x(i) length(active_cut) == size(X)[2]
+type StageCuts{N}
+    n::Int                      # Number of sample points in stage problem
+    samplepoints::Vector{NTuple{N, Float64}}  # x to evaluate at
+    cuts::Vector{Cut}           # list of cuts in stage problem.
+    nondominated::Vector{Int}   # number of points cut is nondominated at length(nondomindated) == length(cuts)
+    activecut::Vector{Int}      # index of cut that is active at point x(i) length(active_cut) == n
 end
+StageCuts(sp::Model, bound) = StageCuts(0, NTuple{length(stagedata(sp).state_vars), Float64}[], Cut[Cut(bound, zeros(length(stagedata(sp).state_vars)))], Int[0], Int[])
 
+# function StageCuts(sp::Model, bound, n=1000)
+#     X=zeros(length(stagedata(sp).state_vars),n)
+#     StageCuts(1, X, Cut[Cut(bound, zeros(size(X)[1]))], Int[size(X)[2]], ones(size(X)[2]))
+# end
 
-function StageCuts(sp::Model, bound, n=1000)
-    sd = stagedata(sp)
-
-    X=rand(length(sd.state_vars),n)
-    for (i,v) in enumerate(sd.state_vars)
-        if getLower(v) == -Inf || getUpper(v) == Inf
-            error("Cut deletion techniques can only be used if state variables contain non-infinite bounds. Currently, $(v) has a lower bound of $(getLower(v)) and an upper bound of $(getUpper(v)).")
-        end
-        X[i,:] = getLower(v) + (getUpper(v) - getLower(v)) * rand(n)
+function addsamplepoint!(stagecut::StageCuts, x::Vector{Float64})
+    # add sample point
+    tup = tuple(x...)
+    if !(tup in stagecut.samplepoints)
+        push!(stagecut.samplepoints, tup)
     end
-    StageCuts(1, X, Cut[Cut(bound, zeros(size(X)[1]))], Int[size(X)[2]], ones(size(X)[2]))
+
+    # calculate nondominated cut
+    y0 = evaluate(stagecut.cuts[1], tup)
+    iBest = 1
+    for i=2:length(stagecut.cuts)
+        y1 = evaluate(stagecut.cuts[i], tup)
+        if is_dominated(sense, y0, y1)
+            y0 = y1
+            iBest = i
+        end
+    end
+    push!(stagecut.activecut, iBest)
+    stagecut.nondominated[iBest] += 1
+
+    return
 end
+
+evaluate{N}(c::Cut, t::NTuple{N, Float64}) = c.intercept + dot(c.coefficients, t)
 
 """
 This function returns the active cut at x(i)
 """
-getcut(stagecut::StageCuts, xi::Int) = stagecut.cuts[stagecut.active_cut[xi]]
+function getcut(stagecut::StageCuts, xi::Int)
+    @assert xi <= stagecut.n
+    stagecut.cuts[stagecut.activecut[xi]]
+end
 
 function add_cut!(sense, cut::Cut, stagecut::StageCuts)
-    stagecut.n += 1
+    push!(stagecut.cuts, cut)
 
-    non_domination = size(stagecut.X)[2]
-    for i=1:size(stagecut.X)[2]
-        y0 = cut.intercept + dot(cut.coefficients, stagecut.X[:,i])
+    non_domination = stagecut.n
+    for i=1:stagecut.n
+        y0 = evaluate(cut, stagecut.samplepoints[i])
         c = getcut(stagecut, i)
-        if is_dominated(sense, c.intercept + dot(c.coefficients, stagecut.X[:,i]), y0)
+        if is_dominated(sense, evaluate(c, stagecut.samplepoints[i]), y0)
             non_domination -= 1
         else
             stagecut.nondominated[stagecut.active_cut[i]] -= 1
-            stagecut.active_cut[i] = stagecut.n
+            stagecut.active_cut[i] = length(stagecut.cuts)
         end
     end
 
-    push!(stagecut.cuts, cut)
     push!(stagecut.nondominated, non_domination)
 
     return non_domination > 0

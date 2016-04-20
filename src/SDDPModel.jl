@@ -253,7 +253,7 @@ function create_subproblems!(m::SDDPModel)
             m.stage_problems[stage, markov_state] = sp
 
             if size(m.stagecuts)[2] > 0
-                m.stagecuts[stage,markov_state] = StageCuts(sp, m.value_to_go_bound, 100)
+                m.stagecuts[stage,markov_state] = StageCuts(sp, m.value_to_go_bound)
             end
         end
     end
