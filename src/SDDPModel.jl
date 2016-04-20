@@ -55,6 +55,9 @@ type SDDPModel{T<:Union{Array{Float64,2}, Vector{Array{Float64, 2}}}, M<:Real}
     risk_lambda::Float64
     weightings_matrix::Array{Float64, 2}
     cuts_filename::Union{Void, ASCIIString}
+
+    build_function!::Function # function that builds the stage problems
+    stagecuts::Array{StageCuts, 2}
 end
 
 """
@@ -86,7 +89,9 @@ function SDDPModel(;
     solver=ClpSolver(),
     stages=1,
     transition=nothing,
-    value_to_go_bound=1000.
+    value_to_go_bound=1000.,
+    build_function = ()->(),
+    cut_selection=false
     )
 
     # Check non-zero stages, markov states and scenarios
@@ -123,7 +128,14 @@ function SDDPModel(;
 
     my_inf = (sense==:Max?Inf:-Inf)
     sense_type = (sense==:Max?Val{:Max}:Val{:Min})
-    SDDPModel(stages,markov_states,scenarios, sense_type, Array(JuMP.Model, (stages, markov_states)), transition, WeightVec(scenario_probability), initial_markov_state, (-my_inf, -my_inf), my_inf, conf_level, solver, value_to_go_bound, 1., 1., zeros(markov_states, scenarios), cuts_filename)
+
+    if cut_selection
+        stagecuts = Array(StageCuts, (stages, markov_states))
+    else
+        stagecuts = Array(StageCuts, (0, 0))
+    end
+
+    SDDPModel(stages,markov_states,scenarios, sense_type, Array(JuMP.Model, (stages, markov_states)), transition, WeightVec(scenario_probability), initial_markov_state, (-my_inf, -my_inf), my_inf, conf_level, solver, value_to_go_bound, 1., 1., zeros(markov_states, scenarios), cuts_filename, build_function, stagecuts)
 end
 
 """
@@ -169,7 +181,8 @@ function SDDPModel(
     stages=1,
     transition=nothing,
     solver=ClpSolver(),
-    value_to_go_bound=NaN
+    value_to_go_bound=NaN,
+    cut_selection=false
     )
     if isnan(value_to_go_bound)
         error("You must specify the option [value_to_go_bound] when creating an SDDPModel.")
@@ -187,14 +200,16 @@ function SDDPModel(
         conf_level=conf_level,
         solver=solver,
         value_to_go_bound=value_to_go_bound,
-        cuts_filename=cuts_filename
+        cuts_filename=cuts_filename,
+        build_function=build_subproblem!,
+        cut_selection=cut_selection
     )
-    add_subproblems!(m, build_subproblem!, value_to_go_bound)
+    create_subproblems!(m)
 
     return m
 end
 
-function add_subproblems!(m::SDDPModel, build_subproblem!, value_to_go_bound)
+function create_subproblems!(m::SDDPModel)
     # For every stage
     for stage=1:m.stages
         # For every markov state
@@ -206,15 +221,15 @@ function add_subproblems!(m::SDDPModel, build_subproblem!, value_to_go_bound)
             setSolver(sp, m.LPSOLVER)
 
             # User has specified markov states
-            if arglength(build_subproblem!)==3
-                build_subproblem!(sp, stage, markov_state)
+            if arglength(m.build_function!)==3
+                m.build_function!(sp, stage, markov_state)
 
             # No markov states specified
-            elseif arglength(build_subproblem!)==2
+            elseif arglength(m.build_function!)==2
                 # Double check they only mean one markov state
                 @assert markov_states == 1
 
-                build_subproblem!(sp, stage)
+                m.build_function!(sp, stage)
             else
                 error("Invalid number of arguments")
             end
@@ -231,11 +246,15 @@ function add_subproblems!(m::SDDPModel, build_subproblem!, value_to_go_bound)
                     set_objective!(m.sense, sp)
                 else
                     # Otherwise create a value/cost to go variable
-                    set_objective!(m.sense, sp, value_to_go_bound)
+                    set_objective!(m.sense, sp, m.value_to_go_bound)
                 end
             end
             # Store the stage problem
             m.stage_problems[stage, markov_state] = sp
+
+            if size(m.stagecuts)[2] > 0
+                m.stagecuts[stage,markov_state] = StageCuts(sp, m.value_to_go_bound, 100)
+            end
         end
     end
 
@@ -261,7 +280,7 @@ end
 So we can copy an SDDPModel
 """
 function Base.copy(m::SDDPModel)
-    SDDPModel(m.stages, m.markov_states, m.scenarios, m.sense, deepcopy(m.stage_problems), copy(m.transition), m.scenario_probability, m.init_markov_state, m.confidence_interval, m.valid_bound, m.QUANTILE, m.LPSOLVER, m.value_to_go_bound, m.beta_quantile, m.risk_lambda, m.weightings_matrix, m.cuts_filename)
+    SDDPModel(m.stages, m.markov_states, m.scenarios, m.sense, deepcopy(m.stage_problems), copy(m.transition), m.scenario_probability, m.init_markov_state, m.confidence_interval, m.valid_bound, m.QUANTILE, m.LPSOLVER, m.value_to_go_bound, m.beta_quantile, m.risk_lambda, m.weightings_matrix, m.cuts_filename, m.build_function!, m.stagecuts)
 end
 
 """

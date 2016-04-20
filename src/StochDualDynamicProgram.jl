@@ -14,7 +14,9 @@ export SDDPModel,
     simulate, load_cuts!
 
 include("macros.jl")
+include("de_matos_types.jl")
 include("SDDPModel.jl")
+include("de_matos_functions.jl")
 include("SDDPalgorithm.jl")
 
 """
@@ -45,6 +47,7 @@ function JuMP.solve(m::SDDPModel; simulation_passes=1, log_frequency=1, maximum_
                 # Simulate
                 (_flag, n) = forward_pass!(m, simulation_passes)
                 print_stats(m, n)
+                size(m.stagecuts)[2] > 0 && rebuild_stageproblems!(m)
                 !_flag && return
             end
         end

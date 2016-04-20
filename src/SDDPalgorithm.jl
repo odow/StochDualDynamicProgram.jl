@@ -145,20 +145,36 @@ function add_cut!(m::SDDPModel, stage::Int, markov_state::Int, check_duplicate_c
         return
     end
 
+    size(m.stagecuts)[2] > 0 && add_cut!(m.sense, sp, rhs, m.stagecuts[stage, markov_state])
+
     add_cut!(m.sense, sp, rhs)
 
-    if m.cuts_filename != nothing
-        write_cut(m.cuts_filename, sp, stage, markov_state, rhs)
-    end
+    m.cuts_filename != nothing && write_cut(m.cuts_filename, sp, stage, markov_state, rhs)
 
     return
 end
 
-function add_cut!(::Type{Val{:Min}}, sp, rhs)
+function add_cut!(::Type{Val{:Min}}, sp::Model, rhs::JuMP.GenericAffExpr)
     @addConstraint(sp, stagedata(sp).theta >= rhs)
 end
-function add_cut!(::Type{Val{:Max}}, sp, rhs)
+function add_cut!(::Type{Val{:Max}}, sp::Model, rhs::JuMP.GenericAffExpr)
     @addConstraint(sp, stagedata(sp).theta <= rhs)
+end
+
+function aggregate_terms(sp::Model, ex::JuMP.GenericAffExpr)
+    data = stagedata(sp)::StageData
+    # Initialise storage
+    y = zeros(length(data.state_vars))
+    # Aggregate coefficients
+    for i in 1:length(ex.vars)
+        for j in 1:length(data.state_vars)
+            if ex.vars[i] == data.state_vars[j]
+                y[j] += ex.coeffs[i]
+                break
+            end
+        end
+    end
+    y
 end
 
 """
@@ -175,16 +191,7 @@ function is_duplicate(sp::Model, rhs::JuMP.GenericAffExpr)
     K = 10
 
     # Initialise storage
-    y = zeros(length(data.state_vars))
-    # Aggregate coefficients
-    for i in 1:length(rhs.vars)
-        for j in 1:length(data.state_vars)
-            if rhs.vars[i] == data.state_vars[j]
-                y[j] += rhs.coeffs[i]
-                break
-            end
-        end
-    end
+    y = aggregate_terms(sp, rhs)
 
     # Dict key. Tuple of RHS constant and a sum of terms to help uniqueness
     key = (round(rhs.constant, K), round(sum(rhs.coeffs), K))
@@ -228,13 +235,7 @@ function write_cut(filename::ASCIIString, sp::Model, stage::Int, markov_state::I
     n = length(rhs.vars)
     open(filename, "a") do f
         write(f, string(stage, ", ", markov_state, ", ", rhs.constant))
-        for v in stagedata(sp).state_vars
-            y = 0.
-            for i in 1:n
-                if v == rhs.vars[i]
-                    y += rhs.coeffs[i]
-                end
-            end
+        for y in aggregate_terms(sp, rhs)
             write(f, string(", ", y))
         end
         write(f, "\n")
