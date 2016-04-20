@@ -11,7 +11,7 @@ function rebuild_stageproblems!(m::SDDPModel)
         for markovstate=1:m.markov_states
             sp = m.stage_problems[stage, markovstate]
             stagecut = m.stagecuts[stage, markovstate]
-            for xi in unique(stagecut.active_cut)
+            for xi in unique(stagecut.activecut)
                 add_cut!(m.sense, sp, getcut(stagecut, xi))
             end
         end

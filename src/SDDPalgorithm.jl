@@ -25,7 +25,9 @@ function pass_states_forward!(m::SDDPModel, stage::Int, markov_state::Int)
         end
     end
 
-    addsamplepoint!(m.stagecuts[stage, markov_state], map(getValue, stagedata(sp).state_vars))
+    if size(m.stagecuts)[1] > 0
+        addsamplepoint!(m.sense, m.stagecuts[stage, markov_state], map(getValue, stagedata(sp).state_vars))
+    end
 end
 
 """
@@ -143,7 +145,7 @@ function add_cut!(m::SDDPModel, stage::Int, markov_state::Int, check_duplicate_c
     , (new_markov, new_sp) in enumerate(m.stage_problems[stage+1, :])}
     )
 
-    if check_duplicate_cuts && is_duplicate(sp, rhs)
+    if true && is_duplicate(sp, rhs)
         return
     end
 

@@ -86,14 +86,18 @@ end
 facts("Hydro Example") do
     include("../examples/hydro.jl")
 
-    context("Version One") do
-        results = solve_hydro()
-        @fact mean(results[:Objective]) --> roughly(904, 20)
-    end
+    # context("Version One") do
+    #     results = solve_hydro()
+    #     @fact mean(results[:Objective]) --> roughly(904, 20)
+    # end
+    #
+    # context("Version Two") do
+    #     results = solve_hydro2()
+    #     @fact mean(results[:Objective])--> roughly(-1450, 20)
+    # end
 
-    context("Version Two") do
-        results = solve_hydro2()
-        @fact mean(results[:Objective])--> roughly(-1450, 20)
+    context("Cut Selection") do
+        solve_hydro_dominance()
     end
 end
 
@@ -107,5 +111,7 @@ facts("Newsvendor Example") do
         results = solve_newsvendor2()
     end
 end
+
+
 
 FactCheck.exitstatus()

@@ -47,7 +47,10 @@ function JuMP.solve(m::SDDPModel; simulation_passes=1, log_frequency=1, maximum_
                 # Simulate
                 (_flag, n) = forward_pass!(m, simulation_passes)
                 print_stats(m, n)
-                size(m.stagecuts)[2] > 0 && rebuild_stageproblems!(m)
+                if size(m.stagecuts)[2] > 0
+                    @show m.stagecuts[2,1]
+                    rebuild_stageproblems!(m)
+                end
                 !_flag && return
             end
         end

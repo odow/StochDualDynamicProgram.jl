@@ -7,7 +7,7 @@ function Base.dot{T<:Real, N}(x::Vector{T}, y::NTuple{N, T})
     end
     z
 end
-Base.dot{T<:Real, N}(y::Vector{T}, x::NTuple{N, T}) = dot(x,y)
+Base.dot{T<:Real, N}(x::NTuple{N, T}, y::Vector{T}) = dot(y,x)
 
 """
 A single cut
@@ -15,7 +15,9 @@ A single cut
 type Cut
     intercept::Float64
     coefficients::Vector{Float64}
+    Cut(intercept, coefficients::Vector) = new(round(intercept, 10), round(coefficients, 10))
 end
+
 
 """
 Cuts in a single stage problem
@@ -29,30 +31,26 @@ type StageCuts{N}
 end
 StageCuts(sp::Model, bound) = StageCuts(0, NTuple{length(stagedata(sp).state_vars), Float64}[], Cut[Cut(bound, zeros(length(stagedata(sp).state_vars)))], Int[0], Int[])
 
-# function StageCuts(sp::Model, bound, n=1000)
-#     X=zeros(length(stagedata(sp).state_vars),n)
-#     StageCuts(1, X, Cut[Cut(bound, zeros(size(X)[1]))], Int[size(X)[2]], ones(size(X)[2]))
-# end
-
-function addsamplepoint!(stagecut::StageCuts, x::Vector{Float64})
+function addsamplepoint!(sense, stagecut::StageCuts, x::Vector{Float64})
     # add sample point
-    tup = tuple(x...)
+    tup = tuple(round(copy(x), 10)...)
     if !(tup in stagecut.samplepoints)
+        stagecut.n += 1
         push!(stagecut.samplepoints, tup)
-    end
 
-    # calculate nondominated cut
-    y0 = evaluate(stagecut.cuts[1], tup)
-    iBest = 1
-    for i=2:length(stagecut.cuts)
-        y1 = evaluate(stagecut.cuts[i], tup)
-        if is_dominated(sense, y0, y1)
-            y0 = y1
-            iBest = i
+        # calculate nondominated cut
+        y0 = evaluate(stagecut.cuts[1], tup)
+        iBest = 1
+        for i=2:length(stagecut.cuts)
+            y1 = evaluate(stagecut.cuts[i], tup)
+            if is_dominated(sense, y0, y1)
+                y0 = y1
+                iBest = i
+            end
         end
+        push!(stagecut.activecut, iBest)
+        stagecut.nondominated[iBest] += 1
     end
-    push!(stagecut.activecut, iBest)
-    stagecut.nondominated[iBest] += 1
 
     return
 end
@@ -77,8 +75,8 @@ function add_cut!(sense, cut::Cut, stagecut::StageCuts)
         if is_dominated(sense, evaluate(c, stagecut.samplepoints[i]), y0)
             non_domination -= 1
         else
-            stagecut.nondominated[stagecut.active_cut[i]] -= 1
-            stagecut.active_cut[i] = length(stagecut.cuts)
+            stagecut.nondominated[stagecut.activecut[i]] -= 1
+            stagecut.activecut[i] = length(stagecut.cuts)
         end
     end
 
@@ -87,5 +85,5 @@ function add_cut!(sense, cut::Cut, stagecut::StageCuts)
     return non_domination > 0
 end
 
-is_dominated(::Type{Val{:Min}}, y0::Float64, y1::Float64) = y0 < y1
-is_dominated(::Type{Val{:Max}}, y0::Float64, y1::Float64) = y0 > y1
+is_dominated(::Type{Val{:Min}}, y0::Float64, y1::Float64) = y0 <= y1
+is_dominated(::Type{Val{:Max}}, y0::Float64, y1::Float64) = y0 >= y1
