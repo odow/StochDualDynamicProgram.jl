@@ -104,10 +104,13 @@ If `cuts_filename` was specified in the model definition, you can load cuts via 
 ### Solve
 The `solve(m::SDDPModel [; kwargs...])` function solves the SDDP model `m`. There are the following keyword parameters:
  - `simulation_passes`: The number of forward simulation passes to conduct when estimating the objective
- - `maximum_iterations`: the number of cutting passes to make before testing for convergence
+ - `maximum_iterations`: the total number of cutting passes to make before termination
  - `log_frequency`: the number of cutting passes to make before testing for convergence
+ - `cut_selection_frequency`: the number of cutting passes to make before removing cuts that are Level 1 dominated*
  - `beta_quantile`: The β quantile for CVar
  - `risk_lambda`: Convex weight between Expectation and CVar (1=Expectation, 0=CVar)
+
+\*de Matos, Philpott, Finardi (2015). Improving the Peformance of Stochastic Dual Dynamic Programming. Journal of Computational and Applied Mathematics 290: 196-208
 
 ### Simulate Policy
 The `simulate(m::SDDPModel, n::Int, variables::Vector{Symbol})` function simulates `n` realisations of the policy given by a converged SDDP model `m`. It returns a dictionary with an entry for each variable given in `variables`. Each dictionary entry is a vector corresponding to the stages in the model. Each item in the vector is a vector of the `n` values that the variable took in the `n` realisations.

@@ -44,7 +44,7 @@ function load_scenario!(m::SDDPModel, sp::Model)
     load_scenario!(sp, scenario)
     return scenario
 end
-function backward_pass!(m::SDDPModel, check_duplicate_cuts::Bool)
+function backward_pass!(m::SDDPModel, cut_selection::Bool)
     # Initialise markov state
     markov = 0
     if m.init_markov_state==0
@@ -86,7 +86,7 @@ function backward_pass!(m::SDDPModel, check_duplicate_cuts::Bool)
     # Stepping back throught the stages
     for stage=reverse(1:(m.stages-1))
         # Add a cut to that scenario
-        add_cut!(m, stage, old_markov, check_duplicate_cuts)
+        add_cut!(m, stage, old_markov, cut_selection)
 
         # Look up the scenario to step back to
         old_markov, old_scenario = stagedata(m.stage_problems[stage, old_markov]).old_scenario
@@ -126,7 +126,7 @@ m            - an SDDPModel object
 stage        - the stage to add the cut
 markov_state - the scenario to add the cut to
 """
-function add_cut!(m::SDDPModel, stage::Int, markov_state::Int, check_duplicate_cuts::Bool=false)
+function add_cut!(m::SDDPModel, stage::Int, markov_state::Int, cut_selection::Bool=false)
     sp = m.stage_problems[stage, markov_state]
 
     risk_weightings!(m, stage, markov_state)
@@ -145,11 +145,7 @@ function add_cut!(m::SDDPModel, stage::Int, markov_state::Int, check_duplicate_c
     , (new_markov, new_sp) in enumerate(m.stage_problems[stage+1, :])}
     )
 
-    if true && is_duplicate(sp, rhs)
-        return
-    end
-
-    if size(m.stagecuts)[2] > 0
+    if cut_selection
         if add_cut!(m.sense, sp, rhs, m.stagecuts[stage, markov_state])
             add_cut!(m.sense, sp, rhs)
         end
@@ -185,55 +181,55 @@ function aggregate_terms(sp::Model, ex::JuMP.GenericAffExpr)
     y
 end
 
-"""
-This function checks if a cut exists in the model
-"""
-function is_duplicate(sp::Model, rhs::JuMP.GenericAffExpr)
-    # Get the stage data
-    data = stagedata(sp)::StageData
-
-    # Dictionary containing cut data
-    cut_data = data.cut_data
-
-    # Rounding extent
-    K = 10
-
-    # Initialise storage
-    y = aggregate_terms(sp, rhs)
-
-    # Dict key. Tuple of RHS constant and a sum of terms to help uniqueness
-    key = (round(rhs.constant, K), round(sum(rhs.coeffs), K))
-
-    if !haskey(cut_data, key)
-        # New key. Can add
-        cut_data[key] = Vector{Float64}[y]
-        return false
-    else
-        # For all cuts in cut_data[key]
-        for cut in cut_data[key]
-            # Assume duplicate
-            _flag = true
-            for i=1:length(data.state_vars)
-                if y[i] != cut[i]
-                    # Can't be duplicate with this cut
-                    _flag = false
-                    break
-                end
-            end
-            if _flag
-                # We've gone through all the variables and we are still here
-                # so we must be a duplicate
-                return true
-            end
-        end
-        # We've gone through all existing cuts and we're still here so
-        # we are unique. Lets add
-        push!(cut_data[key], y)
-    end
-
-    # Unique cut
-    return false
-end
+# """
+# This function checks if a cut exists in the model
+# """
+# function is_duplicate(sp::Model, rhs::JuMP.GenericAffExpr)
+#     # Get the stage data
+#     data = stagedata(sp)::StageData
+#
+#     # Dictionary containing cut data
+#     cut_data = data.cut_data
+#
+#     # Rounding extent
+#     K = 10
+#
+#     # Initialise storage
+#     y = aggregate_terms(sp, rhs)
+#
+#     # Dict key. Tuple of RHS constant and a sum of terms to help uniqueness
+#     key = (round(rhs.constant, K), round(sum(rhs.coeffs), K))
+#
+#     if !haskey(cut_data, key)
+#         # New key. Can add
+#         cut_data[key] = Vector{Float64}[y]
+#         return false
+#     else
+#         # For all cuts in cut_data[key]
+#         for cut in cut_data[key]
+#             # Assume duplicate
+#             _flag = true
+#             for i=1:length(data.state_vars)
+#                 if y[i] != cut[i]
+#                     # Can't be duplicate with this cut
+#                     _flag = false
+#                     break
+#                 end
+#             end
+#             if _flag
+#                 # We've gone through all the variables and we are still here
+#                 # so we must be a duplicate
+#                 return true
+#             end
+#         end
+#         # We've gone through all existing cuts and we're still here so
+#         # we are unique. Lets add
+#         push!(cut_data[key], y)
+#     end
+#
+#     # Unique cut
+#     return false
+# end
 
 
 """

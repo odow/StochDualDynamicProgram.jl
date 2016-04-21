@@ -34,6 +34,7 @@ StageCuts(sp::Model, bound) = StageCuts(0, NTuple{length(stagedata(sp).state_var
 function addsamplepoint!(sense, stagecut::StageCuts, x::Vector{Float64})
     # add sample point
     tup = tuple(round(copy(x), 10)...)
+
     if !(tup in stagecut.samplepoints)
         stagecut.n += 1
         push!(stagecut.samplepoints, tup)
@@ -60,7 +61,7 @@ evaluate{N}(c::Cut, t::NTuple{N, Float64}) = c.intercept + dot(c.coefficients, t
 """
 This function returns the active cut at x(i)
 """
-function getcut(stagecut::StageCuts, xi::Int)
+function getactivecut(stagecut::StageCuts, xi::Int)
     @assert xi <= stagecut.n
     stagecut.cuts[stagecut.activecut[xi]]
 end
@@ -70,9 +71,9 @@ function add_cut!(sense, cut::Cut, stagecut::StageCuts)
 
     non_domination = stagecut.n
     for i=1:stagecut.n
-        y0 = evaluate(cut, stagecut.samplepoints[i])
-        c = getcut(stagecut, i)
-        if is_dominated(sense, evaluate(c, stagecut.samplepoints[i]), y0)
+        y_new = evaluate(cut, stagecut.samplepoints[i])
+        c = getactivecut(stagecut, i)
+        if is_dominated(sense, y_new, evaluate(c, stagecut.samplepoints[i]))
             non_domination -= 1
         else
             stagecut.nondominated[stagecut.activecut[i]] -= 1
@@ -85,5 +86,6 @@ function add_cut!(sense, cut::Cut, stagecut::StageCuts)
     return non_domination > 0
 end
 
-is_dominated(::Type{Val{:Min}}, y0::Float64, y1::Float64) = y0 <= y1
-is_dominated(::Type{Val{:Max}}, y0::Float64, y1::Float64) = y0 >= y1
+# true if y0 is dominated by y1
+is_dominated(::Type{Val{:Min}}, y0::Float64, y1::Float64) = y0 < y1
+is_dominated(::Type{Val{:Max}}, y0::Float64, y1::Float64) = y0 > y1

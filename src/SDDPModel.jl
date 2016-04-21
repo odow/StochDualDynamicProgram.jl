@@ -90,8 +90,7 @@ function SDDPModel(;
     stages=1,
     transition=nothing,
     value_to_go_bound=1000.,
-    build_function = ()->(),
-    cut_selection=false
+    build_function = ()->()
     )
 
     # Check non-zero stages, markov states and scenarios
@@ -129,13 +128,7 @@ function SDDPModel(;
     my_inf = (sense==:Max?Inf:-Inf)
     sense_type = (sense==:Max?Val{:Max}:Val{:Min})
 
-    if cut_selection
-        stagecuts = Array(StageCuts, (stages, markov_states))
-    else
-        stagecuts = Array(StageCuts, (0, 0))
-    end
-
-    SDDPModel(stages,markov_states,scenarios, sense_type, Array(JuMP.Model, (stages, markov_states)), transition, WeightVec(scenario_probability), initial_markov_state, (-my_inf, -my_inf), my_inf, conf_level, solver, value_to_go_bound, 1., 1., zeros(markov_states, scenarios), cuts_filename, build_function, stagecuts)
+    SDDPModel(stages,markov_states,scenarios, sense_type, Array(JuMP.Model, (stages, markov_states)), transition, WeightVec(scenario_probability), initial_markov_state, (-my_inf, -my_inf), my_inf, conf_level, solver, value_to_go_bound, 1., 1., zeros(markov_states, scenarios), cuts_filename, build_function, Array(StageCuts, (0, 0)))
 end
 
 """
@@ -181,8 +174,7 @@ function SDDPModel(
     stages=1,
     transition=nothing,
     solver=ClpSolver(),
-    value_to_go_bound=NaN,
-    cut_selection=false
+    value_to_go_bound=NaN
     )
     if isnan(value_to_go_bound)
         error("You must specify the option [value_to_go_bound] when creating an SDDPModel.")
@@ -201,19 +193,9 @@ function SDDPModel(
         solver=solver,
         value_to_go_bound=value_to_go_bound,
         cuts_filename=cuts_filename,
-        build_function=build_subproblem!,
-        cut_selection=cut_selection
+        build_function=build_subproblem!
     )
     create_subproblems!(m)
-
-
-    if size(m.stagecuts)[2] > 0
-        for stage=1:stages
-            for markov_state=1:markov_states
-                m.stagecuts[stage,markov_state] = StageCuts(m.stage_problems[stage,markov_state], m.value_to_go_bound)
-            end
-        end
-    end
 
     return m
 end
