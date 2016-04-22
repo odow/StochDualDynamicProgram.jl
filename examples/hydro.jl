@@ -110,11 +110,21 @@ function solve_hydro()
 
     end
 
+    m2 = copy(m)
+
     info("Sanity check. Perform more iterations than needed to check bounds do not cross.")
-    solve(m,                # Solve the model using the SDDP algorithm
+    @time solve(m,                # Solve the model using the SDDP algorithm
         simulation_passes=1000,
         log_frequency=10,
         maximum_iterations=200
+    )
+
+    info("Cut selection comparison.")
+    @time solve(m2,                # Solve the model using the SDDP algorithm
+        simulation_passes=1000,
+        log_frequency=10,
+        maximum_iterations=200,
+        cut_selection_frequency=20
     )
 
     results = simulate(m,   # Simulate the policy

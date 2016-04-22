@@ -95,6 +95,7 @@ facts("Hydro Example") do
         results = solve_hydro2()
         @fact mean(results[:Objective])--> roughly(-1450, 20)
     end
+
 end
 
 facts("Newsvendor Example") do
@@ -107,5 +108,7 @@ facts("Newsvendor Example") do
         results = solve_newsvendor2()
     end
 end
+
+
 
 FactCheck.exitstatus()

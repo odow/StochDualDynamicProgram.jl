@@ -1,21 +1,22 @@
 # TODO
 #  - at the moment we assume uniform scenario probability in each markov state
 #  - cut selection [de Matos, Philpott, Finardi (2015). Improving the performance of stochastic dual dynamic programming]
-#  - cut addition. why add a cut twice?
 
 module StochDualDynamicProgram
 
 importall JuMP
 using MathProgBase, Clp
 using Formatting
-using Distributions
+using Distributions, StatsBase
 
 export SDDPModel,
     @defStateVar, @defValueToGo, @addScenarioConstraint, @setStageProfit,
     simulate, load_cuts!
 
 include("macros.jl")
+include("de_matos_types.jl")
 include("SDDPModel.jl")
+include("de_matos_functions.jl")
 include("SDDPalgorithm.jl")
 
 """
@@ -31,22 +32,26 @@ risk_lambda        - Weighting on convex combination of Expectation and CVar
     risk_lambda * Expectation + (1 - risk_lambda) * CVar
 check_duplicate_cuts - Checks cut before adding to see if duplicate
 """
-function JuMP.solve(m::SDDPModel; simulation_passes=1, log_frequency=1, maximum_iterations=1, beta_quantile=1, risk_lambda=1,  check_duplicate_cuts=false)
+function JuMP.solve(m::SDDPModel; simulation_passes=1, log_frequency=1, maximum_iterations=1, beta_quantile=1, risk_lambda=1,  cut_selection_frequency=0)
     print_stats_header()
 
+    cut_selection_frequency > 0 && initialise_cut_selection!(m)
     # Set risk aversion parameters
     m.beta_quantile = beta_quantile
     m.risk_lambda = risk_lambda
     # try
         for i =1:maximum_iterations
             # Cutting passes
-            backward_pass!(m, check_duplicate_cuts)
+            backward_pass!(m, cut_selection_frequency > 0)
 
             if mod(i, log_frequency) == 0
                 # Simulate
                 (_flag, n) = forward_pass!(m, simulation_passes)
                 print_stats(m, n)
                 !_flag && return
+            end
+            if cut_selection_frequency > 0 && mod(i, cut_selection_frequency) == 0
+                rebuild_stageproblems!(m)
             end
         end
     # catch InterruptException

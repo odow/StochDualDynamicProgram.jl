@@ -24,6 +24,10 @@ function pass_states_forward!(m::SDDPModel, stage::Int, markov_state::Int)
             chgConstrRHS(stagedata(next_sp).dual_constraints[i], getValue(stagedata(sp).state_vars[i]))
         end
     end
+
+    if size(m.stagecuts)[1] > 0
+        addsamplepoint!(m.sense, m.stagecuts[stage, markov_state], map(getValue, stagedata(sp).state_vars))
+    end
 end
 
 """
@@ -35,7 +39,12 @@ Inputs:
 m        - an SDDPModel
 
 """
-function backward_pass!(m::SDDPModel, check_duplicate_cuts::Bool)
+function load_scenario!(m::SDDPModel, sp::Model)
+    scenario = sample(1:m.scenarios, m.scenario_probability)
+    load_scenario!(sp, scenario)
+    return scenario
+end
+function backward_pass!(m::SDDPModel, cut_selection::Bool)
     # Initialise markov state
     markov = 0
     if m.init_markov_state==0
@@ -53,8 +62,7 @@ function backward_pass!(m::SDDPModel, check_duplicate_cuts::Bool)
         sp = m.stage_problems[stage, markov]
 
         # pick a scenario
-        scenario=rand(1:m.scenarios)
-        load_scenario!(sp, scenario)
+        scenario = load_scenario!(m, sp)
 
         # Lets store the scenario we just came from
         stagedata(sp).old_scenario = (old_markov, old_scenario)
@@ -78,7 +86,7 @@ function backward_pass!(m::SDDPModel, check_duplicate_cuts::Bool)
     # Stepping back throught the stages
     for stage=reverse(1:(m.stages-1))
         # Add a cut to that scenario
-        add_cut!(m, stage, old_markov, check_duplicate_cuts)
+        add_cut!(m, stage, old_markov, cut_selection)
 
         # Look up the scenario to step back to
         old_markov, old_scenario = stagedata(m.stage_problems[stage, old_markov]).old_scenario
@@ -118,7 +126,7 @@ m            - an SDDPModel object
 stage        - the stage to add the cut
 markov_state - the scenario to add the cut to
 """
-function add_cut!(m::SDDPModel, stage::Int, markov_state::Int, check_duplicate_cuts::Bool=false)
+function add_cut!(m::SDDPModel, stage::Int, markov_state::Int, cut_selection::Bool=false)
     sp = m.stage_problems[stage, markov_state]
 
     risk_weightings!(m, stage, markov_state)
@@ -137,84 +145,91 @@ function add_cut!(m::SDDPModel, stage::Int, markov_state::Int, check_duplicate_c
     , (new_markov, new_sp) in enumerate(m.stage_problems[stage+1, :])}
     )
 
-    if check_duplicate_cuts && is_duplicate(sp, rhs)
-        return
+    if cut_selection
+        if add_cut!(m.sense, sp, rhs, m.stagecuts[stage, markov_state])
+            add_cut!(m.sense, sp, rhs)
+        end
+    else
+        add_cut!(m.sense, sp, rhs)
     end
 
-    add_cut!(m.sense, sp, rhs)
-
-    if m.cuts_filename != nothing
-        write_cut(m.cuts_filename, sp, stage, markov_state, rhs)
-    end
+    m.cuts_filename != nothing && write_cut(m.cuts_filename, sp, stage, markov_state, rhs)
 
     return
 end
 
-function add_cut!(::Type{Val{:Min}}, sp, rhs)
+function add_cut!(::Type{Val{:Min}}, sp::Model, rhs::JuMP.GenericAffExpr)
     @addConstraint(sp, stagedata(sp).theta >= rhs)
 end
-function add_cut!(::Type{Val{:Max}}, sp, rhs)
+function add_cut!(::Type{Val{:Max}}, sp::Model, rhs::JuMP.GenericAffExpr)
     @addConstraint(sp, stagedata(sp).theta <= rhs)
 end
 
-"""
-This function checks if a cut exists in the model
-"""
-function is_duplicate(sp::Model, rhs::JuMP.GenericAffExpr)
-    # Get the stage data
+function aggregate_terms(sp::Model, ex::JuMP.GenericAffExpr)
     data = stagedata(sp)::StageData
-
-    # Dictionary containing cut data
-    cut_data = data.cut_data
-
-    # Rounding extent
-    K = 10
-
     # Initialise storage
     y = zeros(length(data.state_vars))
     # Aggregate coefficients
-    for i in 1:length(rhs.vars)
+    for i in 1:length(ex.vars)
         for j in 1:length(data.state_vars)
-            if rhs.vars[i] == data.state_vars[j]
-                y[j] += rhs.coeffs[i]
+            if ex.vars[i] == data.state_vars[j]
+                y[j] += ex.coeffs[i]
                 break
             end
         end
     end
-
-    # Dict key. Tuple of RHS constant and a sum of terms to help uniqueness
-    key = (round(rhs.constant, K), round(sum(rhs.coeffs), K))
-
-    if !haskey(cut_data, key)
-        # New key. Can add
-        cut_data[key] = Vector{Float64}[y]
-        return false
-    else
-        # For all cuts in cut_data[key]
-        for cut in cut_data[key]
-            # Assume duplicate
-            _flag = true
-            for i=1:length(data.state_vars)
-                if y[i] != cut[i]
-                    # Can't be duplicate with this cut
-                    _flag = false
-                    break
-                end
-            end
-            if _flag
-                # We've gone through all the variables and we are still here
-                # so we must be a duplicate
-                return true
-            end
-        end
-        # We've gone through all existing cuts and we're still here so
-        # we are unique. Lets add
-        push!(cut_data[key], y)
-    end
-
-    # Unique cut
-    return false
+    y
 end
+
+# """
+# This function checks if a cut exists in the model
+# """
+# function is_duplicate(sp::Model, rhs::JuMP.GenericAffExpr)
+#     # Get the stage data
+#     data = stagedata(sp)::StageData
+#
+#     # Dictionary containing cut data
+#     cut_data = data.cut_data
+#
+#     # Rounding extent
+#     K = 10
+#
+#     # Initialise storage
+#     y = aggregate_terms(sp, rhs)
+#
+#     # Dict key. Tuple of RHS constant and a sum of terms to help uniqueness
+#     key = (round(rhs.constant, K), round(sum(rhs.coeffs), K))
+#
+#     if !haskey(cut_data, key)
+#         # New key. Can add
+#         cut_data[key] = Vector{Float64}[y]
+#         return false
+#     else
+#         # For all cuts in cut_data[key]
+#         for cut in cut_data[key]
+#             # Assume duplicate
+#             _flag = true
+#             for i=1:length(data.state_vars)
+#                 if y[i] != cut[i]
+#                     # Can't be duplicate with this cut
+#                     _flag = false
+#                     break
+#                 end
+#             end
+#             if _flag
+#                 # We've gone through all the variables and we are still here
+#                 # so we must be a duplicate
+#                 return true
+#             end
+#         end
+#         # We've gone through all existing cuts and we're still here so
+#         # we are unique. Lets add
+#         push!(cut_data[key], y)
+#     end
+#
+#     # Unique cut
+#     return false
+# end
 
 
 """
@@ -224,13 +239,7 @@ function write_cut(filename::ASCIIString, sp::Model, stage::Int, markov_state::I
     n = length(rhs.vars)
     open(filename, "a") do f
         write(f, string(stage, ", ", markov_state, ", ", rhs.constant))
-        for v in stagedata(sp).state_vars
-            y = 0.
-            for i in 1:n
-                if v == rhs.vars[i]
-                    y += rhs.coeffs[i]
-                end
-            end
+        for y in aggregate_terms(sp, rhs)
             write(f, string(", ", y))
         end
         write(f, "\n")
@@ -259,7 +268,7 @@ function risk_weightings!(m::SDDPModel, stage::Int, markov::Int)
         i=1
         for mkv=1:m.markov_states
             for s=1:m.scenarios
-                P[i] = get_transition(m, stage, markov, mkv)/m.scenarios
+                P[i] = get_transition(m, stage, markov, mkv)*m.scenario_probability[s]
                 i+=1
             end
         end
@@ -281,7 +290,9 @@ function risk_weightings!(m::SDDPModel, stage::Int, markov::Int)
     else
         # We are just under expectation
         for mkv=1:m.markov_states
-            m.weightings_matrix[mkv, :] = get_transition(m, stage, markov, mkv)/m.scenarios
+            for s=1:m.scenarios
+                m.weightings_matrix[mkv, s] = get_transition(m, stage, markov, mkv)*m.scenario_probability[s]
+            end
         end
     end
 
@@ -513,10 +524,30 @@ function decide_set_bound!(::Type{Val{:Max}}, m::SDDPModel, obj)
 end
 decide_set_bound!(m::SDDPModel, obj) = decide_set_bound!(m.sense, m, obj)
 
-"""
-Forward pass of the SDDP algorithm
-"""
-function forward_pass_kernel!(m::SDDPModel, n::Int)
+function test_and_set_ci!(m::SDDPModel, obj::Vector)
+    if abs(m.risk_lambda - 1) < 1e-5
+        # Not risk averse so Normal Dist CI
+        if length(obj) > 1
+            setCI!(m, t_test(obj, conf_level=m.QUANTILE))
+        else
+            setCI!(m, (obj[1], obj[1]))
+        end
+    else
+        # estimate of CVar
+        setCI!(m, cvar(obj, m.beta_quantile, m.risk_lambda))
+    end
+end
+
+@inline store_results!(results::Void, vars, sp, stage, pass, scenario) = nothing
+function store_results!(results::Dict{Symbol, Any}, vars, sp, stage, pass, scenario)
+    results[:Objective][pass] += get_true_value(sp)         # Add objective
+    results[:Scenario][stage][pass] = scenario
+    for v in vars
+        results[v][stage][pass] = getValue(getVar(sp, v))
+    end
+end
+
+function forward_pass_kernel!(m::SDDPModel, n::Int, results::Union{Void, Dict{Symbol, Any}}=nothing, vars::Vector{Symbol}=Symbol[])
     # Initialise scenario
     markov, old_markov, scenario = 0, 0, 0
 
@@ -538,8 +569,7 @@ function forward_pass_kernel!(m::SDDPModel, n::Int)
 
             # realise on scenario
             sp = m.stage_problems[stage, markov]
-            scenario = rand(1:m.scenarios)
-            load_scenario!(sp, scenario)
+            scenario = load_scenario!(m, sp)
 
             # solve
             solve!(sp)
@@ -554,23 +584,11 @@ function forward_pass_kernel!(m::SDDPModel, n::Int)
                 # transition to new scenario
                 markov = transition(m, stage, old_markov)
             end
+
+            store_results!(results, vars, sp, stage, pass, scenario)
         end
     end
     return obj
-end
-
-function test_and_set_ci!(m::SDDPModel, obj::Vector)
-    if abs(m.risk_lambda - 1) < 1e-5
-        # Not risk averse so Normal Dist CI
-        if length(obj) > 1
-            setCI!(m, t_test(obj, conf_level=m.QUANTILE))
-        else
-            setCI!(m, (obj[1], obj[1]))
-        end
-    else
-        # estimate of CVar
-        setCI!(m, cvar(obj, m.beta_quantile, m.risk_lambda))
-    end
 end
 
 function forward_pass!(m::SDDPModel, npasses::Int=1)
@@ -598,6 +616,28 @@ function forward_pass!(m::SDDPModel, npasses::Range)
     return (false, npasses[end])
 end
 
+
+"""
+Simulate SDDP model and return variable solutions contained in [vars]
+"""
+function simulate(m::SDDPModel, n::Int, vars::Vector{Symbol}=Symbol[])
+    results = Dict{Symbol, Any}(:Objective=>zeros(Float64,n))
+    for v in vars
+        results[v] = Array(Vector{Any}, m.stages)
+        for i=1:m.stages
+            results[v][i] = Array(Any, n)
+        end
+    end
+    results[:Scenario] = Array(Vector{Int}, m.stages)
+    for i=1:m.stages
+        results[:Scenario][i] = zeros(n)
+    end
+
+    forward_pass_kernel!(m, n, results, vars)
+
+    return results
+end
+
 """
 Calculate Expected objective
 """
@@ -613,55 +653,6 @@ function t_test(x::Vector; conf_level=0.95)
     SE = std(x)/sqrt(length(x))
     lo, hi = mean(x) + [-1, 1] * tstar * SE
     return (lo, hi)#, mean(x))
-end
-
-
-"""
-Simulate SDDP model and return variable solutions contained in [vars]
-"""
-function simulate(m::SDDPModel, n::Int, vars::Vector{Symbol}=Symbol[])
-    results = Dict{Symbol, Any}(:Objective=>zeros(Float64,n))
-    for v in vars
-        results[v] = Array(Vector{Any}, m.stages)
-        for i=1:m.stages
-            results[v][i] = Array(Any, n)
-        end
-    end
-
-    markov, old_markov = 0, 0
-
-    for pass=1:n
-        if m.init_markov_state==0
-            markov = transition(m, 1, m.init_markov_state)
-        else
-            markov = m.init_markov_state
-        end
-        for stage=1:m.stages
-            old_markov = markov
-
-            scenario = rand(1:m.scenarios)
-
-            sp = m.stage_problems[stage, markov]  # corresponding stage problem
-            load_scenario!(sp, scenario)
-
-            solve!(sp)                           # solve
-
-            results[:Objective][pass] += get_true_value(sp)         # Add objective
-
-            # pass forward if necessary
-            if stage < m.stages
-                pass_states_forward!(m, stage, old_markov)
-                # transition to new scenario
-                markov = transition(m, stage, old_markov)
-            end
-
-            for v in vars
-                results[v][stage][pass] = getValue(getVar(sp, v))
-            end
-
-        end
-    end
-    return results
 end
 
 # @defVar(m, x[1:10])
