@@ -141,12 +141,12 @@ function solve_newsvendor2()
     )
 
     srand(11111)
-    info("Check for duplicate cuts")
+    info("Cut selection")
     @time solve(m1,                # Solve the model using the SDDP algorithm
         simulation_passes=10000,
         log_frequency=30,
         maximum_iterations=30,
-        check_duplicate_cuts=true
+        cut_selection_frequency=5
     )
 
     srand(11111)

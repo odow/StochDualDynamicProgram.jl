@@ -218,7 +218,7 @@ function create_subproblems!(m::SDDPModel)
             # No markov states specified
             elseif arglength(m.build_function!)==2
                 # Double check they only mean one markov state
-                @assert markov_states == 1
+                @assert m.markov_states == 1
 
                 m.build_function!(sp, stage)
             else
