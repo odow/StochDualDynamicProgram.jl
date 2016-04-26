@@ -12,12 +12,14 @@ Base.dot{T<:Real, N}(x::NTuple{N, T}, y::Vector{T}) = dot(y,x)
 """
 A single cut
 """
-type Cut
+type Cut{N}
     intercept::Float64
     coefficients::Vector{Float64}
-    Cut(intercept, coefficients::Vector) = new(round(intercept, 10), round(coefficients, 10))
 end
-
+Cut(intercept, coefficients::Vector) = Cut{length(coefficients)}(round(intercept, 15), round(coefficients, 15))
+Base.hash{N}(c::Cut{N}) = hash(c.intercept, hash(c.coefficients))
+Base.isequal{N}(c1::Cut{N}, c2::Cut{N}) = c1.intercept == c2.intercept && c1.coefficients == c2.coefficients
+Base.copy{N}(c::Cut{N}) = Cut{N}(c.intercept, copy(c.coefficients))
 
 """
 Cuts in a single stage problem
@@ -25,15 +27,23 @@ Cuts in a single stage problem
 type StageCuts{N}
     n::Int                      # Number of sample points in stage problem
     samplepoints::Vector{NTuple{N, Float64}}  # x to evaluate at
-    cuts::Vector{Cut}           # list of cuts in stage problem.
+    cuts::Vector{Cut{N}}           # list of cuts in stage problem.
     nondominated::Vector{Int}   # number of points cut is nondominated at length(nondomindated) == length(cuts)
     activecut::Vector{Int}      # index of cut that is active at point x(i) length(active_cut) == n
 end
-StageCuts(sp::Model, bound) = StageCuts(0, NTuple{length(stagedata(sp).state_vars), Float64}[], Cut[Cut(bound, zeros(length(stagedata(sp).state_vars)))], Int[0], Int[])
+function StageCuts(sp::Model, bound)
+    N = length(stagedata(sp).state_vars)
+    StageCuts(0, NTuple{N, Float64}[], Cut{N}[Cut(bound, zeros(N))], Int[0], Int[])
+end
+function Base.copy{N}(s::StageCuts{N})
+    StageCuts(s.n, deepcopy(s.samplepoints), deepcopy(c.cuts), copy(s.nondominated), copy(s.activecut))
+end
 
-function addsamplepoint!(sense, stagecut::StageCuts, x::Vector{Float64})
+function addsamplepoint!{N}(sense, stagecut::StageCuts{N}, x::Vector{Float64})
+    @assert length(x) == N
+
     # add sample point
-    tup = tuple(round(copy(x), 10)...)
+    tup = tuple(round(copy(x), 15)...)
 
     if !(tup in stagecut.samplepoints)
         stagecut.n += 1
@@ -56,7 +66,7 @@ function addsamplepoint!(sense, stagecut::StageCuts, x::Vector{Float64})
     return
 end
 
-evaluate{N}(c::Cut, t::NTuple{N, Float64}) = c.intercept + dot(c.coefficients, t)
+evaluate{N}(c::Cut{N}, t::NTuple{N, Float64}) = c.intercept + dot(c.coefficients, t)
 
 """
 This function returns the active cut at x(i)
@@ -66,7 +76,7 @@ function getactivecut(stagecut::StageCuts, xi::Int)
     stagecut.cuts[stagecut.activecut[xi]]
 end
 
-function add_cut!(sense, cut::Cut, stagecut::StageCuts)
+function add_cut!{N}(sense, cut::Cut{N}, stagecut::StageCuts{N})
     push!(stagecut.cuts, cut)
 
     non_domination = stagecut.n

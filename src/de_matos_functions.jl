@@ -30,7 +30,7 @@ function rebuild_stageproblems!(m::SDDPModel)
             total_cuts += length(stagecut.cuts)
         end
     end
-    info("Rebuilding model using $(cuts_added) of $(total_cuts) ($(round(cuts_added/total_cuts*100, 2))\%) discovered cuts.")
+    # info("Rebuilding model using $(cuts_added) of $(total_cuts) ($(round(cuts_added/total_cuts*100, 2))\%) discovered cuts.")
 end
 
 function add_cut!(sense, sp::Model, cut::Cut)

@@ -372,6 +372,8 @@ function solve!(sp::Model)
     if status != :Optimal
         @show stagedata(sp).theta
         @show stagedata(sp).stage_profit
+        JuMP.writeMPS(sp, "C:/temp/infeasible_subproblem.mps")
+        JuMP.writeLP(sp, "C:/temp/infeasible_subproblem.lp")
         error("SDDP Subproblems must be feasible. Current status: $(status).")
     end
 
