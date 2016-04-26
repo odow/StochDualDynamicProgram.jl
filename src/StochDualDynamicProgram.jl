@@ -18,79 +18,143 @@ include("de_matos_types.jl")
 include("SDDPModel.jl")
 include("de_matos_functions.jl")
 include("SDDPalgorithm.jl")
-include("parallel_backwards.jl")
-include("parallel_forewards.jl")
+include("parallel.jl")
 
+const CONVERGENCE_TERMINATION = :Convergenced
+const ITERATION_TERMINATION = :MaximumIterations
+const UNKNOWN_TERMINATION = :Unknown
 
 """
 Solve the model using the SDDP algorithm.
 
 Inputs:
-m                  - the SDDP model object
-simulation_passes  - the number of realisations to conduct when testing for convergence
-maximum_iterations - the maximum number of iterations (cutting passes, convergence testing) to complete before termination
-log_frequency      - simulate bound (using n=simulation_passes) every [log_frequency] iterations and output to user
-beta_quantile      - CVar quantile for nested risk aversion
-risk_lambda        - Weighting on convex combination of Expectation and CVar
-    risk_lambda * Expectation + (1 - risk_lambda) * CVar
-check_duplicate_cuts - Checks cut before adding to see if duplicate
+m::SDDPModel
+    - the SDDP model object
+simulation_passes::Int
+    - the number of realisations to conduct when testing for convergence
+maximum_iterations::Int
+    - the maximum number of iterations (cutting passes, convergence testing) to complete before termination
+convergence_test_frequency::Int
+    - simulate bound (using n=simulation_passes) every [convergence_test_frequency] iterations and output to user
+    - if [convergence_test_frequency] = 0, never test convergence. Terminate at [maximum_iterations]
+beta_quantile::Float64 ∈ [0, 1]
+    - CVar quantile for nested risk aversion
+risk_lambda::Float64 ∈ [0, 1]
+    - Weighting on convex combination of Expectation and CVar
+        risk_lambda * Expectation + (1 - risk_lambda) * CVar
+cut_selection_frequency::Int
+    - Number of cutting passes to conduct before removing those cuts that are level one dominated
+cuts_per_processor::Int
+    - if [cuts_per_processor] > 0, [cuts_per_processor] cuts are computed on each available processors and combined to remove duplicates.
+        in addition, convergence test (forward simulation) passes are divided up to each available processor and simulated in parallel.
+    - if [cuts_per_processor] = 0, method runs in serial mode.
+convergence_termination::Bool
+    - If a convergence test is conducted with the bounds are found to have converged, and [convergence_termination] = true, method will terminate.
+        If this is false, the method will terminate at [maximum_iterations]
 """
-# function JuMP.solve(m::SDDPModel; simulation_passes=1, log_frequency=1, maximum_iterations=1, beta_quantile=1, risk_lambda=1,  cut_selection_frequency=0)
-#     print_stats_header()
-#
-#     cut_selection_frequency > 0 && initialise_cut_selection!(m)
-#     # Set risk aversion parameters
-#     m.beta_quantile = beta_quantile
-#     m.risk_lambda = risk_lambda
-#     # try
-#         for i =1:maximum_iterations
-#             # Cutting passes
-#             backward_pass!(m, cut_selection_frequency > 0)
-#
-#             if mod(i, log_frequency) == 0
-#                 # Simulate
-#                 (_flag, n) = forward_pass!(m, simulation_passes)
-#                 print_stats(m, n)
-#                 !_flag && return
-#             end
-#             if cut_selection_frequency > 0 && mod(i, cut_selection_frequency) == 0
-#                 rebuild_stageproblems!(m)
-#             end
-#         end
-#     # catch InterruptException
-#         # warn("Terminating early")
-#     # end
-#     return
-# end
-function JuMP.solve(m::SDDPModel; simulation_passes=1, log_frequency=1, maximum_iterations=1, beta_quantile=1, risk_lambda=1,  cut_selection_frequency=0)
-    length(workers()) > 1 && initialise_workers!(m)
+function JuMP.solve(m::SDDPModel; simulation_passes=1, convergence_test_frequency=1, maximum_iterations=1, beta_quantile=1, risk_lambda=1,  cut_selection_frequency=0, convergence_termination=false, cuts_per_processor=0)
+    @assert beta_quantile >= 0 && beta_quantile <= 1
+    @assert risk_lambda >= 0 && risk_lambda <= 1
+    @assert convergence_test_frequency >= 0
+    @assert maximum_iterations >= 0
+    @assert cut_selection_frequency >= 0
+    @assert cuts_per_processor >= 0
 
+    parallel = (cuts_per_processor > 0)
+    if parallel && length(workers()) < 2
+        warn("Paralleisation requested (cuts_per_processor=$(cuts_per_processor)) but Julia is only running with a single processor. Start julia with `julia -p N` or use the `addprocs(N)` function to load N workers. Running in serial mode.")
+        parallel = false
+    end
+
+    # Status
+    status = UNKNOWN_TERMINATION
+
+    # Initial output for user
     print_stats_header()
 
-    initialise_cut_selection!(m)
-    # Set risk aversion parameters
-    m.beta_quantile = beta_quantile
-    m.risk_lambda = risk_lambda
     # try
-    iterations = 0
-    while iterations < maximum_iterations
-        # Cutting passes
-        n = min(max(1,log_frequency), maximum_iterations-iterations)
-        parallel_backward_pass!(m, n)
-
-        iterations += n
-
-        # if mod(i, log_frequency) == 0
-            # Simulate
-        (_flag, n) = parallel_forward_pass!(m, simulation_passes)
-        print_stats(m, n)
-        !_flag && return
-        # end
+    if parallel
+        status = parallel_solve(m, simulation_passes, convergence_test_frequency, maximum_iterations, beta_quantile, risk_lambda, cut_selection_frequency, convergence_termination, cuts_per_processor)
+    else
+        status = serial_solve(m, simulation_passes, convergence_test_frequency, maximum_iterations, beta_quantile, risk_lambda, cut_selection_frequency, convergence_termination)
     end
     # catch InterruptException
         # warn("Terminating early")
     # end
-    return
+    status
+end
+
+terminate(converged::Bool, do_test::Bool, simulation_passes::Range) = converged
+terminate(converged::Bool, do_test::Bool, simulation_passes) = converged & do_test
+
+function serial_solve{N1<:Real, N2<:Real}(m::SDDPModel, simulation_passes, convergence_test_frequency::Int, maximum_iterations::Int, beta_quantile::N1, risk_lambda::N2,  cut_selection_frequency::Int, convergence_test::Bool)
+    # Initialise cut selection if appropriate
+    if cut_selection_frequency > 0
+        initialise_cut_selection!(m)
+    end
+
+    # Set risk aversion parameters
+    m.beta_quantile, m.risk_lambda = beta_quantile, risk_lambda
+
+    for i=1:maximum_iterations
+        # Cutting passes
+        backward_pass!(m, cut_selection_frequency > 0)
+
+        # Rebuild models if using Cut Selection
+        if cut_selection_frequency > 0 && mod(i, cut_selection_frequency) == 0
+            rebuild_stageproblems!(m)
+        end
+
+        # Test convergence if appropriate
+        if convergence_test_frequency > 0 && mod(i, convergence_test_frequency) == 0
+            (is_converged, n) = forward_pass!(m, simulation_passes)
+
+            # Output to user
+            print_stats(m, n)
+
+            # Terminate if converged and appropriate
+            if terminate(is_converged, convergence_test, simulation_passes)
+                return CONVERGENCE_TERMINATION
+            end
+        end
+    end
+    ITERATION_TERMINATION
+end
+
+function parallel_solve{N1<:Real, N2<:Real}(m::SDDPModel, simulation_passes::Int, convergence_test_frequency::Int, maximum_iterations::Int, beta_quantile::N1, risk_lambda::N2,  cut_selection_frequency::Int, convergence_test::Bool, cuts_per_processor::Int)
+    # Intialise model on worker processors
+    nworkers = initialise_workers!(m)
+
+    # Initialise cut selection storage since we need it to communicate between processors
+    initialise_cut_selection!(m)
+
+    # Set risk aversion parameters
+    m.beta_quantile, m.risk_lambda = beta_quantile, risk_lambda
+
+    total_iterations = 0
+    iterations_since_last_convergence_test = 0
+    while total_iterations < maximum_iterations
+        # Cutting passes
+        parallel_backward_pass!(m, cuts_per_processor * nworkers)
+
+        # Update iteration counters
+        total_iterations += cuts_per_processor * nworkers
+        iterations_since_last_convergence_test += cuts_per_processor * nworkers
+
+        # Test convergence if appropriate
+        if convergence_test_frequency > 0 && iterations_since_last_convergence_test > convergence_test_frequency
+            (not_converged, n) = parallel_forward_pass!(m, simulation_passes)
+
+            # Output to user
+            print_stats(m, n)
+
+            # Terminate if converged and appropriate
+            if terminate(is_converged, convergence_test, simulation_passes)
+                return CONVERGENCE_TERMINATION
+            end
+        end
+    end
+    ITERATION_TERMINATION
 end
 
 function print_stats(m::SDDPModel, n)

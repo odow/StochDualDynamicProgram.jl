@@ -103,12 +103,31 @@ If `cuts_filename` was specified in the model definition, you can load cuts via 
 
 ### Solve
 The `solve(m::SDDPModel [; kwargs...])` function solves the SDDP model `m`. There are the following keyword parameters:
- - `simulation_passes`: The number of forward simulation passes to conduct when estimating the objective
- - `maximum_iterations`: the total number of cutting passes to make before termination
- - `log_frequency`: the number of cutting passes to make before testing for convergence
- - `cut_selection_frequency`: the number of cutting passes to make before removing cuts that are Level 1 dominated*
- - `beta_quantile`: The β quantile for CVar
- - `risk_lambda`: Convex weight between Expectation and CVar (1=Expectation, 0=CVar)
+- `simulation_passes::Int` default = `1`
+  - The number of realisations to conduct when testing for convergence
+- `maximum_iterations::Int` default = `1`
+  - The maximum number of iterations (cutting passes, convergence testing) to complete before termination
+- `convergence_test_frequency::Int` default = `1`
+  - Simulate the expected cost of the policy (using n=`simulation_passes`) every `convergence_test_frequency` iterations and output to user
+  - If `convergence_test_frequency=0`, never test convergence. Terminate at `maximum_iterations`
+- `beta_quantile::Float64 ∈ (0, 1]` default = `1`
+  - The CVar β quantile quantile for nested risk aversion
+  - `beta_quantile=1` is identical to expectation
+- ` risk_lambda::Float64 ∈ [0, 1]` default = `1`
+  - Convex weight between Expectation and CVar (1=Expectation, 0=CVar) for nested risk aversion
+      `risk_lambda * Expectation + (1 - risk_lambda) * CVar(β)`
+- `cut_selection_frequency::Int` default = `0`
+  - Number of cutting passes to conduct before removing those cuts that are level one dominated
+  - If `cut_selection_frequency=0` no cut deletion is conducted.
+  - Tuning this parameter is a trade off between the model creation time, and the model solution time. If the model takes a short time to solve relative to the creation time, a low value for `cut_selection_frequency` may hurt performance. However, if the model takes a long time to solve relative to the creation time, aggressive cut selection (i.e.  `cut_selection_frequency` is small) may help performance.
+- `cuts_per_processor::Int` default = `0`
+  - If `cuts_per_processor>0`, `cuts_per_processor` cuts are computed on each available processor before being collected and combined to remove duplicates. The updated set of cuts is then passed back to all processors and a new set of `cuts_per_processor` cuts are computed. In addition, convergence test (forward simulation) passes are divided up to each available processor and simulated in parallel.
+  - If `cuts_per_processor=0`, method runs in serial mode.
+  - Tuning this parameter is a trade off between the parallel overhead (copying the model and cuts between processors) and the extra cuts discovered by solving in parallel. For small models, it is likely that low values of `cuts_per_processor` may reduce performance due to this additional overhead. In addition, since cuts are discovered independently, cuts generated on one processor will not benefit from the cuts generated on other processors until they are combined.
+- `convergence_termination::Bool` default = `false`
+  - If a convergence test is conducted with the bounds found to have converged, and `convergence_termination=true`, method will terminate.
+  - If this is false, the method will terminate at `maximum_iterations`
+  - If there is high variance in objective, the method may terminate earlier than desired.
 
 \*de Matos, Philpott, Finardi (2015). Improving the Peformance of Stochastic Dual Dynamic Programming. Journal of Computational and Applied Mathematics 290: 196-208
 

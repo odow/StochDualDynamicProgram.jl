@@ -60,7 +60,7 @@ function solve_newsvendor()
 
     solve(m,                # Solve the model using the SDDP algorithm
         simulation_passes=1000,
-        log_frequency=10,
+        convergence_test_frequency=10,
         maximum_iterations=50,
         beta_quantile=0.6,
         risk_lambda = 0.5
@@ -136,7 +136,7 @@ function solve_newsvendor2()
     info("Don't check for duplicate cuts")
     @time solve(m,                # Solve the model using the SDDP algorithm
         simulation_passes=10000,
-        log_frequency=30,
+        convergence_test_frequency=30,
         maximum_iterations=30
     )
 
@@ -144,7 +144,7 @@ function solve_newsvendor2()
     info("Cut selection")
     @time solve(m1,                # Solve the model using the SDDP algorithm
         simulation_passes=10000,
-        log_frequency=30,
+        convergence_test_frequency=30,
         maximum_iterations=30,
         cut_selection_frequency=5
     )
@@ -153,7 +153,7 @@ function solve_newsvendor2()
     info("Solving using varying number of simulation passes")
     @time solve(m2,                # Solve the model using the SDDP algorithm
         simulation_passes=linspace(100, 10000, 10),
-        log_frequency=1,
+        convergence_test_frequency=1,
         maximum_iterations=50
     )
 

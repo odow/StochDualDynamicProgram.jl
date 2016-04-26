@@ -599,7 +599,7 @@ function forward_pass!(m::SDDPModel, npasses::Int=1)
     # set new lower bound
     test_and_set_ci!(m, obj)
 
-    return (true, npasses)
+    return (rtol(m) < 0., npasses)
 end
 
 function forward_pass!(m::SDDPModel, npasses::Range)
@@ -610,12 +610,11 @@ function forward_pass!(m::SDDPModel, npasses::Range)
         test_and_set_ci!(m, OBJ)
 
         if rtol(m) > 0.
-            return (true, n)
+            return (false, n)
         end
         # info("Simulation confidence (n=$n)")
     end
-
-    return (false, npasses[end])
+    return (rtol(m) < 0., npasses[end])
 end
 
 
