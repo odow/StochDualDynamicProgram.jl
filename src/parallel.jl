@@ -127,7 +127,7 @@ end
 #
 #   Simulation functionality
 #
-function worker_simulate!{N}(sc::StageCuts{N}, n::Int, vars::Vector{Symbol}=Symbol[])
+function worker_simulate!{T}(sc::Array{T,2}, n::Int, vars::Vector{Symbol}=Symbol[])
     m.stagecuts = deepcopy(sc)
     rebuild_stageproblems!(m)
     simulate(m, n, vars)
@@ -153,7 +153,7 @@ function reduce_simulation!(m::SDDPModel, results::Vector{Dict{Symbol, Any}})
     return results[1]
 end
 
-function parallel_simulate!(m::SDDPModel, n::Int, vars::Vector{Symbol}=Symbol[])
+function parallel_simulate(m::SDDPModel, n::Int, vars::Vector{Symbol}=Symbol[])
     results = Array(Dict{Symbol, Any}, length(workers()))
     nn = ceil(Int, n / length(workers()))
     distribute_work!(results, worker_simulate!, m.stagecuts, nn, vars)

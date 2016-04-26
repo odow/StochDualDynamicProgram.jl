@@ -131,7 +131,7 @@ The `solve(m::SDDPModel [; kwargs...])` function solves the SDDP model `m`. Ther
 \*de Matos, Philpott, Finardi (2015). Improving the Peformance of Stochastic Dual Dynamic Programming. Journal of Computational and Applied Mathematics 290: 196-208
 
 ### Simulate Policy
-The `simulate(m::SDDPModel, n::Int, variables::Vector{Symbol})` function simulates `n` realisations of the policy given by a converged SDDP model `m`. It returns a dictionary with an entry for each variable given in `variables`. Each dictionary entry is a vector corresponding to the stages in the model. Each item in the vector is a vector of the `n` values that the variable took in the `n` realisations.
+The `simulate(m::SDDPModel, n::Int, variables::Vector{Symbol}; parallel::Bool=false)` function simulates `n` realisations of the policy given by a converged SDDP model `m`. It returns a dictionary with an entry for each variable given in `variables`. Each dictionary entry is a vector corresponding to the stages in the model. Each item in the vector is a vector of the `n` values that the variable took in the `n` realisations. If `parallel=true` the the `n` realisations are distributed across all available processors and computed independently.
 
 ```julia
 results = simulate(m, 5, [:x])

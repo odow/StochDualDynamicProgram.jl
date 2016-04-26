@@ -143,7 +143,9 @@ function parallel_solve{N1<:Real, N2<:Real}(m::SDDPModel, simulation_passes::Int
 
         # Test convergence if appropriate
         if convergence_test_frequency > 0 && iterations_since_last_convergence_test > convergence_test_frequency
-            (not_converged, n) = parallel_forward_pass!(m, simulation_passes)
+            iterations_since_last_convergence_test = 0
+
+            (is_converged, n) = parallel_forward_pass!(m, simulation_passes)
 
             # Output to user
             print_stats(m, n)
@@ -162,6 +164,19 @@ function print_stats(m::SDDPModel, n)
 end
 function print_stats_header()
     printfmt("{1:22s} | {2:10s} | {3:6s} | {4:10s}\n", "Expected Objective", "Valid Bound", "% Gap", "# Samples")
+end
+
+function simulate(m::SDDPModel, n::Int, vars::Vector{Symbol}=[]; parallel=false)
+    if parallel && length(workers()) < 2
+        warn("Paralleisation requested but Julia is only running with a single processor. Start julia with `julia -p N` or use the `addprocs(N)` function to load N workers. Running in serial mode.")
+        parallel = false
+    end
+    if parallel
+        results = parallel_simulate(m, n, vars)
+    else
+        results = serial_simulate(m, n, vars)
+    end
+    results
 end
 
 end

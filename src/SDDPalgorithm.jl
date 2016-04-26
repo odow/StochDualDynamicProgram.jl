@@ -621,7 +621,7 @@ end
 """
 Simulate SDDP model and return variable solutions contained in [vars]
 """
-function simulate(m::SDDPModel, n::Int, vars::Vector{Symbol}=Symbol[])
+function serial_simulate(m::SDDPModel, n::Int, vars::Vector{Symbol}=Symbol[])
     results = Dict{Symbol, Any}(:Objective=>zeros(Float64,n))
     for v in vars
         results[v] = Array(Vector{Any}, m.stages)
