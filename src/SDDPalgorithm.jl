@@ -342,7 +342,7 @@ risk_averse_weightings{T}(x::Vector{T}, beta::Float64=0.5) = risk_averse_weighti
 """
 Get the RHS of a linear JuMP constraint
 """
-function getRHS(c::ConstraintRef{LinearConstraint})
+function getRHS(c::ConstraintRef)
     constr = c.m.linconstr[c.idx]
     sen = JuMP.sense(constr)
     if sen==:range

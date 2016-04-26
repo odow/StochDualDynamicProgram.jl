@@ -66,23 +66,7 @@ gettuple{N}(sc::StageCuts{N}, oldcuts::Int, oldsamplepoints::Int) = (sc.samplepo
 function merge_stagecuts!{N}(m::SDDPModel, s::StageCuts{N}, stagecuts::Vector{Tuple{Vector{NTuple{N,Float64}}, Vector{Cut{N}}}})
     s.samplepoints = unique(union(s.samplepoints, [sc[1] for sc in stagecuts]...))
     s.cuts = unique(union(s.cuts, [sc[2] for sc in stagecuts]...))
-    s.n = length(s.samplepoints)
-    s.nondominated = zeros(length(s.cuts))
-    s.activecut = zeros(s.n)
-
-    for (sample_idx, samplepoint) in enumerate(s.samplepoints)
-        best_idx = 1
-        best_y = evaluate(s.cuts[1], samplepoint)
-        for cut_idx in 2:length(s.cuts)
-            y = evaluate(s.cuts[cut_idx], samplepoint)
-            if is_dominated(m.sense, best_y, y)
-                best_idx = cut_idx
-                best_y = y
-            end
-        end
-        s.nondominated[best_idx] += 1
-        s.activecut[sample_idx] = best_idx
-    end
+    recalculate_dominance!(m.sense, s)
 end
 
 function reduce_backwards_pass!{N}(m::SDDPModel, results::Vector{Array{Tuple{Vector{NTuple{N,Float64}}, Vector{Cut{N}}}, 2}})

@@ -102,6 +102,7 @@ function serial_solve{N1<:Real, N2<:Real}(m::SDDPModel, simulation_passes, conve
 
         # Rebuild models if using Cut Selection
         if cut_selection_frequency > 0 && mod(i, cut_selection_frequency) == 0
+            # @time deterministic_prune!(m)
             rebuild_stageproblems!(m)
         end
 

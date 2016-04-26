@@ -39,6 +39,25 @@ function Base.copy{N}(s::StageCuts{N})
     StageCuts(s.n, deepcopy(s.samplepoints), deepcopy(c.cuts), copy(s.nondominated), copy(s.activecut))
 end
 
+function recalculate_dominance!{N}(sense, sc::StageCuts{N})
+    sc.n = length(sc.samplepoints)
+    sc.activecut = zeros(sc.n)
+    sc.nondominated = zeros(length(sc.cuts))
+    for (sample_idx, samplepoint) in enumerate(sc.samplepoints)
+        best_idx = 1
+        best_y = evaluate(sc.cuts[1], samplepoint)
+        for cut_idx in 2:length(sc.cuts)
+            y = evaluate(sc.cuts[cut_idx], samplepoint)
+            if is_dominated(sense, best_y, y)
+                best_idx = cut_idx
+                best_y = y
+            end
+        end
+        sc.nondominated[best_idx] += 1
+        sc.activecut[sample_idx] = best_idx
+    end
+end
+
 function addsamplepoint!{N}(sense, stagecut::StageCuts{N}, x::Vector{Float64})
     @assert length(x) == N
 

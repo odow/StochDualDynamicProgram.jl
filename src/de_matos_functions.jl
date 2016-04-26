@@ -53,3 +53,40 @@ function add_cut!(sense, sp::Model, cut::Cut)
     @defExpr(rhs, cut.intercept + sum{coeff * stagedata(sp).state_vars[i], (i, coeff) in enumerate(cut.coefficients)})
     add_cut!(sense, sp, rhs)
 end
+
+function deterministic_prune!(m::SDDPModel)
+    for i=1:m.stages
+        for j=1:m.markov_states
+            deterministic_prune!(m.sense, m.value_to_go_bound, m.stage_problems[i,j], m.stagecuts[i,j])
+        end
+    end
+end
+
+function deterministic_prune!{N}(sense, bound, sp::Model, sc::StageCuts{N})
+    m = Model()
+    @defVar(m, getLower(stagedata(sp).state_vars[i]) <= x[i=1:N] <= getUpper(stagedata(sp).state_vars[i]))
+    @defVar(m, y)
+    for cut in sc.cuts
+        if isa(sense, Val{:Max})
+            @addConstraint(m, y <= bound)
+            @addConstraint(m, y <= cut.intercept + sum{cut.coefficients[i] * x[i], i=1:N})
+        else
+            @addConstraint(m, y >= bound)
+            @addConstraint(m, y >= cut.intercept + sum{cut.coefficients[i] * x[i], i=1:N})
+        end
+    end
+    activecuts = Cut{N}[]
+    for cut in sc.cuts
+        if isa(sense, Val{:Max})
+            @setObjective(m, Min, cut.intercept + sum{cut.coefficients[i] * x[i], i=1:N} - y)
+        else
+            @setObjective(m, Min, y - cut.intercept + sum{cut.coefficients[i] * x[i], i=1:N})
+        end
+        solve(m)
+        if getObjectiveValue(m) < 0.
+            push!(activecuts, cut)
+        end
+    end
+    sc.activecut = activecuts
+    recalculate_dominance!(sense, sc)
+end
