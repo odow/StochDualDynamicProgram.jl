@@ -100,7 +100,6 @@ end
 #### Load previously generated cuts
 If `cuts_filename` was specified in the model definition, you can load cuts via `load_cuts!(m)`, otherwise you can load cuts using `load_cuts!(m::SDDPModel, filename::ASCIIString)`.
 
-
 ### Solve
 The `solve(m::SDDPModel [; kwargs...])` function solves the SDDP model `m`. There are the following keyword parameters:
 - `simulation_passes::Int` default = `1`
@@ -115,9 +114,9 @@ The `solve(m::SDDPModel [; kwargs...])` function solves the SDDP model `m`. Ther
   - `beta_quantile=1` is identical to expectation
 - ` risk_lambda::Float64 ∈ [0, 1]` default = `1`
   - Convex weight between Expectation and CVar (1=Expectation, 0=CVar) for nested risk aversion
-      `risk_lambda * Expectation + (1 - risk_lambda) * CVar(β)`
+  - `risk_lambda * Expectation + (1 - risk_lambda) * CVar(β)`
 - `cut_selection_frequency::Int` default = `0`
-  - Number of cutting passes to conduct before removing those cuts that are level one dominated
+  - Number of cutting passes to conduct before removing those cuts that are level one dominated*
   - If `cut_selection_frequency=0` no cut deletion is conducted.
   - Tuning this parameter is a trade off between the model creation time, and the model solution time. If the model takes a short time to solve relative to the creation time, a low value for `cut_selection_frequency` may hurt performance. However, if the model takes a long time to solve relative to the creation time, aggressive cut selection (i.e.  `cut_selection_frequency` is small) may help performance.
 - `cuts_per_processor::Int` default = `0`
@@ -127,7 +126,7 @@ The `solve(m::SDDPModel [; kwargs...])` function solves the SDDP model `m`. Ther
 - `convergence_termination::Bool` default = `false`
   - If a convergence test is conducted with the bounds found to have converged, and `convergence_termination=true`, method will terminate.
   - If this is false, the method will terminate at `maximum_iterations`
-  - If there is high variance in objective, the method may terminate earlier than desired.
+  - We choose to default this to false since if there is high variance in objective, the method may terminate earlier than desired.
 
 \*de Matos, Philpott, Finardi (2015). Improving the Peformance of Stochastic Dual Dynamic Programming. Journal of Computational and Applied Mathematics 290: 196-208
 
