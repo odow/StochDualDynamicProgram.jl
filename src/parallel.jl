@@ -40,6 +40,8 @@ end
 #   Backwards pass functionality
 #
 function worker_backward_pass!{T}(sc::Array{T,2}, n::Int, cut_selection_frequency::Int=0)
+    cut_selection_time = 0.
+
     m.stagecuts = deepcopy(sc)
     oldn = Array(Int, (m.stages, m.markov_states,2))
     for stage=1:m.stages
@@ -55,7 +57,9 @@ function worker_backward_pass!{T}(sc::Array{T,2}, n::Int, cut_selection_frequenc
         # Rebuild models if using Cut Selection
         if cut_selection_frequency > 0 && mod(i, cut_selection_frequency) == 0
             # @time deterministic_prune!(m)
+            tic()
             rebuild_stageproblems!(m)
+            cut_selection_time += toq()
         end
     end
     N = getN(m.stagecuts[1,1])
@@ -65,7 +69,7 @@ function worker_backward_pass!{T}(sc::Array{T,2}, n::Int, cut_selection_frequenc
             res[stage, markovstate] = gettuple(m.stagecuts[stage, markovstate], oldn[stage,markovstate,1], oldn[stage,markovstate,2])
         end
     end
-    res
+    res, cut_selection_time
 end
 gettuple{N}(sc::StageCuts{N}, oldcuts::Int, oldsamplepoints::Int) = (sc.samplepoints[(oldsamplepoints+1):end], sc.cuts[(oldcuts+1):end])
 
@@ -75,24 +79,36 @@ function merge_stagecuts!{N}(m::SDDPModel, s::StageCuts{N}, stagecuts::Vector{Tu
     recalculate_dominance!(m.sense, s)
 end
 
-function reduce_backwards_pass!{N}(m::SDDPModel, results::Vector{Array{Tuple{Vector{NTuple{N,Float64}}, Vector{Cut{N}}}, 2}})
+function reduce_backwards_pass!{N}(m::SDDPModel, results::Vector{Tuple{Array{Tuple{Vector{NTuple{N,Float64}}, Vector{Cut{N}}}, 2}, Float64}})
+    cut_selection_time = 0.
     for stage=1:m.stages
         for markovstate=1:m.markov_states
-            merge_stagecuts!(m, m.stagecuts[stage, markovstate], [res[stage, markovstate] for res in results])
+            merge_stagecuts!(m, m.stagecuts[stage, markovstate], [res[1][stage, markovstate] for res in results])
+            for res in results
+                cut_selection_time += res[2]
+            end
         end
     end
+    cut_selection_time / length(results)
 end
 
 getN{N}(x::StageCuts{N}) = N
 function parallel_backward_pass!(m::SDDPModel, n::Int, cut_selection_frequency::Int=0, rebuildvaltype=LEVEL1)
+    cut_selection_time = 0.
     N = getN(m.stagecuts[1,1])
-    results = Array(Array{Tuple{Vector{NTuple{N,Float64}}, Vector{Cut{N}}}, 2}, length(workers()))
+    results = Array(Tuple{Array{Tuple{Vector{NTuple{N,Float64}}, Vector{Cut{N}}}, 2}, Float64}, length(workers()))
     nn = ceil(Int, n / length(workers()))
     distribute_work!(results, worker_backward_pass!, m.stagecuts, nn, cut_selection_frequency)
-    reduce_backwards_pass!(m, results)
+    cut_selection_time += reduce_backwards_pass!(m, results)
+
+    tic()
     rebuild_stageproblems!(rebuildvaltype, m)
+    cut_selection_time += toq()
+
     solve_all_stage_problems!(m, 1)
     set_valid_bound!(m)
+
+    cut_selection_time
 end
 
 # ------------------------------------------------------------------------------

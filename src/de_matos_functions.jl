@@ -14,7 +14,7 @@ end
 """
 This function rebuilds the stageproblems using the nondominated cuts
 """
-function add_cuts!(::Type{Val{:all}}, sense, sp, stagecut)
+function add_cuts!(::NoSelection, sense, sp, stagecut)
     cuts_added = 0
     for cut in unique(stagecut.cuts)
         add_cut!(sense, sp, cut)
@@ -23,7 +23,7 @@ function add_cuts!(::Type{Val{:all}}, sense, sp, stagecut)
     cuts_added
 end
 
-function add_cuts!(::Type{Val{:LevelOne}}, sense, sp, stagecut)
+function add_cuts!(::LevelOne, sense, sp, stagecut)
     cuts_added = 0
     for xi in unique(stagecut.activecut)
         add_cut!(sense, sp, stagecut.cuts[xi])
@@ -47,7 +47,11 @@ function rebuild_stageproblems!(valswitch, m::SDDPModel)
     # info("Rebuilding model using $(cuts_added) of $(total_cuts) ($(round(cuts_added/total_cuts*100, 2))\%) discovered cuts.")
 end
 
-rebuild_stageproblems!(m::SDDPModel) = rebuild_stageproblems!(LEVEL1, m)
+function rebuild_stageproblems!(::Deterministic, m::SDDPModel)
+    deterministic_prune!(m)
+    rebuild_stageproblems!(NoSelection(), m)
+end
+rebuild_stageproblems!(m::SDDPModel) = rebuild_stageproblems!(LevelOne(), m)
 
 function add_cut!(sense, sp::Model, cut::Cut)
     @defExpr(rhs, cut.intercept + sum{coeff * stagedata(sp).state_vars[i], (i, coeff) in enumerate(cut.coefficients)})

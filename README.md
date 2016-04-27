@@ -116,9 +116,13 @@ The `solve(m::SDDPModel [; kwargs...])` function solves the SDDP model `m`. Ther
   - Convex weight between Expectation and CVar (1=Expectation, 0=CVar) for nested risk aversion
   - `risk_lambda * Expectation + (1 - risk_lambda) * CVar(β)`
 - `cut_selection_frequency::Int` default = `0`
-  - Number of cutting passes to conduct before removing those cuts that are level one dominated*
+  - Number of cutting passes to conduct before running cut selection algorithm
   - If `cut_selection_frequency=0` no cut deletion is conducted.
   - Tuning this parameter is a trade off between the model creation time, and the model solution time. If the model takes a short time to solve relative to the creation time, a low value for `cut_selection_frequency` may hurt performance. However, if the model takes a long time to solve relative to the creation time, aggressive cut selection (i.e.  `cut_selection_frequency` is small) may help performance.
+- `cut_selection_method  ∈ {LevelOne(), Deterministic()}` default = `LevelOne()`
+  - `LevelOne()`: removes those cuts that are level one dominated (de Matos, Philpott, Finardi (2015). Improving the Peformance of Stochastic Dual Dynamic Programming. Journal of Computational and Applied Mathematics 290: 196-208). That is, it keeps cuts that create the best point approximation to the value function at at least one of the sample points visited so far by the algorithm.
+  - `Deterministic()`: solves an LP for each constraint to determine whether cut is currently defining at any point in state space.
+  - `LevelOne` is a heuristic method and has been found to work well. However, you may want to compare the objectives with either no cut selection, or the deterministic method.
 - `cuts_per_processor::Int` default = `0`
   - If `cuts_per_processor>0`, `cuts_per_processor` cuts are computed on each available processor before being collected and combined to remove duplicates. The updated set of cuts is then passed back to all processors and a new set of `cuts_per_processor` cuts are computed. In addition, convergence test (forward simulation) passes are divided up to each available processor and simulated in parallel.
   - If `cuts_per_processor=0`, method runs in serial mode.
@@ -127,8 +131,6 @@ The `solve(m::SDDPModel [; kwargs...])` function solves the SDDP model `m`. Ther
   - If a convergence test is conducted with the bounds found to have converged, and `convergence_termination=true`, method will terminate.
   - If this is false, the method will terminate at `maximum_iterations`
   - We choose to default this to false since if there is high variance in objective, the method may terminate earlier than desired.
-
-\*de Matos, Philpott, Finardi (2015). Improving the Peformance of Stochastic Dual Dynamic Programming. Journal of Computational and Applied Mathematics 290: 196-208
 
 ### Simulate Policy
 The `simulate(m::SDDPModel, n::Int, variables::Vector{Symbol}; parallel::Bool=false)` function simulates `n` realisations of the policy given by a converged SDDP model `m`. It returns a dictionary with an entry for each variable given in `variables`. Each dictionary entry is a vector corresponding to the stages in the model. Each item in the vector is a vector of the `n` values that the variable took in the `n` realisations. If `parallel=true` the the `n` realisations are distributed across all available processors and computed independently.
