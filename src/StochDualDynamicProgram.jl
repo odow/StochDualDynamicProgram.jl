@@ -19,10 +19,14 @@ include("SDDPModel.jl")
 include("de_matos_functions.jl")
 include("SDDPalgorithm.jl")
 include("parallel.jl")
+include("async.jl")
 
 const CONVERGENCE_TERMINATION = :Convergenced
 const ITERATION_TERMINATION = :MaximumIterations
 const UNKNOWN_TERMINATION = :Unknown
+
+const LEVEL1 = Val{:LevelOne}
+const NOCUTSELECTION = Val{:all}
 
 """
 Solve the model using the SDDP algorithm.
@@ -75,6 +79,7 @@ function JuMP.solve(m::SDDPModel; simulation_passes=1, convergence_test_frequenc
     # try
     if parallel
         status = parallel_solve(m, simulation_passes, convergence_test_frequency, maximum_iterations, beta_quantile, risk_lambda, cut_selection_frequency, convergence_termination, cuts_per_processor)
+        # status = async_solve(m, simulation_passes, convergence_test_frequency, maximum_iterations, beta_quantile, risk_lambda, cut_selection_frequency, convergence_termination, cuts_per_processor)
     else
         status = serial_solve(m, simulation_passes, convergence_test_frequency, maximum_iterations, beta_quantile, risk_lambda, cut_selection_frequency, convergence_termination)
     end
@@ -84,8 +89,9 @@ function JuMP.solve(m::SDDPModel; simulation_passes=1, convergence_test_frequenc
     status
 end
 
+terminate(converged::Bool, do_test::Bool) = converged & do_test
 terminate(converged::Bool, do_test::Bool, simulation_passes::Range) = converged
-terminate(converged::Bool, do_test::Bool, simulation_passes) = converged & do_test
+terminate(converged::Bool, do_test::Bool, simulation_passes) = terminate(converged, do_test)
 
 function serial_solve{N1<:Real, N2<:Real}(m::SDDPModel, simulation_passes, convergence_test_frequency::Int, maximum_iterations::Int, beta_quantile::N1, risk_lambda::N2,  cut_selection_frequency::Int, convergence_test::Bool)
     # Initialise cut selection if appropriate
@@ -96,9 +102,14 @@ function serial_solve{N1<:Real, N2<:Real}(m::SDDPModel, simulation_passes, conve
     # Set risk aversion parameters
     m.beta_quantile, m.risk_lambda = beta_quantile, risk_lambda
 
+    time_forwards = 0.
+    time_backwards = 0.
+    simulations = 0
     for i=1:maximum_iterations
         # Cutting passes
+        tic()
         backward_pass!(m, cut_selection_frequency > 0)
+        time_backwards += toq()
 
         # Rebuild models if using Cut Selection
         if cut_selection_frequency > 0 && mod(i, cut_selection_frequency) == 0
@@ -108,10 +119,13 @@ function serial_solve{N1<:Real, N2<:Real}(m::SDDPModel, simulation_passes, conve
 
         # Test convergence if appropriate
         if convergence_test_frequency > 0 && mod(i, convergence_test_frequency) == 0
+            tic()
             (is_converged, n) = forward_pass!(m, simulation_passes)
+            time_forwards += toq()
+            simulations += Int(n)
 
             # Output to user
-            print_stats(m, n)
+            print_stats(m, i, time_backwards, simulations, time_forwards)
 
             # Terminate if converged and appropriate
             if terminate(is_converged, convergence_test, simulation_passes)
@@ -134,22 +148,36 @@ function parallel_solve{N1<:Real, N2<:Real}(m::SDDPModel, simulation_passes::Int
 
     total_iterations = 0
     iterations_since_last_convergence_test = 0
+    iterations_since_last_cut_selection = 0
+    time_backwards = 0.
+    time_forwards = 0.
+    total_simulations = 0
     while total_iterations < maximum_iterations
-        # Cutting passes
-        parallel_backward_pass!(m, cuts_per_processor * nworkers)
-
         # Update iteration counters
         total_iterations += cuts_per_processor * nworkers
         iterations_since_last_convergence_test += cuts_per_processor * nworkers
+        iterations_since_last_cut_selection += cuts_per_processor * nworkers
+
+        # Cutting passes
+        tic()
+        if cut_selection_frequency > 0 && iterations_since_last_cut_selection > cut_selection_frequency
+            parallel_backward_pass!(m, cuts_per_processor * nworkers, cut_selection_frequency, LEVEL1)
+            iterations_since_last_cut_selection = 0
+        else
+            parallel_backward_pass!(m, cuts_per_processor * nworkers, cut_selection_frequency, NOCUTSELECTION)
+        end
+        time_backwards += toq()
 
         # Test convergence if appropriate
         if convergence_test_frequency > 0 && iterations_since_last_convergence_test > convergence_test_frequency
             iterations_since_last_convergence_test = 0
-
+            tic()
             (is_converged, n) = parallel_forward_pass!(m, simulation_passes)
+            total_simulations += Int(n)
+            time_forwards += toq()
 
             # Output to user
-            print_stats(m, n)
+            print_stats(m, total_iterations, time_backwards, total_simulations, time_forwards)
 
             # Terminate if converged and appropriate
             if terminate(is_converged, convergence_test, simulation_passes)
@@ -160,11 +188,12 @@ function parallel_solve{N1<:Real, N2<:Real}(m::SDDPModel, simulation_passes::Int
     ITERATION_TERMINATION
 end
 
-function print_stats(m::SDDPModel, n)
-    printfmt("({1:8.2f}, {2:8.2f}) | {3:8.2f} | {4:3.2f} | {5:10d}\n", m.confidence_interval[1], m.confidence_interval[2], m.valid_bound, 100*rtol(m), round(Int, n))
+function print_stats(m::SDDPModel, iterations, back_time, simulations, forward_time)
+    printfmt("{1:10.2f} {2:10.2f} | {3:10.2f} | {4:5.2f} | {5:10d} | {6:8.2f} | {7:10d} | {8:8.2f}\n", m.confidence_interval[1], m.confidence_interval[2], m.valid_bound, 100*rtol(m), iterations, back_time, simulations, forward_time)
 end
 function print_stats_header()
-    printfmt("{1:22s} | {2:10s} | {3:6s} | {4:10s}\n", "Expected Objective", "Valid Bound", "% Gap", "# Samples")
+    printfmt("{1:42s} | {2:21s} | {3:21s}\n", "                  Objective", "    Backward Pass", "    Forward Pass")
+    printfmt("{1:21s} | {2:10s} | {3:5s} | {4:10s} | {5:8s} | {6:10s} | {7:8s}\n", "Expected", "Bound", "% Gap", "Iterations", "Time (s)", "Iterations", "Time (s)")
 end
 
 function simulate(m::SDDPModel, n::Int, vars::Vector{Symbol}=[]; parallel=false)

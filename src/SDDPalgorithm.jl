@@ -56,6 +56,8 @@ function backward_pass!(m::SDDPModel, cut_selection::Bool)
     # Initialise some storage
     old_markov, old_scenario, scenario=m.init_markov_state, 0,0
 
+    obj = 0.
+
     # For all stages going forwards
     for stage=1:(m.stages-1)
         # Get the stage problem
@@ -70,6 +72,8 @@ function backward_pass!(m::SDDPModel, cut_selection::Bool)
         # solve
         solve!(sp)
 
+        obj += get_true_value(sp)
+
         # Keep track of old markov state and scenario
         old_markov, old_scenario = markov, scenario
 
@@ -81,7 +85,7 @@ function backward_pass!(m::SDDPModel, cut_selection::Bool)
     end
 
     # Solve all the final stage problems
-    solve_all_stage_problems!(m, m.stages)
+    obj += solve_all_stage_problems!(m, m.stages, sample(1:m.scenarios, m.scenario_probability))
 
     # Stepping back throught the stages
     for stage=reverse(1:(m.stages-1))
@@ -97,6 +101,8 @@ function backward_pass!(m::SDDPModel, cut_selection::Bool)
 
     # Calculate a new upper bound
     set_valid_bound!(m)
+
+    obj
 end
 
 """
@@ -106,13 +112,18 @@ Inputs:
 m     - the SDDP model object
 stage - the stage to solve all problems in
 """
-function solve_all_stage_problems!(m::SDDPModel, stage::Int)
+function solve_all_stage_problems!(m::SDDPModel, stage::Int, scenario::Int=0)
+    obj = 0.
     for markov_state in 1:m.markov_states
         for s=1:m.scenarios
             load_scenario!(m.stage_problems[stage,markov_state], s)
             solve!(m.stage_problems[stage,markov_state])
+            if s==scenario
+                obj += get_true_value(m.stage_problems[stage, markov_state])
+            end
         end
     end
+    obj
 end
 
 """
@@ -526,7 +537,7 @@ function decide_set_bound!(::Type{Val{:Max}}, m::SDDPModel, obj)
 end
 decide_set_bound!(m::SDDPModel, obj) = decide_set_bound!(m.sense, m, obj)
 
-function test_and_set_ci!(m::SDDPModel, obj::Vector)
+function test_and_set_ci!(m::SDDPModel, obj)
     if abs(m.risk_lambda - 1) < 1e-5
         # Not risk averse so Normal Dist CI
         if length(obj) > 1
@@ -642,14 +653,16 @@ end
 """
 Calculate Expected objective
 """
-function cvar{T}(x::Vector{T}, beta::Float64=1., lambda::Float64=1.)
+function cvar(x, beta::Float64=1., lambda::Float64=1.)
     @assert beta >= 0 && beta <= 1.
     @assert lambda >= 0 && lambda <= 1.
-    cv = lambda * mean(x) + (1 - lambda) * mean(x[x.<quantile(x, beta)])
+    cv = lambda * mean(x) + (1 - lambda) * beta_quantile(x, beta)
     return (cv, cv)
 end
-
-function t_test(x::Vector; conf_level=0.95)
+function beta_quantile(x, beta)
+    mean(x[x.<quantile(x, beta)])
+end
+function t_test(x; conf_level=0.95)
     tstar = quantile(TDist(length(x)-1), 1 - (1 - conf_level)/2)
     SE = std(x)/sqrt(length(x))
     lo, hi = mean(x) + [-1, 1] * tstar * SE

@@ -39,7 +39,7 @@ end
 #
 #   Backwards pass functionality
 #
-function worker_backward_pass!{T}(sc::Array{T,2}, n::Int)
+function worker_backward_pass!{T}(sc::Array{T,2}, n::Int, cut_selection_frequency::Int=0)
     m.stagecuts = deepcopy(sc)
     oldn = Array(Int, (m.stages, m.markov_states,2))
     for stage=1:m.stages
@@ -51,6 +51,12 @@ function worker_backward_pass!{T}(sc::Array{T,2}, n::Int)
     rebuild_stageproblems!(m)
     for i=1:n
         backward_pass!(m, true)
+
+        # Rebuild models if using Cut Selection
+        if cut_selection_frequency > 0 && mod(i, cut_selection_frequency) == 0
+            # @time deterministic_prune!(m)
+            rebuild_stageproblems!(m)
+        end
     end
     N = getN(m.stagecuts[1,1])
     res = Array(Tuple{Vector{NTuple{N,Float64}}, Vector{Cut{N}}}, (m.stages, m.markov_states))
@@ -78,13 +84,13 @@ function reduce_backwards_pass!{N}(m::SDDPModel, results::Vector{Array{Tuple{Vec
 end
 
 getN{N}(x::StageCuts{N}) = N
-function parallel_backward_pass!(m::SDDPModel, n::Int)
+function parallel_backward_pass!(m::SDDPModel, n::Int, cut_selection_frequency::Int=0, rebuildvaltype=LEVEL1)
     N = getN(m.stagecuts[1,1])
     results = Array(Array{Tuple{Vector{NTuple{N,Float64}}, Vector{Cut{N}}}, 2}, length(workers()))
     nn = ceil(Int, n / length(workers()))
-    distribute_work!(results, worker_backward_pass!, m.stagecuts, nn)
+    distribute_work!(results, worker_backward_pass!, m.stagecuts, nn, cut_selection_frequency)
     reduce_backwards_pass!(m, results)
-    rebuild_stageproblems!(m)
+    rebuild_stageproblems!(rebuildvaltype, m)
     solve_all_stage_problems!(m, 1)
     set_valid_bound!(m)
 end

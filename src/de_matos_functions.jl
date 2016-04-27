@@ -47,7 +47,7 @@ function rebuild_stageproblems!(valswitch, m::SDDPModel)
     # info("Rebuilding model using $(cuts_added) of $(total_cuts) ($(round(cuts_added/total_cuts*100, 2))\%) discovered cuts.")
 end
 
-rebuild_stageproblems!(m::SDDPModel) = rebuild_stageproblems!(Val{:LevelOne}, m)
+rebuild_stageproblems!(m::SDDPModel) = rebuild_stageproblems!(LEVEL1, m)
 
 function add_cut!(sense, sp::Model, cut::Cut)
     @defExpr(rhs, cut.intercept + sum{coeff * stagedata(sp).state_vars[i], (i, coeff) in enumerate(cut.coefficients)})
