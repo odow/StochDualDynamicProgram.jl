@@ -60,7 +60,11 @@ convergence_termination::Bool
     - If a convergence test is conducted with the bounds are found to have converged, and [convergence_termination] = true, method will terminate.
         If this is false, the method will terminate at [maximum_iterations]
 """
-function JuMP.solve(m::SDDPModel; simulation_passes=1, convergence_test_frequency=1, maximum_iterations=1, beta_quantile=1, risk_lambda=1,  cut_selection_frequency=0, convergence_termination=false, cuts_per_processor=0, cut_selection_method=LevelOne())
+function JuMP.solve(m::SDDPModel; simulation_passes=1, convergence_test_frequency=1, maximum_iterations=1, beta_quantile=1, risk_lambda=1,  cut_selection_frequency=0, convergence_termination=false, cuts_per_processor=0, cut_selection_method=LevelOne(), log_frequency=-1)
+    if log_frequency != -1
+        warn("The [log_frequency] option is deprecated. Use [convergence_test_frequency] instead.")
+        convergence_test_frequency = log_frequency
+    end
     @assert beta_quantile >= 0 && beta_quantile <= 1
     @assert risk_lambda >= 0 && risk_lambda <= 1
     @assert convergence_test_frequency >= 0
