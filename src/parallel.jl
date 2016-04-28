@@ -39,7 +39,7 @@ end
 #
 #   Backwards pass functionality
 #
-function worker_backward_pass!{T}(sc::Array{T,2}, n::Int, cut_selection_frequency::Int=0)
+function worker_backward_pass!{T}(sc::Array{T,2}, n::Int, cut_selection_frequency::Int=0, cut_method::CutSelectionMethod=LevelOne())
     cut_selection_time = 0.
 
     m.stagecuts = deepcopy(sc)
@@ -50,15 +50,15 @@ function worker_backward_pass!{T}(sc::Array{T,2}, n::Int, cut_selection_frequenc
             oldn[stage, markovstate, 2] = length(m.stagecuts[stage,markovstate].samplepoints)
         end
     end
-    rebuild_stageproblems!(m)
+    rebuild_stageproblems!(cut_method, m)
     for i=1:n
-        backward_pass!(m, true)
+        backward_pass!(m, true, cut_method)
 
         # Rebuild models if using Cut Selection
         if cut_selection_frequency > 0 && mod(i, cut_selection_frequency) == 0
             # @time deterministic_prune!(m)
             tic()
-            rebuild_stageproblems!(m)
+            rebuild_stageproblems!(cut_method, m)
             cut_selection_time += toq()
         end
     end
@@ -73,17 +73,17 @@ function worker_backward_pass!{T}(sc::Array{T,2}, n::Int, cut_selection_frequenc
 end
 gettuple{N}(sc::StageCuts{N}, oldcuts::Int, oldsamplepoints::Int) = (sc.samplepoints[(oldsamplepoints+1):end], sc.cuts[(oldcuts+1):end])
 
-function merge_stagecuts!{N}(m::SDDPModel, s::StageCuts{N}, stagecuts::Vector{Tuple{Vector{NTuple{N,Float64}}, Vector{Cut{N}}}})
-    s.samplepoints = unique(union(s.samplepoints, [sc[1] for sc in stagecuts]...))
-    s.cuts = unique(union(s.cuts, [sc[2] for sc in stagecuts]...))
-    recalculate_dominance!(m.sense, s)
+function merge_stagecuts!{N}(m::SDDPModel, stage::Int, markovstate::Int, stagecuts::Vector{Tuple{Vector{NTuple{N,Float64}}, Vector{Cut{N}}}})
+    m.stagecuts[stage, markovstate].samplepoints = unique(union(m.stagecuts[stage, markovstate].samplepoints, [sc[1] for sc in stagecuts]...))
+    m.stagecuts[stage, markovstate].cuts = unique(union(m.stagecuts[stage, markovstate].cuts, [sc[2] for sc in stagecuts]...))
+    recalculate_dominance!(m.sense, m.stagecuts[stage, markovstate])
 end
 
 function reduce_backwards_pass!{N}(m::SDDPModel, results::Vector{Tuple{Array{Tuple{Vector{NTuple{N,Float64}}, Vector{Cut{N}}}, 2}, Float64}})
     cut_selection_time = 0.
     for stage=1:m.stages
         for markovstate=1:m.markov_states
-            merge_stagecuts!(m, m.stagecuts[stage, markovstate], [res[1][stage, markovstate] for res in results])
+            merge_stagecuts!(m, stage, markovstate, [res[1][stage, markovstate] for res in results])
             for res in results
                 cut_selection_time += res[2]
             end
@@ -93,12 +93,12 @@ function reduce_backwards_pass!{N}(m::SDDPModel, results::Vector{Tuple{Array{Tup
 end
 
 getN{N}(x::StageCuts{N}) = N
-function parallel_backward_pass!(m::SDDPModel, n::Int, cut_selection_frequency::Int=0, rebuildvaltype=LEVEL1)
+function parallel_backward_pass!(m::SDDPModel, n::Int, cut_selection_frequency::Int=0, rebuildvaltype=LevelOne())
     cut_selection_time = 0.
     N = getN(m.stagecuts[1,1])
     results = Array(Tuple{Array{Tuple{Vector{NTuple{N,Float64}}, Vector{Cut{N}}}, 2}, Float64}, length(workers()))
     nn = ceil(Int, n / length(workers()))
-    distribute_work!(results, worker_backward_pass!, m.stagecuts, nn, cut_selection_frequency)
+    distribute_work!(results, worker_backward_pass!, m.stagecuts, nn, cut_selection_frequency, rebuildvaltype)
     cut_selection_time += reduce_backwards_pass!(m, results)
 
     tic()
@@ -117,6 +117,7 @@ end
 #
 function worker_forward_pass!{T}(sc::Array{T,2}, n::Int)
     m.stagecuts = deepcopy(sc)
+    rebuild_stageproblems!(NoSelection(), m)
     forward_pass_kernel!(m, n)
 end
 
@@ -160,6 +161,8 @@ function reduce_simulation!(m::SDDPModel, results::Vector{Dict{Symbol, Any}})
 end
 
 function parallel_simulate(m::SDDPModel, n::Int, vars::Vector{Symbol}=Symbol[])
+    nworkers = initialise_workers!(m)
+
     results = Array(Dict{Symbol, Any}, length(workers()))
     nn = ceil(Int, n / length(workers()))
     distribute_work!(results, worker_simulate!, m.stagecuts, nn, vars)

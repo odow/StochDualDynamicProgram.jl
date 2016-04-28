@@ -23,6 +23,15 @@ function add_cuts!(::NoSelection, sense, sp, stagecut)
     cuts_added
 end
 
+function add_cuts!(::LazyConstraint, sense, sp, stagecut)
+    cuts_added = 0
+    for cut in unique(stagecut.cuts)
+        add_cut!(sense, sp, cut, LazyConstraint())
+        cuts_added += 1
+    end
+    cuts_added
+end
+
 function add_cuts!(::LevelOne, sense, sp, stagecut)
     cuts_added = 0
     for xi in unique(stagecut.activecut)
@@ -53,9 +62,9 @@ function rebuild_stageproblems!(::Deterministic, m::SDDPModel)
 end
 rebuild_stageproblems!(m::SDDPModel) = rebuild_stageproblems!(LevelOne(), m)
 
-function add_cut!(sense, sp::Model, cut::Cut)
+function add_cut!(sense, sp::Model, cut::Cut, method::CutSelectionMethod=NoSelection())
     @defExpr(rhs, cut.intercept + sum{coeff * stagedata(sp).state_vars[i], (i, coeff) in enumerate(cut.coefficients)})
-    add_cut!(sense, sp, rhs)
+    add_cut!(sense, sp, rhs, method)
 end
 
 function deterministic_prune!(m::SDDPModel)

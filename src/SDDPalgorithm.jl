@@ -44,7 +44,7 @@ function load_scenario!(m::SDDPModel, sp::Model)
     load_scenario!(sp, scenario)
     return scenario
 end
-function backward_pass!(m::SDDPModel, cut_selection::Bool)
+function backward_pass!(m::SDDPModel, cut_selection::Bool, method=NoSelection())
     # Initialise markov state
     markov = 0
     if m.init_markov_state==0
@@ -90,7 +90,7 @@ function backward_pass!(m::SDDPModel, cut_selection::Bool)
     # Stepping back throught the stages
     for stage=reverse(1:(m.stages-1))
         # Add a cut to that scenario
-        add_cut!(m, stage, old_markov, cut_selection)
+        add_cut!(m, stage, old_markov, cut_selection, method)
 
         # Look up the scenario to step back to
         old_markov, old_scenario = stagedata(m.stage_problems[stage, old_markov]).old_scenario
@@ -137,7 +137,7 @@ m            - an SDDPModel object
 stage        - the stage to add the cut
 markov_state - the scenario to add the cut to
 """
-function add_cut!(m::SDDPModel, stage::Int, markov_state::Int, cut_selection::Bool=false)
+function add_cut!(m::SDDPModel, stage::Int, markov_state::Int, cut_selection::Bool=false, method=NoSelection())
     sp = m.stage_problems[stage, markov_state]
 
     risk_weightings!(m, stage, markov_state)
@@ -158,10 +158,10 @@ function add_cut!(m::SDDPModel, stage::Int, markov_state::Int, cut_selection::Bo
 
     if cut_selection
         if add_cut!(m.sense, sp, rhs, m.stagecuts[stage, markov_state])
-            add_cut!(m.sense, sp, rhs)
+            add_cut!(m.sense, sp, rhs, method)
         end
     else
-        add_cut!(m.sense, sp, rhs)
+        add_cut!(m.sense, sp, rhs, method)
     end
 
     m.cuts_filename != nothing && write_cut(m.cuts_filename, sp, stage, markov_state, rhs)
@@ -169,12 +169,44 @@ function add_cut!(m::SDDPModel, stage::Int, markov_state::Int, cut_selection::Bo
     return
 end
 
-function add_cut!(::Type{Val{:Min}}, sp::Model, rhs::JuMP.GenericAffExpr)
+function add_cut!(::Type{Val{:Min}}, sp::Model, rhs::JuMP.GenericAffExpr, method::CutSelectionMethod=NoSelection())
     @addConstraint(sp, stagedata(sp).theta >= rhs)
 end
-function add_cut!(::Type{Val{:Max}}, sp::Model, rhs::JuMP.GenericAffExpr)
+function add_cut!(::Type{Val{:Max}}, sp::Model, rhs::JuMP.GenericAffExpr, method::CutSelectionMethod=NoSelection())
     @addConstraint(sp, stagedata(sp).theta <= rhs)
 end
+# function add_cut!(::Type{Val{:Min}}, sp::Model, rhs::JuMP.GenericAffExpr, method::LazyConstraint)
+#     @addLazyConstraint(sp, stagedata(sp).theta >= rhs)
+# end
+# function add_cut!(::Type{Val{:Max}}, sp::Model, rhs::JuMP.GenericAffExpr, method::LazyConstraint)
+#     @addLazyConstraint(sp, stagedata(sp).theta <= rhs)
+# end
+# function corners(cb)
+#     x_val = getValue(x)
+#     y_val = getValue(y)
+#     # Allow for some impreciseness in the solution
+#     TOL = 1e-6
+#     # Check top left, allowing some tolerance
+#     if y_val - x_val > 1 + TOL
+#         # Cut off this solution
+#         println("Solution was in top left, cut it off")
+#         # Use the original variables, but not m - cb instead
+#         @addLazyConstraint(cb, y - x <= 1)
+#     # Check top right
+#     elseif y_val + x_val > 3 + TOL
+#         # Cut off this solution
+#         println("Solution was in top right, cut it off")
+#         # Use the original variables, but not m - cb instead
+#         @addLazyConstraint(cb, y + x <= 3)
+#     end
+# end  # End of callback function
+#
+# # Tell JuMP/Gurobi to use our callback function
+# addLazyCallback(m, corners)
+
+
+
+
 
 function aggregate_terms(sp::Model, ex::JuMP.GenericAffExpr)
     data = stagedata(sp)::StageData
@@ -191,57 +223,6 @@ function aggregate_terms(sp::Model, ex::JuMP.GenericAffExpr)
     end
     y
 end
-
-# """
-# This function checks if a cut exists in the model
-# """
-# function is_duplicate(sp::Model, rhs::JuMP.GenericAffExpr)
-#     # Get the stage data
-#     data = stagedata(sp)::StageData
-#
-#     # Dictionary containing cut data
-#     cut_data = data.cut_data
-#
-#     # Rounding extent
-#     K = 10
-#
-#     # Initialise storage
-#     y = aggregate_terms(sp, rhs)
-#
-#     # Dict key. Tuple of RHS constant and a sum of terms to help uniqueness
-#     key = (round(rhs.constant, K), round(sum(rhs.coeffs), K))
-#
-#     if !haskey(cut_data, key)
-#         # New key. Can add
-#         cut_data[key] = Vector{Float64}[y]
-#         return false
-#     else
-#         # For all cuts in cut_data[key]
-#         for cut in cut_data[key]
-#             # Assume duplicate
-#             _flag = true
-#             for i=1:length(data.state_vars)
-#                 if y[i] != cut[i]
-#                     # Can't be duplicate with this cut
-#                     _flag = false
-#                     break
-#                 end
-#             end
-#             if _flag
-#                 # We've gone through all the variables and we are still here
-#                 # so we must be a duplicate
-#                 return true
-#             end
-#         end
-#         # We've gone through all existing cuts and we're still here so
-#         # we are unique. Lets add
-#         push!(cut_data[key], y)
-#     end
-#
-#     # Unique cut
-#     return false
-# end
-
 
 """
 This function writes the coefficits of a cut to file
@@ -507,16 +488,14 @@ function set_valid_bound!(m::SDDPModel)
         # Lets average over all first stage probles (markov states x scenarios)
         for i=1:m.markov_states
             for s=1:m.scenarios
-                obj += get_transition(m, 1, m.init_markov_state, i) * stagedata(m.stage_problems[1, i]).objective_value[s]::Float64
+                obj += get_transition(m, 1, m.init_markov_state, i) * m.scenario_probability[s] * stagedata(m.stage_problems[1, i]).objective_value[s]::Float64
             end
         end
-        obj /= m.scenarios
     else
         # Lets just  average over the scenarios in the initial markov state
         for s=1:m.scenarios
-            obj += stagedata(m.stage_problems[1, m.init_markov_state]).objective_value[s]::Float64
+            obj += m.scenario_probability[s] * stagedata(m.stage_problems[1, m.init_markov_state]).objective_value[s]::Float64
         end
-        obj /= m.scenarios
     end
 
     # Update the bound
@@ -590,6 +569,9 @@ function forward_pass_kernel!(m::SDDPModel, n::Int, results::Union{Void, Dict{Sy
             # Add objective (stage profit only)
             obj[pass] += get_true_value(sp)
 
+            # Save results if necesary
+            store_results!(results, vars, sp, stage, pass, scenario)
+
             # pass forward if necessary
             if stage < m.stages
                 pass_states_forward!(m, stage, old_markov)
@@ -598,7 +580,6 @@ function forward_pass_kernel!(m::SDDPModel, n::Int, results::Union{Void, Dict{Sy
                 markov = transition(m, stage, old_markov)
             end
 
-            store_results!(results, vars, sp, stage, pass, scenario)
         end
     end
     return obj
