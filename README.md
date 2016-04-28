@@ -41,7 +41,6 @@ The following arguments are optional:
 - `scenarios`: the number of scenarios in each markov state. Defaults to `1`.
 - `transition`: Transition probabilities for markov chain. Either a square matrix of size `markov_states` or a vector of such matrices with length `stages`. Defaults to uniform transition probability.
 - `initial_markov_state`: index of the initial markov state. If not given assumed to transition uniformly at beginning of first stage.
-- `conf_level`: defaults to `0.95`.
 - `cuts_filename`: if specified, the cuts will be written to the file.
 - `solver`: MathProgBase compliant solver that returns duals from a linear program
 
@@ -97,40 +96,60 @@ for i=1:4
 end
 ```
 
+
+### Solve
+
 #### Load previously generated cuts
 If `cuts_filename` was specified in the model definition, you can load cuts via `load_cuts!(m)`, otherwise you can load cuts using `load_cuts!(m::SDDPModel, filename::ASCIIString)`.
 
-### Solve
+#### Risk Measures
+You can choose the risk measure to be applied to the model. It currently accepts
+ - `Expectation()` which optimises under expectation
+ - `NestedCVar([;beta=1., lambda=1.])` which optimises a convex combination of Expecation and Nested CVar (i.e. `lambda * Expectation + (1 - lambda) * CVar(beta)`)
+   - `beta::Float64 ∈ (0, 1]` default = `1`
+     - `beta=1` is identical to `Expectation()`
+   - `lambda::Float64 ∈ [0, 1]` default = `1`
+
+#### Cut Selection
+You can choose the cut selection method to be apply to the model. It currently accepts
+- `NoSelection()`
+  - No cut selection is applied
+- `LevelOne(frequency::Int)`
+  - This heuristic removes those cuts that are level one dominated (de Matos, Philpott, Finardi (2015). Improving the Peformance of Stochastic Dual Dynamic Programming. Journal of Computational and Applied Mathematics 290: 196-208).
+  - The heuristic is run each time `frequency` cuts have been added to the model.
+- `Deterministic(frequency::Int)`: solves an LP for each constraint to determine whether cut is currently defining at any point in state space.
+  - The heuristic is run each time `frequency` cuts have been added to the model.
+
+Note: Tuning the `frequency` parameter is a trade off between the model creation time, and the model solution time. If the model takes a short time to solve relative to the creation time, a low value for `frequency` may hurt performance. However, if the model takes a long time to solve relative to the creation time, aggressive cut selection (i.e.  `frequency` is small) may help performance.
+
+#### Parallelisation
+You can change the parallelisation options by constructing a `Parallel()` type and passing it one or both of the following in any order. The default is to run the pass in serial mode on a single processor.
+- `ForwardPass()`
+  - Forward (simulation) passes are conducted independently on all available processors. This option scales well with the number of processors due to the independent nature of estimating the objective of the policy.
+- `BackwardPass(n::Int)`
+ - `n` backwards (cutting) passes are computed independently on all available processors before the cuts are shared and syncronised across all processors.
+ - Tuning this parameter is a trade off between the parallel overhead (copying the model and cuts between processors) and the extra cuts discovered by solving in parallel. For small models, it is likely that low values of `n` may reduce performance due to this additional overhead. In addition, since cuts are discovered independently, cuts generated on one processor will not benefit from the cuts generated on other processors until they are combined.
+
+#### The actual solve
 The `solve(m::SDDPModel [; kwargs...])` function solves the SDDP model `m`. There are the following keyword parameters:
-- `simulation_passes::Int` default = `1`
-  - The number of realisations to conduct when testing for convergence
 - `maximum_iterations::Int` default = `1`
   - The maximum number of iterations (cutting passes, convergence testing) to complete before termination
-- `convergence_test_frequency::Int` default = `1`
-  - Simulate the expected cost of the policy (using n=`simulation_passes`) every `convergence_test_frequency` iterations and output to user
-  - If `convergence_test_frequency=0`, never test convergence. Terminate at `maximum_iterations`
-- `beta_quantile::Float64 ∈ (0, 1]` default = `1`
-  - The CVar β quantile quantile for nested risk aversion
-  - `beta_quantile=1` is identical to expectation
-- ` risk_lambda::Float64 ∈ [0, 1]` default = `1`
-  - Convex weight between Expectation and CVar (1=Expectation, 0=CVar) for nested risk aversion
-  - `risk_lambda * Expectation + (1 - risk_lambda) * CVar(β)`
-- `cut_selection_frequency::Int` default = `0`
-  - Number of cutting passes to conduct before running cut selection algorithm
-  - If `cut_selection_frequency=0` no cut deletion is conducted.
-  - Tuning this parameter is a trade off between the model creation time, and the model solution time. If the model takes a short time to solve relative to the creation time, a low value for `cut_selection_frequency` may hurt performance. However, if the model takes a long time to solve relative to the creation time, aggressive cut selection (i.e.  `cut_selection_frequency` is small) may help performance.
-- `cut_selection_method  ∈ {LevelOne(), Deterministic()}` default = `LevelOne()`
-  - `LevelOne()`: removes those cuts that are level one dominated (de Matos, Philpott, Finardi (2015). Improving the Peformance of Stochastic Dual Dynamic Programming. Journal of Computational and Applied Mathematics 290: 196-208). That is, it keeps cuts that create the best point approximation to the value function at at least one of the sample points visited so far by the algorithm.
-  - `Deterministic()`: solves an LP for each constraint to determine whether cut is currently defining at any point in state space.
-  - `LevelOne` is a heuristic method and has been found to work well. However, you may want to compare the objectives with either no cut selection, or the deterministic method.
-- `cuts_per_processor::Int` default = `0`
-  - If `cuts_per_processor>0`, `cuts_per_processor` cuts are computed on each available processor before being collected and combined to remove duplicates. The updated set of cuts is then passed back to all processors and a new set of `cuts_per_processor` cuts are computed. In addition, convergence test (forward simulation) passes are divided up to each available processor and simulated in parallel.
-  - If `cuts_per_processor=0`, method runs in serial mode.
-  - Tuning this parameter is a trade off between the parallel overhead (copying the model and cuts between processors) and the extra cuts discovered by solving in parallel. For small models, it is likely that low values of `cuts_per_processor` may reduce performance due to this additional overhead. In addition, since cuts are discovered independently, cuts generated on one processor will not benefit from the cuts generated on other processors until they are combined.
-- `convergence_termination::Bool` default = `false`
-  - If a convergence test is conducted with the bounds found to have converged, and `convergence_termination=true`, method will terminate.
-  - If this is false, the method will terminate at `maximum_iterations`
-  - We choose to default this to false since if there is high variance in objective, the method may terminate earlier than desired.
+- `convergence::Convergence([;simulations=1, frequency=1, terminate=false, quantile=0.95])`
+  - `simulations::Int` default = `1`
+    - The number of realisations to conduct when testing for convergence
+  - `frequency::Int` default = `1`
+    - Simulate the expected cost of the policy (using n=`simulations`) every `frequency` iterations and output to user
+  - `terminate::Bool` default = `false`
+    - If a convergence test is conducted with the bounds found to have converged, and `terminate=true`, method will terminate. Otherwise the method will terminate at `maximum_iterations`.
+      - We choose to default this to false since if there is high variance in objective, the method may terminate earlier than desired.
+  - `quantile::Float64` default = `0.95`
+    - Level of confidence interval to construct when testing for convergence
+- `risk_measure::RiskMeasure` default = `Expectation()`
+  - See section Risk Measures above.
+- `cut_selection::CutSelectionMethod` default = `NoSelection()`
+  - See section Cut Selection above.
+- `parallel::Parallel` default = `Parallel()`
+  - See section Parallelisation above.
 
 ### Simulate Policy
 The `simulate(m::SDDPModel, n::Int, variables::Vector{Symbol}; parallel::Bool=false)` function simulates `n` realisations of the policy given by a converged SDDP model `m`. It returns a dictionary with an entry for each variable given in `variables`. Each dictionary entry is a vector corresponding to the stages in the model. Each item in the vector is a vector of the `n` values that the variable took in the `n` realisations. If `parallel=true` the the `n` realisations are distributed across all available processors and computed independently.

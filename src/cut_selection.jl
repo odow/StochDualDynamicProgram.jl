@@ -9,6 +9,24 @@ function Base.dot{T<:Real, N}(x::Vector{T}, y::NTuple{N, T})
 end
 Base.dot{T<:Real, N}(x::NTuple{N, T}, y::Vector{T}) = dot(y,x)
 
+abstract CutSelectionMethod
+immutable LevelOne <: CutSelectionMethod
+    frequency::Int
+    LevelOne(frequency::Int) = (@assert frequency > 0; new(frequency))
+end
+immutable Deterministic <: CutSelectionMethod
+    frequency::Int
+    Deterministic(frequency::Int) = (@assert frequency > 0; new(frequency))
+end
+immutable LazyConstraint <: CutSelectionMethod
+    frequency::Int
+    LazyConstraint(frequency::Int) = (@assert frequency > 0; new(frequency))
+end
+immutable NoSelection <: CutSelectionMethod
+    frequency::Int
+    NoSelection() = new(0)
+end
+
 """
 A single cut
 """

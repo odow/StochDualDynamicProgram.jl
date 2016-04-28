@@ -1,3 +1,21 @@
+abstract AbstractParallel
+immutable Serial <: AbstractParallel end
+immutable ForwardPass <: AbstractParallel end
+immutable BackwardPass <: AbstractParallel
+    cuts_per_processor::Int
+    BackwardPass(n::Int) = (@assert n > 0; new(n))
+end
+BackwardPass() = BackwardPass(1)
+
+type Parallel{AP1<:Union{ForwardPass, Serial}, AP2<:Union{BackwardPass, Serial}}
+    forward_pass::AP1
+    backward_pass::AP2
+end
+Parallel(bp::BackwardPass, fp::ForwardPass) = Parallel(fp, bp)
+Parallel(bp::BackwardPass) = Parallel(Serial(), bp)
+Parallel(fp::ForwardPass) = Parallel(fp, Serial())
+Parallel() = Parallel(Serial(), Serial())
+
 function sendtoworkers!(;kwargs...)
     for procid in workers()
         for (key, val) in kwargs
@@ -15,7 +33,6 @@ function initialise_workers!(m::SDDPModel)
         scenario_probability=deepcopy(m.scenario_probability.values),
         transition=deepcopy(m.transition),
         initial_markov_state=m.init_markov_state,
-        conf_level=m.QUANTILE,
         solver=m.LPSOLVER,
         value_to_go_bound=m.value_to_go_bound,
         cuts_filename=nothing,
@@ -39,7 +56,7 @@ end
 #
 #   Backwards pass functionality
 #
-function worker_backward_pass!{T}(sc::Array{T,2}, n::Int, cut_selection_frequency::Int=0, cut_method::CutSelectionMethod=LevelOne())
+function worker_backward_pass!{T}(sc::Array{T,2}, n::Int, cut_selection::CutSelectionMethod)
     cut_selection_time = 0.
 
     m.stagecuts = deepcopy(sc)
@@ -50,15 +67,15 @@ function worker_backward_pass!{T}(sc::Array{T,2}, n::Int, cut_selection_frequenc
             oldn[stage, markovstate, 2] = length(m.stagecuts[stage,markovstate].samplepoints)
         end
     end
-    rebuild_stageproblems!(cut_method, m)
+    rebuild_stageproblems!(cut_selection, m)
     for i=1:n
-        backward_pass!(m, true, cut_method)
+        backward_pass!(m, true, cut_selection)
 
         # Rebuild models if using Cut Selection
-        if cut_selection_frequency > 0 && mod(i, cut_selection_frequency) == 0
+        if cut_selection.frequency > 0 && mod(i, cut_selection.frequency) == 0
             # @time deterministic_prune!(m)
             tic()
-            rebuild_stageproblems!(cut_method, m)
+            rebuild_stageproblems!(cut_selection, m)
             cut_selection_time += toq()
         end
     end
@@ -93,16 +110,15 @@ function reduce_backwards_pass!{N}(m::SDDPModel, results::Vector{Tuple{Array{Tup
 end
 
 getN{N}(x::StageCuts{N}) = N
-function parallel_backward_pass!(m::SDDPModel, n::Int, cut_selection_frequency::Int=0, rebuildvaltype=LevelOne())
+function parallel_backward_pass!(m::SDDPModel, n::Int, cut_selection=LevelOne())
     cut_selection_time = 0.
     N = getN(m.stagecuts[1,1])
     results = Array(Tuple{Array{Tuple{Vector{NTuple{N,Float64}}, Vector{Cut{N}}}, 2}, Float64}, length(workers()))
-    nn = ceil(Int, n / length(workers()))
-    distribute_work!(results, worker_backward_pass!, m.stagecuts, nn, cut_selection_frequency, rebuildvaltype)
+    distribute_work!(results, worker_backward_pass!, m.stagecuts, n, cut_selection)
     cut_selection_time += reduce_backwards_pass!(m, results)
 
     tic()
-    rebuild_stageproblems!(rebuildvaltype, m)
+    rebuild_stageproblems!(cut_selection, m)
     cut_selection_time += toq()
 
     solve_all_stage_problems!(m, 1)

@@ -1,7 +1,3 @@
-# TODO
-#  - at the moment we assume uniform scenario probability in each markov state
-#  - cut selection [de Matos, Philpott, Finardi (2015). Improving the performance of stochastic dual dynamic programming]
-
 module StochDualDynamicProgram
 
 importall JuMP
@@ -12,25 +8,42 @@ using Distributions, StatsBase
 export SDDPModel,
     @defStateVar, @defValueToGo, @addScenarioConstraint, @setStageProfit,
     simulate, load_cuts!,
-    LevelOne, Deterministic, NoSelection
+    LevelOne, Deterministic, NoSelection,
+    ForwardPass, BackwardPass, Parallel,
+    NestedCVar,
+    Convergence
 
 const CONVERGENCE_TERMINATION = :Convergenced
 const ITERATION_TERMINATION = :MaximumIterations
 const UNKNOWN_TERMINATION = :Unknown
 
-abstract CutSelectionMethod
-immutable LevelOne <: CutSelectionMethod end
-immutable Deterministic <: CutSelectionMethod end
-immutable LazyConstraint <: CutSelectionMethod end
-immutable NoSelection <: CutSelectionMethod end
+abstract RiskMeasure
+immutable NestedCVar <: RiskMeasure
+    beta::Float64
+    lambda::Float64
+    NestedCVar{T<:Real, S<:Real}(beta::T, lambda::S) = (@assert beta >= 0. && beta <= 1. && lambda >= 0. && lambda <= 1.; new(beta, lambda))
+end
+NestedCVar(;beta=1., lambda=1.) = NestedCVar(beta, lambda)
+Expectation() = NestedCVar(1., 1.)
+
+type Convergence
+    n
+    frequency::Int
+    terminate::Bool
+    quantile::Float64
+    function Convergence(simulations, frequency::Int, terminate::Bool=false, quantile::Float64=0.95)
+        @assert quantile >= 0 && quantile <= 1.
+        new(simulations, frequency, terminate, quantile)
+    end
+end
+Convergence(;simulations=1, frequency=1, terminate=false, quantile=0.95) = Convergence(simulations, frequency, terminate, quantile)
 
 include("macros.jl")
-include("de_matos_types.jl")
+include("cut_selection.jl")
 include("SDDPModel.jl")
-include("de_matos_functions.jl")
+include("cut_selection_sddp.jl")
 include("SDDPalgorithm.jl")
 include("parallel.jl")
-include("async.jl")
 
 type SolutionLog
     ci_lower::Float64
@@ -61,48 +74,20 @@ end
 
 """
 Solve the model using the SDDP algorithm.
-
-Inputs:
-m::SDDPModel
-    - the SDDP model object
-simulation_passes::Int
-    - the number of realisations to conduct when testing for convergence
-maximum_iterations::Int
-    - the maximum number of iterations (cutting passes, convergence testing) to complete before termination
-convergence_test_frequency::Int
-    - simulate bound (using n=simulation_passes) every [convergence_test_frequency] iterations and output to user
-    - if [convergence_test_frequency] = 0, never test convergence. Terminate at [maximum_iterations]
-beta_quantile::Float64 ∈ [0, 1]
-    - CVar quantile for nested risk aversion
-risk_lambda::Float64 ∈ [0, 1]
-    - Weighting on convex combination of Expectation and CVar
-        risk_lambda * Expectation + (1 - risk_lambda) * CVar
-cut_selection_frequency::Int
-    - Number of cutting passes to conduct before removing those cuts that are level one dominated
-cuts_per_processor::Int
-    - if [cuts_per_processor] > 0, [cuts_per_processor] cuts are computed on each available processors and combined to remove duplicates.
-        in addition, convergence test (forward simulation) passes are divided up to each available processor and simulated in parallel.
-    - if [cuts_per_processor] = 0, method runs in serial mode.
-convergence_termination::Bool
-    - If a convergence test is conducted with the bounds are found to have converged, and [convergence_termination] = true, method will terminate.
-        If this is false, the method will terminate at [maximum_iterations]
 """
-function JuMP.solve(m::SDDPModel; simulation_passes=1, convergence_test_frequency=1, maximum_iterations=1, beta_quantile=1, risk_lambda=1,  cut_selection_frequency=0, convergence_termination=false, cuts_per_processor=0, cut_selection_method=LevelOne(), log_frequency=-1)
-    if log_frequency != -1
-        warn("The [log_frequency] option is deprecated. Use [convergence_test_frequency] instead.")
-        convergence_test_frequency = log_frequency
-    end
-    @assert beta_quantile >= 0 && beta_quantile <= 1
-    @assert risk_lambda >= 0 && risk_lambda <= 1
-    @assert convergence_test_frequency >= 0
-    @assert maximum_iterations >= 0
-    @assert cut_selection_frequency >= 0
-    @assert cuts_per_processor >= 0
+function JuMP.solve(m::SDDPModel; maximum_iterations=1, convergence=Convergence(1, 1, false, 0.95), risk_measure=Expectation(), cut_selection=NoSelection(), parallel=Parallel(), simulation_passes=-1, log_frequency=-1)
 
-    parallel = (cuts_per_processor > 0)
-    if parallel && length(workers()) < 2
+    if simulation_passes != -1 || log_frequency != -1
+        warn("The options [log_frequency] and [simulation_passes] are deprecated. Use [convergence=Convergence(simulation_passes, frequency::Int, terminate::Bool)] instead.")
+        log_frequency != -1 && (convergence.frequency = log_frequency)
+        simulation_passes != -1 && (convergence.n = simulation_passes)
+    end
+
+    @assert maximum_iterations >= 0
+
+    if !isa(parallel, Parallel{Serial, Serial}) && length(workers()) < 2
         warn("Paralleisation requested (cuts_per_processor=$(cuts_per_processor)) but Julia is only running with a single processor. Start julia with `julia -p N` or use the `addprocs(N)` function to load N workers. Running in serial mode.")
-        parallel = false
+        parallel = Parallel()
     end
 
     # Initial output for user
@@ -110,13 +95,10 @@ function JuMP.solve(m::SDDPModel; simulation_passes=1, convergence_test_frequenc
 
     solution = Solution()
 
+    m.QUANTILE = convergence.quantile
+
     # try
-    if parallel
-        parallel_solve!(m, solution, simulation_passes, convergence_test_frequency, maximum_iterations, beta_quantile, risk_lambda, cut_selection_frequency, convergence_termination, cuts_per_processor, cut_selection_method)
-        # status = async_solve(m, simulation_passes, convergence_test_frequency, maximum_iterations, beta_quantile, risk_lambda, cut_selection_frequency, convergence_termination, cuts_per_processor)
-    else
-        serial_solve!(m, solution, simulation_passes, convergence_test_frequency, maximum_iterations, beta_quantile, risk_lambda, cut_selection_frequency, convergence_termination, cut_selection_method)
-    end
+    solve!(m, solution, convergence, maximum_iterations, risk_measure, cut_selection, parallel)
     # catch InterruptException
         # warn("Terminating early")
     # end
@@ -127,91 +109,56 @@ terminate(converged::Bool, do_test::Bool) = converged & do_test
 terminate(converged::Bool, do_test::Bool, simulation_passes::Range) = converged
 terminate(converged::Bool, do_test::Bool, simulation_passes) = terminate(converged, do_test)
 
-function serial_solve!{N1<:Real, N2<:Real}(m::SDDPModel, solution::Solution, simulation_passes, convergence_test_frequency::Int, maximum_iterations::Int, beta_quantile::N1, risk_lambda::N2,  cut_selection_frequency::Int, convergence_test::Bool, cut_selection_method::LazyConstraint)
-    serial_solve!(m, solution, simulation_passes, convergence_test_frequency, maximum_iterations, beta_quantile, risk_lambda, 0, convergence_test, cut_selection_method)
-end
+forward_pass!(ty::Serial, m::SDDPModel, simulation_passes) = forward_pass!(m, simulation_passes)
+forward_pass!(ty::ForwardPass, m::SDDPModel, simulation_passes) = parallel_forward_pass!(m, simulation_passes)
 
-function serial_solve!{N1<:Real, N2<:Real}(m::SDDPModel, solution::Solution, simulation_passes, convergence_test_frequency::Int, maximum_iterations::Int, beta_quantile::N1, risk_lambda::N2,  cut_selection_frequency::Int, convergence_test::Bool, cut_selection_method::CutSelectionMethod)
-    # Initialise cut selection if appropriate
-    if cut_selection_frequency > 0
-        initialise_cut_selection!(m)
-    end
+backward_pass!(ty::BackwardPass, m::SDDPModel, method::CutSelectionMethod) = parallel_backward_pass!(m, ty.cuts_per_processor, method)
+backward_pass!(ty::Serial, m::SDDPModel, doselection::Bool, method::CutSelectionMethod) = backward_pass!(m, doselection, method)
+backward_pass!(ty::AbstractParallel, m::SDDPModel, method::CutSelectionMethod) = backward_pass!(ty, m, method.frequency > 0, method)
 
-    # Set risk aversion parameters
-    m.beta_quantile, m.risk_lambda = beta_quantile, risk_lambda
+function solve!(m::SDDPModel, solution::Solution, convergence::Convergence, maximum_iterations::Int, risk_measure::RiskMeasure, cut_selection::CutSelectionMethod, parallel::Parallel)
 
-    time_forwards = 0.
-    time_backwards = 0.
-    time_cut_selection = 0.
-    simulations = 0
-    for i=1:maximum_iterations
-        # Cutting passes
-        tic()
-        backward_pass!(m, cut_selection_frequency > 0, cut_selection_method)
-        time_backwards += toq()
-
-        # Rebuild models if using Cut Selection
-        if cut_selection_frequency > 0 && mod(i, cut_selection_frequency) == 0
-            tic()
-            rebuild_stageproblems!(cut_selection_method, m)
-            time_cut_selection += toq()
-        end
-
-        # Test convergence if appropriate
-        if convergence_test_frequency > 0 && mod(i, convergence_test_frequency) == 0
-            tic()
-            (is_converged, n) = forward_pass!(m, simulation_passes)
-            time_forwards += toq()
-            simulations += Int(n)
-
-            # Output to user
-            log!(solution, m.confidence_interval[1], m.confidence_interval[2], m.valid_bound, i, time_backwards, time_forwards)
-            print_stats(m, i, time_backwards, simulations, time_forwards, time_cut_selection)
-
-            # Terminate if converged and appropriate
-            if terminate(is_converged, convergence_test, simulation_passes)
-                setStatus!(solution, CONVERGENCE_TERMINATION)
-                return
-            end
-        end
-    end
-    setStatus!(solution, ITERATION_TERMINATION)
-end
-
-function parallel_solve!{N1<:Real, N2<:Real}(m::SDDPModel, solution::Solution, simulation_passes::Int, convergence_test_frequency::Int, maximum_iterations::Int, beta_quantile::N1, risk_lambda::N2,  cut_selection_frequency::Int, convergence_test::Bool, cuts_per_processor::Int, cut_selection_method::CutSelectionMethod)
     # Intialise model on worker processors
-    nworkers = initialise_workers!(m)
+    if !isa(parallel, Parallel{Serial, Serial})
+        nworkers = initialise_workers!(m)
+    end
 
     # Initialise cut selection storage since we need it to communicate between processors
     initialise_cut_selection!(m)
 
     # Set risk aversion parameters
-    m.beta_quantile, m.risk_lambda = beta_quantile, risk_lambda
+    m.beta_quantile, m.risk_lambda = risk_measure.beta, risk_measure.lambda
 
-    iterations, nsimulations = 0, 0
+    iterations=0
+    nsimulations = 0
     last_convergence_test, last_cutselection = 0, 0
     time_backwards, time_forwards, time_cutselection = 0., 0., 0.
+    npass = isa(parallel.backward_pass, BackwardPass)?(parallel.backward_pass.cuts_per_processor * nworkers):1
+
     while iterations < maximum_iterations
+
         # Update iteration counters
-        iterations += cuts_per_processor * nworkers
-        last_convergence_test += cuts_per_processor * nworkers
-        last_cutselection += cuts_per_processor * nworkers
+        iterations += npass
+        last_convergence_test += npass
+        last_cutselection += npass
 
         # Cutting passes
         tic()
-        if cut_selection_frequency > 0 && last_cutselection >= cut_selection_frequency
-            time_cutselection += parallel_backward_pass!(m, cuts_per_processor * nworkers, cut_selection_frequency, cut_selection_method)
-            last_cutselection = 0
-        else
-            parallel_backward_pass!(m, cuts_per_processor * nworkers, cut_selection_frequency, NoSelection())
-        end
+        backward_pass!(parallel.backward_pass, m, cut_selection)
         time_backwards += toq()
 
+        # Rebuild models if using Cut Selection
+        if cut_selection.frequency > 0 && last_cutselection >= cut_selection.frequency
+            tic()
+            rebuild_stageproblems!(cut_selection, m)
+            time_cutselection += toq()
+        end
+
         # Test convergence if appropriate
-        if convergence_test_frequency > 0 && last_convergence_test >= convergence_test_frequency
+        if convergence.frequency > 0 && last_convergence_test >= convergence.frequency
             last_convergence_test = 0
             tic()
-            (is_converged, n) = parallel_forward_pass!(m, simulation_passes)
+            (is_converged, n) = forward_pass!(parallel.forward_pass, m, convergence.n)
             nsimulations += Int(n)
             time_forwards += toq()
 
@@ -220,12 +167,14 @@ function parallel_solve!{N1<:Real, N2<:Real}(m::SDDPModel, solution::Solution, s
             print_stats(m, iterations, time_backwards, nsimulations, time_forwards, time_cutselection)
 
             # Terminate if converged and appropriate
-            if terminate(is_converged, convergence_test, simulation_passes)
+            if terminate(is_converged, convergence.terminate, convergence.n)
+                # We have terminated due to convergence test
                 setStatus!(solution, CONVERGENCE_TERMINATION)
                 return
             end
         end
     end
+    # We have terminated due to iteration limit
     setStatus!(solution, ITERATION_TERMINATION)
 end
 
@@ -233,6 +182,7 @@ function print_stats(m::SDDPModel, iterations, back_time, simulations, forward_t
     printfmt("{1:>9s} {2:>9s} | {3:>9s} {4:>6.2f} | {5:6s} {6:6s} | {7:6s} {8:6s} | {9:5s}\n",
         humanize(m.confidence_interval[1], "7.3f"), humanize(m.confidence_interval[2], "7.3f"), humanize(m.valid_bound, "7.3f"), 100*rtol(m), humanize(iterations), humanize(back_time), humanize(simulations), humanize(forward_time), humanize(cut_time, "6.2f"))
 end
+
 function print_stats_header()
     printfmt("{1:38s} | {2:13s} | {3:13s} |   Cut\n", "                  Objective", "  Backward", "   Forward")
     printfmt("{1:19s} | {2:9s} {3:6s} | {4:6s} {5:6s} | {6:6s} {7:6s} |  Time\n", "      Expected", "  Bound", " % Gap", " Iters", " Time", " Iters", " Time")
@@ -252,8 +202,8 @@ function humanize(value::Int)
     else
         return humanize(value, "5.1f")
     end
-
 end
+
 function humanize(value::Number, format="5.1f")
     suffix  = gnu_suf
     base    = 1000.0

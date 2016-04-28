@@ -66,7 +66,6 @@ Creates an SDDPModel type
     SDDPModel(kwargs...)
 
 Keyword Arguments:
-conf_level        - confidence level for the lower bound
 cuts_filename     - ASCIIString filename for cut output. If specified cuts will be written.
 initial_markov_state - the scenario at time 0. Model transitions at the start of time period 1
 markov_states     - the number of markov states
@@ -79,7 +78,6 @@ transition        - the transition matrix. Can be N*N where N is the number of s
 value_to_go_bound - Initial bound on value to go
 """
 function SDDPModel(;
-    conf_level=0.95,
     cuts_filename=nothing,
     initial_markov_state=0,
     markov_states=1,
@@ -128,7 +126,7 @@ function SDDPModel(;
     my_inf = (sense==:Max?Inf:-Inf)
     sense_type = (sense==:Max?Val{:Max}:Val{:Min})
 
-    SDDPModel(stages,markov_states,scenarios, sense_type, Array(JuMP.Model, (stages, markov_states)), transition, WeightVec(scenario_probability), initial_markov_state, (-my_inf, -my_inf), my_inf, conf_level, solver, value_to_go_bound, 1., 1., zeros(markov_states, scenarios), cuts_filename, build_function, Array(StageCuts, (0, 0)))
+    SDDPModel(stages,markov_states,scenarios, sense_type, Array(JuMP.Model, (stages, markov_states)), transition, WeightVec(scenario_probability), initial_markov_state, (-my_inf, -my_inf), my_inf, 0.95, solver, value_to_go_bound, 1., 1., zeros(markov_states, scenarios), cuts_filename, build_function, Array(StageCuts, (0, 0)))
 end
 
 """
@@ -164,7 +162,6 @@ end
 
 function SDDPModel(
     build_subproblem!::Function;
-    conf_level=0.95,
     cuts_filename=nothing,
     initial_markov_state=0,
     markov_states=1,
@@ -189,7 +186,6 @@ function SDDPModel(
         scenario_probability=scenario_probability,
         transition=transition,
         initial_markov_state=initial_markov_state,
-        conf_level=conf_level,
         solver=solver,
         value_to_go_bound=value_to_go_bound,
         cuts_filename=cuts_filename,
