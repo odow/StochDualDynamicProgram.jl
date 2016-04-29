@@ -60,7 +60,7 @@ function rebuild_stageproblems!(::Deterministic, m::SDDPModel)
     deterministic_prune!(m)
     rebuild_stageproblems!(NoSelection(), m)
 end
-rebuild_stageproblems!(m::SDDPModel) = rebuild_stageproblems!(LevelOne(), m)
+rebuild_stageproblems!(m::SDDPModel) = rebuild_stageproblems!(NoSelection(), m)
 
 function add_cut!(sense, sp::Model, cut::Cut, method::CutSelectionMethod=NoSelection())
     @defExpr(rhs, cut.intercept + sum{coeff * stagedata(sp).state_vars[i], (i, coeff) in enumerate(cut.coefficients)})

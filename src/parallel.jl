@@ -131,16 +131,16 @@ end
 #
 #   Forwards pass functionality
 #
-function worker_forward_pass!{T}(sc::Array{T,2}, n::Int)
+function worker_forward_pass!{T}(sc::Array{T,2}, n::Int, cut_selection::CutSelectionMethod=NoSelection())
     m.stagecuts = deepcopy(sc)
-    rebuild_stageproblems!(NoSelection(), m)
+    rebuild_stageproblems!(cut_selection, m)
     forward_pass_kernel!(m, n)
 end
 
-function parallel_forward_pass!(m::SDDPModel, npasses::Int=1)
+function parallel_forward_pass!(m::SDDPModel, npasses::Int, cut_selection::CutSelectionMethod)
     results = Array(Array{Float64}, length(workers()))
     nn = ceil(Int, npasses / length(workers()))
-    distribute_work!(results, worker_forward_pass!, m.stagecuts, nn)
+    distribute_work!(results, worker_forward_pass!, m.stagecuts, nn, cut_selection)
     # set new lower bound
     test_and_set_ci!(m, vcat(results...))
     return (rtol(m) < 0., npasses)

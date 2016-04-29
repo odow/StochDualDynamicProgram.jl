@@ -109,8 +109,8 @@ terminate(converged::Bool, do_test::Bool) = converged & do_test
 terminate(converged::Bool, do_test::Bool, simulation_passes::Range) = converged
 terminate(converged::Bool, do_test::Bool, simulation_passes) = terminate(converged, do_test)
 
-forward_pass!(ty::Serial, m::SDDPModel, simulation_passes) = forward_pass!(m, simulation_passes)
-forward_pass!(ty::ForwardPass, m::SDDPModel, simulation_passes) = parallel_forward_pass!(m, simulation_passes)
+forward_pass!(ty::Serial, m::SDDPModel, simulation_passes, cut_selection::CutSelectionMethod) = forward_pass!(m, simulation_passes)
+forward_pass!(ty::ForwardPass, m::SDDPModel, simulation_passes, cut_selection::CutSelectionMethod) = parallel_forward_pass!(m, simulation_passes, cut_selection)
 
 backward_pass!(ty::BackwardPass, m::SDDPModel, method::CutSelectionMethod) = parallel_backward_pass!(m, ty.cuts_per_processor, method)
 backward_pass!(ty::Serial, m::SDDPModel, method::CutSelectionMethod) = backward_pass!(m, method.frequency > 0, method)
@@ -157,7 +157,7 @@ function solve!(m::SDDPModel, solution::Solution, convergence::Convergence, maxi
         if convergence.frequency > 0 && last_convergence_test >= convergence.frequency
             last_convergence_test = 0
             tic()
-            (is_converged, n) = forward_pass!(parallel.forward_pass, m, convergence.n)
+            (is_converged, n) = forward_pass!(parallel.forward_pass, m, convergence.n, cut_selection)
             nsimulations += Int(n)
             time_forwards += toq()
 
