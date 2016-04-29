@@ -59,11 +59,9 @@ function solve_newsvendor()
     # load_cuts!(m)
 
     solve(m,                # Solve the model using the SDDP algorithm
-        simulation_passes=1000,
-        log_frequency=10,
+        convergence=Convergence(1000, 10),
         maximum_iterations=50,
-        beta_quantile=0.6,
-        risk_lambda = 0.5
+        risk_measure = NestedCVar(beta=0.6, lambda=0.5)
     )
 
     results = simulate(m,   # Simulate the policy
@@ -117,7 +115,7 @@ function solve_newsvendor2()
 
         # ====================
         #   Scenarios
-        @addScenarioConstraint(sp, D=Demand[stage,:], sell <= D)
+        @addScenarioConstraint(sp, scenario=1:2, sell <= Demand[stage,scenario])
 
         # ====================
         #   Objective
@@ -135,25 +133,22 @@ function solve_newsvendor2()
     srand(11111)
     info("Don't check for duplicate cuts")
     @time solve(m,                # Solve the model using the SDDP algorithm
-        simulation_passes=10000,
-        log_frequency=30,
+        convergence=Convergence(10000, 30),
         maximum_iterations=30
     )
 
     srand(11111)
     info("Cut selection")
     @time solve(m1,                # Solve the model using the SDDP algorithm
-        simulation_passes=10000,
-        log_frequency=30,
+        convergence=Convergence(10000, 30),
         maximum_iterations=30,
-        cut_selection_frequency=5
+        cut_selection = LevelOne(5)
     )
 
     srand(11111)
     info("Solving using varying number of simulation passes")
     @time solve(m2,                # Solve the model using the SDDP algorithm
-        simulation_passes=linspace(100, 10000, 10),
-        log_frequency=1,
+        convergence=Convergence(linspace(100, 10000, 10), 1),
         maximum_iterations=50
     )
 

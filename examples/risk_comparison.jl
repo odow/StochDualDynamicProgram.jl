@@ -59,7 +59,7 @@ function solve_newsvendor(Demand, beta_quant=0.5, lambda=1.)
 
     solve(m,                # Solve the model using the SDDP algorithm
         simulation_passes=1000,
-        log_frequency=50,
+        convergence_test_frequency=50,
         maximum_iterations=500,
         beta_quantile=beta_quant,
         risk_lambda = lambda

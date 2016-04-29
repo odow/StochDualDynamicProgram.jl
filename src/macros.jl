@@ -224,16 +224,42 @@ end
 Right now you can only add an additive RHS with no coefficient. ie
     @addScenarioConstraint(m, rhs=[1,2,3], (...) <= (...) + rhs
 """
+# macro addScenarioConstraint(m, kw, c)
+#     m = esc(m)
+#     v = esc(kw.args[2])
+#     quote
+#         @assert length(collect($v)) == length(stagedata($m).objective_value)
+#         $(esc(kw.args[1])) = 0
+#         con = @addConstraint($m, $(esc(c)))
+#         push!(stagedata($m).scenario_constraints, (con, collect($v)))
+#     end
+# end
+
 macro addScenarioConstraint(m, kw, c)
     m = esc(m)
     v = esc(kw.args[2])
+
+    @assert length(c.args) == 3
+    if c.args[2] == :(<=) || c.args[2] == :(==)
+        ex = :($(c.args[1]) - $(c.args[3]))
+    elseif c.args[2] == :(>=)
+        ex = :($(c.args[3]) - $(c.args[1]))
+    else
+        error("Error in @addScenarioConstraint with $c")
+    end
     quote
-        @assert length(collect($v)) == length(stagedata($m).objective_value)
-        $(esc(kw.args[1])) = 0
+        rhs = Float64[]
+        for val in $v
+            $(esc(kw.args[1])) = val
+            push!(rhs, -@defExpr($(esc(ex))).constant)
+         end
+
+        $(esc(kw.args[1])) = $v[1]
         con = @addConstraint($m, $(esc(c)))
-        push!(stagedata($m).scenario_constraints, (con, collect($v)))
+        push!(stagedata($m).scenario_constraints, (con, rhs))
     end
 end
+# @addScenarioConstraint2(sp, i=1:4, x + y <= 2*i)
 
 macro setStageProfit(m, ex)
     m = esc(m)

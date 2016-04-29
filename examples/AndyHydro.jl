@@ -94,7 +94,7 @@ end
 
 solve(m,                # Solve the model using the SDDP algorithm
     simulation_passes=1000,
-    log_frequency=1,
+    convergence_test_frequency=1,
     maximum_iterations=5
 )
 
