@@ -113,8 +113,7 @@ forward_pass!(ty::Serial, m::SDDPModel, simulation_passes) = forward_pass!(m, si
 forward_pass!(ty::ForwardPass, m::SDDPModel, simulation_passes) = parallel_forward_pass!(m, simulation_passes)
 
 backward_pass!(ty::BackwardPass, m::SDDPModel, method::CutSelectionMethod) = parallel_backward_pass!(m, ty.cuts_per_processor, method)
-backward_pass!(ty::Serial, m::SDDPModel, doselection::Bool, method::CutSelectionMethod) = backward_pass!(m, doselection, method)
-backward_pass!(ty::AbstractParallel, m::SDDPModel, method::CutSelectionMethod) = backward_pass!(ty, m, method.frequency > 0, method)
+backward_pass!(ty::Serial, m::SDDPModel, method::CutSelectionMethod) = backward_pass!(m, method.frequency > 0, method)
 
 function solve!(m::SDDPModel, solution::Solution, convergence::Convergence, maximum_iterations::Int, risk_measure::RiskMeasure, cut_selection::CutSelectionMethod, parallel::Parallel)
 

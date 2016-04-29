@@ -84,8 +84,10 @@ You can add scenarios to the stage problem with the `@addScenarioConstraint` mac
 
 ```julia
 @addScenarioConstraint(sp, RHS=rand(3), a*x <= b + RHS)
+
+RHS = rand(3)
+@addScenarioConstraint(sp, i=1:3, a*x <= b + c*RHS[i])
 ```
-The scenario sets must be indexable by the integers `1` to `scenarios` where `scenarios` is the value specified in the `SDDPModel` definition.
 
 If you add multiple scenario constraints the length of each scenario set must be identical. Scenario One corresponds to `RHS=Ω[1,i]` for all `i`.
 

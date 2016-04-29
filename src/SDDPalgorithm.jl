@@ -406,7 +406,8 @@ function load_scenario!(sp::Model, scenario::Int)
         end
 
         # Update RHS
-        chgConstrRHS(constr, getRHS(constr) - old_scenario + Ω[scenario])
+        # chgConstrRHS(constr, getRHS(constr) - old_scenario + Ω[scenario])
+        chgConstrRHS(constr, Ω[scenario])
     end
 
     # Store new scenario

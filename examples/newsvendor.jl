@@ -115,7 +115,7 @@ function solve_newsvendor2()
 
         # ====================
         #   Scenarios
-        @addScenarioConstraint(sp, D=Demand[stage,:], sell <= D)
+        @addScenarioConstraint(sp, scenario=1:2, sell <= Demand[stage,scenario])
 
         # ====================
         #   Objective
