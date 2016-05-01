@@ -220,7 +220,7 @@ macro scenarioconstraint(m, kw, c)
         rhs = Float64[]
         for val in $v
             $(esc(kw.args[1])) = val
-            push!(rhs, -@expression($m, $(esc(ex))).constant)
+            push!(rhs, -@expression($m, $(esc(gensym())), $(esc(ex))).constant)
          end
 
         $(esc(kw.args[1])) = $v[1]
@@ -233,6 +233,6 @@ end
 macro stageprofit(m, ex)
     m = esc(m)
     quote
-        stagedata($m).stage_profit = @expression($m, $(esc(gensym()))) $(esc(ex))
+        stagedata($m).stage_profit = @expression($m, $(esc(gensym())), $(esc(ex)))
     end
 end

@@ -59,43 +59,44 @@ function solve_hydro()
         #   SDDP State Variables
         # Level of upper reservoir
         @state(sp, 0 <= reservoir[r=RESERVOIRS] <= reservoir_max[r], reservoir0=reservoir_initial[r])
-
         # ------------------------------------------------------------------
         #   Additional variables
-        # Quantity to flow through turbine of reservoir r
-        @variable(sp, outflow[r=RESERVOIRS] >= 0)
+        @variables(sp, begin
+            # Quantity to flow through turbine of reservoir r
+            outflow[r=RESERVOIRS] >= 0
 
-        # Quantity to spill over edge of reservoir r
-        @variable(sp, spill[r=RESERVOIRS] >= 0)
+            # Quantity to spill over edge of reservoir r
+            spill[r=RESERVOIRS] >= 0
 
-        # Total quantity of water
-        @variable(sp, generation_quantity >= 0)
+            # Total quantity of water
+            generation_quantity >= 0
 
-        # Proportion of levels to dispatch on
-        @variable(sp, 0 <= dispatch[reservoir=RESERVOIRS, level=1:n] <= 1)
+            # Proportion of levels to dispatch on
+            0 <= dispatch[reservoir=RESERVOIRS, level=1:n] <= 1
+        end)
 
         # ------------------------------------------------------------------
         # Conservation constraints
-        @constraint(sp, reservoir[:upper] == reservoir0[:upper] -
-            (outflow[:upper] + spill[:upper])
-        )
+        @constraints(sp, begin
+            reservoir[:upper] == reservoir0[:upper] - (outflow[:upper] + spill[:upper])
 
-        @constraint(sp, reservoir[:lower] == reservoir0[:lower] +
-            (outflow[:upper] + spill[:upper]) -
-            (outflow[:lower] + spill[:lower])
-        )
+            reservoir[:lower] == reservoir0[:lower] +
+                (outflow[:upper] + spill[:upper]) -
+                (outflow[:lower] + spill[:lower])
+        end)
 
         # ------------------------------------------------------------------
         # Reservoir constraints
         for reservoir in RESERVOIRS
-            # Flow out
-            @constraint(sp, outflow[reservoir] == sum{
-                A[level][1] * dispatch[reservoir, level],
-                level=1:n}
-            )
+            @constraints(sp, begin
+                # Flow out
+                outflow[reservoir] == sum{
+                    A[level][1] * dispatch[reservoir, level],
+                    level=1:n}
 
-            # Dispatch combination of levels
-            @constraint(sp, sum{dispatch[reservoir, level], level=1:n} <= 1)
+                # Dispatch combination of levels
+                sum{dispatch[reservoir, level], level=1:n} <= 1
+            end)
         end
 
         # Total quantity generated
@@ -107,7 +108,6 @@ function solve_hydro()
         # ------------------------------------------------------------------
         #   Objective Function
         @stageprofit(sp, Price[stage, markov_state]*generation_quantity)
-
     end
 
     m2 = copy(m)
