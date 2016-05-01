@@ -205,7 +205,7 @@ function create_subproblems!(m::SDDPModel)
             sp = StageProblem(m.scenarios)
 
             # Set the solver
-            setSolver(sp, m.LPSOLVER)
+            setsolver(sp, m.LPSOLVER)
 
             # User has specified markov states
             if arglength(m.build_function!)==3
@@ -227,7 +227,7 @@ function create_subproblems!(m::SDDPModel)
             end
 
             # If the user hasn't specified an objective
-            if is_zero_objective(getObjective(sp))
+            if is_zero_objective(getobjective(sp))
                 if stage==m.stages
                     # If its the last stage then its just the stage profit
                     set_objective!(m.sense, sp)
@@ -246,18 +246,18 @@ function create_subproblems!(m::SDDPModel)
 end
 
 function set_objective!(::Type{Val{:Min}}, sp::Model, value_to_go_bound)
-    stagedata(sp).theta = @defVar(sp, theta >= value_to_go_bound)
-    @setObjective(sp, Min, stagedata(sp).stage_profit + stagedata(sp).theta)
+    stagedata(sp).theta = @variable(sp, theta >= value_to_go_bound)
+    @objective(sp, Min, stagedata(sp).stage_profit + stagedata(sp).theta)
 end
 function set_objective!(::Type{Val{:Max}}, sp::Model, value_to_go_bound)
-    stagedata(sp).theta = @defVar(sp, theta <= value_to_go_bound)
-    @setObjective(sp, Max, stagedata(sp).stage_profit + stagedata(sp).theta)
+    stagedata(sp).theta = @variable(sp, theta <= value_to_go_bound)
+    @objective(sp, Max, stagedata(sp).stage_profit + stagedata(sp).theta)
 end
 function set_objective!(::Type{Val{:Min}}, sp::Model)
-    @setObjective(sp, Min, stagedata(sp).stage_profit)
+    @objective(sp, Min, stagedata(sp).stage_profit)
 end
 function set_objective!(::Type{Val{:Max}}, sp::Model)
-    @setObjective(sp, Max, stagedata(sp).stage_profit)
+    @objective(sp, Max, stagedata(sp).stage_profit)
 end
 
 """
@@ -308,7 +308,7 @@ end
 """
 This function loads cuts from a file.
 """
-function load_cuts!(m::SDDPModel, filename::ASCIIString)
+function loadcuts!(m::SDDPModel, filename::ASCIIString)
     open(filename, "r") do f
         while true
             line = readline(f)
@@ -326,13 +326,13 @@ function load_cuts!(m::SDDPModel, filename::ASCIIString)
             else
                 xcoeff = [parse(Float64, line[4])]
             end
-            @addConstraint(sp, stagedata(sp).theta <= theta + sum{xcoeff[i]*getVar(sp, v), (i, v) in enumerate(stagedata(sp).state_vars)})
+            @constraint(sp, stagedata(sp).theta <= theta + sum{xcoeff[i]*getvariable(sp, v), (i, v) in enumerate(stagedata(sp).state_vars)})
         end
     end
 end
-function load_cuts!(m::SDDPModel)
+function loadcuts!(m::SDDPModel)
     if m.cuts_filename == nothing
         error("Please specify a file to load cuts from.")
     end
-    load_cuts!(m, m.cuts_filename)
+    loadcuts!(m, m.cuts_filename)
 end

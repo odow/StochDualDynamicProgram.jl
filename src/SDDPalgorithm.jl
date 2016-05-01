@@ -21,12 +21,12 @@ function pass_states_forward!(m::SDDPModel, stage::Int, markov_state::Int)
 
         # For each state variable
         for i in 1:length(stagedata(next_sp).state_vars)
-            chgConstrRHS(stagedata(next_sp).dual_constraints[i], getValue(stagedata(sp).state_vars[i]))
+            JuMP.setRHS(stagedata(next_sp).dual_constraints[i], getvalue(stagedata(sp).state_vars[i]))
         end
     end
 
     if size(m.stagecuts)[1] > 0
-        addsamplepoint!(m.sense, m.stagecuts[stage, markov_state], map(getValue, stagedata(sp).state_vars))
+        addsamplepoint!(m.sense, m.stagecuts[stage, markov_state], map(getvalue, stagedata(sp).state_vars))
     end
 end
 
@@ -142,7 +142,7 @@ function add_cut!(m::SDDPModel, stage::Int, markov_state::Int, cut_selection::Bo
 
     risk_weightings!(m, stage, markov_state)
 
-    @defExpr(rhs, sum{
+    @expression(sp, rhs, sum{
         sum{
             m.weightings_matrix[new_markov, scenario] * (
                 stagedata(new_sp).objective_value[scenario] +
@@ -170,10 +170,10 @@ function add_cut!(m::SDDPModel, stage::Int, markov_state::Int, cut_selection::Bo
 end
 
 function add_cut!(::Type{Val{:Min}}, sp::Model, rhs::JuMP.GenericAffExpr, method::CutSelectionMethod=NoSelection())
-    @addConstraint(sp, stagedata(sp).theta >= rhs)
+    @constraint(sp, stagedata(sp).theta >= rhs)
 end
 function add_cut!(::Type{Val{:Max}}, sp::Model, rhs::JuMP.GenericAffExpr, method::CutSelectionMethod=NoSelection())
-    @addConstraint(sp, stagedata(sp).theta <= rhs)
+    @constraint(sp, stagedata(sp).theta <= rhs)
 end
 # function add_cut!(::Type{Val{:Min}}, sp::Model, rhs::JuMP.GenericAffExpr, method::LazyConstraint)
 #     @addLazyConstraint(sp, stagedata(sp).theta >= rhs)
@@ -182,8 +182,8 @@ end
 #     @addLazyConstraint(sp, stagedata(sp).theta <= rhs)
 # end
 # function corners(cb)
-#     x_val = getValue(x)
-#     y_val = getValue(y)
+#     x_val = getvalue(x)
+#     y_val = getvalue(y)
 #     # Allow for some impreciseness in the solution
 #     TOL = 1e-6
 #     # Check top left, allowing some tolerance
@@ -373,11 +373,11 @@ function solve!(sp::Model)
     s = stagedata(sp).current_scenario
 
     # store the objective value
-    stagedata(sp).objective_value[s] = getObjectiveValue(sp)
+    stagedata(sp).objective_value[s] = getobjectivevalue(sp)
 
     # store the dual value for each of the state variables
     for i in 1:length(stagedata(sp).state_vars)
-        stagedata(sp).dual_values[i][s] = getDual(stagedata(sp).dual_constraints[i])
+        stagedata(sp).dual_values[i][s] = getdual(stagedata(sp).dual_constraints[i])
     end
 
     return
@@ -406,8 +406,8 @@ function load_scenario!(sp::Model, scenario::Int)
         end
 
         # Update RHS
-        # chgConstrRHS(constr, getRHS(constr) - old_scenario + Ω[scenario])
-        chgConstrRHS(constr, Ω[scenario])
+        # JuMP.setRHS(constr, getRHS(constr) - old_scenario + Ω[scenario])
+        JuMP.setRHS(constr, Ω[scenario])
     end
 
     # Store new scenario
@@ -417,8 +417,8 @@ function load_scenario!(sp::Model, scenario::Int)
 end
 
 # Some helper functions
-JuMP.getLower(c::ConstraintRef) = c.m.linconstr[c.idx].lb
-JuMP.getUpper(c::ConstraintRef) = c.m.linconstr[c.idx].ub
+JuMP.getlowerbound(c::ConstraintRef) = c.m.linconstr[c.idx].lb
+JuMP.getupperbound(c::ConstraintRef) = c.m.linconstr[c.idx].ub
 
 """
 This function gets the appropriate simulated bound closest to the outer bound
@@ -472,9 +472,9 @@ Get the value of the current stage (i.e. not including the value to go)
 function get_true_value(sp::Model)
     @assert is_sp(sp)
     if stagedata(sp).theta != nothing
-        return (getObjectiveValue(sp) - getValue(stagedata(sp).theta))::Float64
+        return (getobjectivevalue(sp) - getvalue(stagedata(sp).theta))::Float64
     else
-        return getObjectiveValue(sp)::Float64
+        return getobjectivevalue(sp)::Float64
     end
 end
 
@@ -536,7 +536,7 @@ function store_results!(results::Dict{Symbol, Any}, vars, sp, stage, pass, scena
     results[:Objective][pass] += get_true_value(sp)         # Add objective
     results[:Scenario][stage][pass] = scenario
     for v in vars
-        results[v][stage][pass] = getValue(getVar(sp, v))
+        results[v][stage][pass] = getvalue(getvariable(sp, v))
     end
 end
 
@@ -651,9 +651,9 @@ function t_test(x; conf_level=0.95)
     return (lo, hi)#, mean(x))
 end
 
-# @defVar(m, x[1:10])
-# @defVar(m, y)
-# @defVar(m, z[1:2, [:a, :b]])
+# @variable(m, x[1:10])
+# @variable(m, y)
+# @variable(m, z[1:2, [:a, :b]])
 #
 # results = simulate(m, 1000, x, y, z, z[1,:a] bystage=true)
 # results[x][...key...][stage] >> [ ... realisations ...]
@@ -733,25 +733,25 @@ end
 #     for jump_container in nargs
 #         if isa(jump_container, JuMP.Variable)
 #             if bystage
-#                 results[jump_container][stage][pass] = getValue(sp, jump_container)
+#                 results[jump_container][stage][pass] = getvalue(sp, jump_container)
 #             else
-#                 results[jump_container][pass][stage] = getValue(sp, jump_container)
+#                 results[jump_container][pass][stage] = getvalue(sp, jump_container)
 #             end
 #         elseif isa(jump_container, Array{JuMP.Variable})
 #             for i in eachindex(jump_container)
 #                 tup = ind2sub(size(jump_container), i)...
 #                 if bystage
-#                     results[jump_container][tup...][stage][pass] = getValue(sp, jump_container[tup...])
+#                     results[jump_container][tup...][stage][pass] = getvalue(sp, jump_container[tup...])
 #                 else
-#                     results[jump_container][tup...][pass][stage] = getValue(sp, jump_container[tup...])
+#                     results[jump_container][tup...][pass][stage] = getvalue(sp, jump_container[tup...])
 #                 end
 #             end
 #         elseif isa(jump_container, JuMP.JuMPArray)
 #             for key in keys(jump_container)
 #                 if bystage
-#                     results[jump_container][key...][stage][pass] = getValue(sp, jump_container[key...])
+#                     results[jump_container][key...][stage][pass] = getvalue(sp, jump_container[key...])
 #                 else
-#                     results[jump_container][key...][pass][stage] = getValue(sp, jump_container[key...])
+#                     results[jump_container][key...][pass][stage] = getvalue(sp, jump_container[key...])
 #                 end
 #             end
 #         end

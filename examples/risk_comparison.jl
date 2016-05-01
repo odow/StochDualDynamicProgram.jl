@@ -36,33 +36,31 @@ function solve_newsvendor(Demand, beta_quant=0.5, lambda=1.)
 
         # ====================
         #   State variable
-        @defStateVar(sp, 0 <= stock <= 100, stock0=5)
+        @state(sp, 0 <= stock <= 100, stock0=5)
 
         # ====================
         #   Other variables
-        @defVar(sp, buy  >= 0)  # Quantity to buy
-        @defVar(sp, sell >= 0)  # Quantity to sell
+        @variable(sp, buy  >= 0)  # Quantity to buy
+        @variable(sp, sell >= 0)  # Quantity to sell
 
         # ====================
         #   Scenarios
-        @addScenarioConstraint(sp, D=Demand[stage,:], sell <= D)
+        @scenarioconstraint(sp, D=Demand[stage,:], sell <= D)
 
         # ====================
         #   Objective
-        @setStageProfit(sp, sell * RetailPrice - buy * PurchasePrice[markov_state])
+        @stageprofit(sp, sell * RetailPrice - buy * PurchasePrice[markov_state])
 
         # ====================
         #   Dynamics constraint
-        @addConstraint(sp, stock == stock0 + buy - sell)
+        @constraint(sp, stock == stock0 + buy - sell)
 
     end
 
     solve(m,                # Solve the model using the SDDP algorithm
-        simulation_passes=1000,
-        convergence_test_frequency=50,
+        convergence=Convergence(1000, 50),
         maximum_iterations=500,
-        beta_quantile=beta_quant,
-        risk_lambda = lambda
+        risk_measure = NestedCVar(beta_quant, lambda)
     )
 
     results = simulate(m,   # Simulate the policy

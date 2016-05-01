@@ -58,29 +58,29 @@ function solve_hydro()
         # ------------------------------------------------------------------
         #   SDDP State Variables
         # Level of upper reservoir
-        @defStateVar(sp, 0 <= reservoir[r=RESERVOIRS] <= reservoir_max[r], reservoir0=reservoir_initial[r])
+        @state(sp, 0 <= reservoir[r=RESERVOIRS] <= reservoir_max[r], reservoir0=reservoir_initial[r])
 
         # ------------------------------------------------------------------
         #   Additional variables
         # Quantity to flow through turbine of reservoir r
-        @defVar(sp, outflow[r=RESERVOIRS] >= 0)
+        @variable(sp, outflow[r=RESERVOIRS] >= 0)
 
         # Quantity to spill over edge of reservoir r
-        @defVar(sp, spill[r=RESERVOIRS] >= 0)
+        @variable(sp, spill[r=RESERVOIRS] >= 0)
 
         # Total quantity of water
-        @defVar(sp, generation_quantity >= 0)
+        @variable(sp, generation_quantity >= 0)
 
         # Proportion of levels to dispatch on
-        @defVar(sp, 0 <= dispatch[reservoir=RESERVOIRS, level=1:n] <= 1)
+        @variable(sp, 0 <= dispatch[reservoir=RESERVOIRS, level=1:n] <= 1)
 
         # ------------------------------------------------------------------
         # Conservation constraints
-        @addConstraint(sp, reservoir[:upper] == reservoir0[:upper] -
+        @constraint(sp, reservoir[:upper] == reservoir0[:upper] -
             (outflow[:upper] + spill[:upper])
         )
 
-        @addConstraint(sp, reservoir[:lower] == reservoir0[:lower] +
+        @constraint(sp, reservoir[:lower] == reservoir0[:lower] +
             (outflow[:upper] + spill[:upper]) -
             (outflow[:lower] + spill[:lower])
         )
@@ -89,24 +89,24 @@ function solve_hydro()
         # Reservoir constraints
         for reservoir in RESERVOIRS
             # Flow out
-            @addConstraint(sp, outflow[reservoir] == sum{
+            @constraint(sp, outflow[reservoir] == sum{
                 A[level][1] * dispatch[reservoir, level],
                 level=1:n}
             )
 
             # Dispatch combination of levels
-            @addConstraint(sp, sum{dispatch[reservoir, level], level=1:n} <= 1)
+            @constraint(sp, sum{dispatch[reservoir, level], level=1:n} <= 1)
         end
 
         # Total quantity generated
-        @addConstraint(sp, generation_quantity == sum{
+        @constraint(sp, generation_quantity == sum{
             A[level][2] * dispatch[reservoir,level],
             reservoir=RESERVOIRS, level=1:n}
         )
 
         # ------------------------------------------------------------------
         #   Objective Function
-        @setStageProfit(sp, Price[stage, markov_state]*generation_quantity)
+        @stageprofit(sp, Price[stage, markov_state]*generation_quantity)
 
     end
 
@@ -181,13 +181,13 @@ function solve_hydro2()
         # ------------------------------------------------------------------
         #   SDDP State Variables
         # Level of upper reservoir
-        @defStateVar(sp,
+        @state(sp,
             0 <= upper_reservoir <= reservoir_max[:upper],
             upper_reservoir0=reservoir_initial[:upper]
         )
 
         # Level of lower reservoir
-        @defStateVar(sp,
+        @state(sp,
             0 <= lower_reservoir <= reservoir_max[:lower],
             lower_reservoir0=reservoir_initial[:lower]
         )
@@ -195,28 +195,28 @@ function solve_hydro2()
         # ------------------------------------------------------------------
         #   Additional variables
         # Quantity to flow through turbine of reservoir r
-        @defVar(sp, outflow[r=RESERVOIRS] >= 0)
+        @variable(sp, outflow[r=RESERVOIRS] >= 0)
 
         # Quantity to spill over edge of reservoir r
-        @defVar(sp, spill[r=RESERVOIRS] >= 0)
+        @variable(sp, spill[r=RESERVOIRS] >= 0)
 
         # Total quantity of water
-        @defVar(sp, generation_quantity >= 0)
+        @variable(sp, generation_quantity >= 0)
 
         # Proportion of levels to dispatch on
-        @defVar(sp, 0 <= dispatch[reservoir=RESERVOIRS, level=1:n] <= 1)
+        @variable(sp, 0 <= dispatch[reservoir=RESERVOIRS, level=1:n] <= 1)
 
         # ------------------------------------------------------------------
         #   Objective Function
-        @setStageProfit(sp, -Price[markov_state, stage]*generation_quantity)
+        @stageprofit(sp, -Price[markov_state, stage]*generation_quantity)
 
         # ------------------------------------------------------------------
         # Conservation constraints
-        @addConstraint(sp, upper_reservoir == upper_reservoir0 -
+        @constraint(sp, upper_reservoir == upper_reservoir0 -
             (outflow[:upper] + spill[:upper])
         )
 
-        @addConstraint(sp, lower_reservoir == lower_reservoir0 +
+        @constraint(sp, lower_reservoir == lower_reservoir0 +
             (outflow[:upper] + spill[:upper]) -
             (outflow[:lower] + spill[:lower])
         )
@@ -225,17 +225,17 @@ function solve_hydro2()
         # Reservoir constraints
         for reservoir in RESERVOIRS
             # Flow out
-            @addConstraint(sp, outflow[reservoir] == sum{
+            @constraint(sp, outflow[reservoir] == sum{
                 A[level][1] * dispatch[reservoir, level],
                 level=1:n}
             )
 
             # Dispatch combination of levels
-            @addConstraint(sp, sum{dispatch[reservoir, level], level=1:n} <= 1)
+            @constraint(sp, sum{dispatch[reservoir, level], level=1:n} <= 1)
         end
 
         # Total quantity generated
-        @addConstraint(sp, generation_quantity == sum{
+        @constraint(sp, generation_quantity == sum{
             A[level][2] * dispatch[reservoir,level],
             reservoir=RESERVOIRS, level=1:n}
         )
