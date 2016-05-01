@@ -63,7 +63,7 @@ end
 rebuild_stageproblems!(m::SDDPModel) = rebuild_stageproblems!(NoSelection(), m)
 
 function add_cut!(sense, sp::Model, cut::Cut, method::CutSelectionMethod=NoSelection())
-    @defExpr(rhs, cut.intercept + sum{coeff * stagedata(sp).state_vars[i], (i, coeff) in enumerate(cut.coefficients)})
+    @expression(sp, rhs, cut.intercept + sum{coeff * stagedata(sp).state_vars[i], (i, coeff) in enumerate(cut.coefficients)})
     add_cut!(sense, sp, rhs, method)
 end
 
@@ -77,26 +77,30 @@ end
 
 function deterministic_prune!{N}(sense, bound, sp::Model, sc::StageCuts{N})
     m = Model()
-    @defVar(m, getLower(stagedata(sp).state_vars[i]) <= x[i=1:N] <= getUpper(stagedata(sp).state_vars[i]))
-    @defVar(m, y)
+    @variable(m, getlowerbound(stagedata(sp).state_vars[i]) <= x[i=1:N] <= getupperbound(stagedata(sp).state_vars[i]))
+    @variable(m, y)
     for cut in sc.cuts
         if isa(sense, Val{:Max})
-            @addConstraint(m, y <= bound)
-            @addConstraint(m, y <= cut.intercept + sum{cut.coefficients[i] * x[i], i=1:N})
+            @constraints(m, begin
+                y <= bound
+                y <= cut.intercept + sum{cut.coefficients[i] * x[i], i=1:N}
+            end)
         else
-            @addConstraint(m, y >= bound)
-            @addConstraint(m, y >= cut.intercept + sum{cut.coefficients[i] * x[i], i=1:N})
+            @constraints(m, begin
+                y >= bound
+                y >= cut.intercept + sum{cut.coefficients[i] * x[i], i=1:N}
+            end)
         end
     end
     activecuts = Cut{N}[]
     for cut in sc.cuts
         if isa(sense, Val{:Max})
-            @setObjective(m, Min, cut.intercept + sum{cut.coefficients[i] * x[i], i=1:N} - y)
+            @objective(m, Min, cut.intercept + sum{cut.coefficients[i] * x[i], i=1:N} - y)
         else
-            @setObjective(m, Min, y - cut.intercept + sum{cut.coefficients[i] * x[i], i=1:N})
+            @objective(m, Min, y - cut.intercept + sum{cut.coefficients[i] * x[i], i=1:N})
         end
         solve(m)
-        if getObjectiveValue(m) < 0.
+        if getobjectivevalue(m) < 0.
             push!(activecuts, cut)
         end
     end

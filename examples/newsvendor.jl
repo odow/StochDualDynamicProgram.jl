@@ -35,28 +35,28 @@ function solve_newsvendor()
 
         # ====================
         #   State variable
-        @defStateVar(sp, 0 <= stock <= 100, stock0=5)
+        @state(sp, 0 <= stock <= 100, stock0=5)
 
         # ====================
         #   Other variables
-        @defVar(sp, buy  >= 0)  # Quantity to buy
-        @defVar(sp, sell >= 0)  # Quantity to sell
+        @variable(sp, buy  >= 0)  # Quantity to buy
+        @variable(sp, sell >= 0)  # Quantity to sell
 
         # ====================
         #   Scenarios
-        @addScenarioConstraint(sp, D=Demand[stage,:], sell <= D)
+        @scenarioconstraint(sp, D=Demand[stage,:], sell <= D)
 
         # ====================
         #   Objective
-        @setStageProfit(sp, sell * RetailPrice - buy * PurchasePrice[markov_state])
+        @stageprofit(sp, sell * RetailPrice - buy * PurchasePrice[markov_state])
 
         # ====================
         #   Dynamics constraint
-        @addConstraint(sp, stock == stock0 + buy - sell)
+        @constraint(sp, stock == stock0 + buy - sell)
 
     end
 
-    # load_cuts!(m)
+    # loadcuts!(m)
 
     solve(m,                # Solve the model using the SDDP algorithm
         convergence=Convergence(1000, 10),
@@ -106,24 +106,24 @@ function solve_newsvendor2()
 
         # ====================
         #   State variable
-        @defStateVar(sp, 0 <= stock <= 100, stock0=5)
+        @state(sp, 0 <= stock <= 100, stock0=5)
 
         # ====================
         #   Other variables
-        @defVar(sp, buy  >= 0)  # Quantity to buy
-        @defVar(sp, sell >= 0)  # Quantity to sell
+        @variable(sp, buy  >= 0)  # Quantity to buy
+        @variable(sp, sell >= 0)  # Quantity to sell
 
         # ====================
         #   Scenarios
-        @addScenarioConstraint(sp, scenario=1:2, sell <= Demand[stage,scenario])
+        @scenarioconstraint(sp, scenario=1:2, sell <= Demand[stage,scenario])
 
         # ====================
         #   Objective
-        @setStageProfit(sp, sell * RetailPrice - buy * PurchasePrice[markov_state])
+        @stageprofit(sp, sell * RetailPrice - buy * PurchasePrice[markov_state])
 
         # ====================
         #   Dynamics constraint
-        @addConstraint(sp, stock == stock0 + buy - sell)
+        @constraint(sp, stock == stock0 + buy - sell)
 
     end
 

@@ -1,18 +1,41 @@
-# This function contains JuMP extension macros
-# """
-# Define a new state variable in the stage problem.
+# ------------------------------------------------------------------------------
 #
-# Usage:
+# Deprecate macro taken from
 #
-#     @defStateVar(m, 0<=x<=1, x0==0.5)
-#     @defStateVar(m, y<=1, y0==0.5)
-#     @defStateVar(m, z, z0==0.5)
+# https://github.com/JuliaOpt/JuMP.jl/blob/1e0228abc6f9e968d5c03f21d914f713bd7d334a/src/deprecated.jl#L12-L28
 #
-# Currently only able to handle single variables. Will break easily.
-# """
-
-# Much of the functionality in @defStateVar is shamelessly copied from
-# both the JuMP @defVar and JuMPer @defUnc(https://github.com/IainNZ/JuMPeR.jl/blob/master/src/robustmacro.jl)
+#  Copyright 2016, Iain Dunning, Joey Huchette, Miles Lubin, and contributors
+#  This Source Code Form is subject to the terms of the Mozilla Public
+#  License, v. 2.0. If a copy of the MPL was not distributed with this
+#  file, You can obtain one at http://mozilla.org/MPL/2.0/.
+#############################################################################
+# JuMP
+# An algebraic modeling language for Julia
+# See http://github.com/JuliaOpt/JuMP.jl
+#############################################################################
+macro deprecate_macro(old,new)
+    oldmac = symbol(string("@",old))
+    newmac = symbol(string("@",new))
+    s = string(oldmac," is deprecated, use ", newmac, " instead.")
+    if VERSION > v"0.5-"
+        # backtraces are ok on 0.5
+        depwarn = :(Base.depwarn($s,$(quot(oldmac))))
+    else
+        # backtraces are junk on 0.4
+        depwarn = :(Base.warn_once($s))
+    end
+    @eval macro $old(args...)
+        return Expr(:block, $depwarn, Expr(:macrocall, $(quot(newmac)), [esc(x) for x in args]...))
+    end
+    eval(Expr(:export,oldmac))
+    return
+end
+# ------------------------------------------------------------------------------
+#
+# This file contains JuMP extension macros
+#
+# Much of the functionality in @state is shamelessly copied from
+# both the JuMP @variable and JuMPer @defUnc(https://github.com/IainNZ/JuMPeR.jl/blob/master/src/robustmacro.jl)
 
 import JuMP: assert_validmodel, validmodel, esc_nonconstant
 import JuMP: getloopedcode, buildrefsets, getname, registervar
@@ -28,14 +51,25 @@ end
 
 function State0(m::Model, init, name, name0)
     v0 = Variable(m,-Inf,Inf,:Cont,utf8(string(name0)),init)
-    push!(stagedata(m).dual_constraints, @addConstraint(m, v0 == init))
+    push!(stagedata(m).dual_constraints, @constraint(m, v0 == init))
     return v0
 end
 
 
-macro defStateVar(args...)
+@deprecate_macro defStateVar state
+"""
+Define a new state variable in the stage problem.
+
+Usage:
+
+    @state(m, 0<=x[i=1:3]<=1, x0==rand(3)[i])
+    @state(m, y<=1, y0==0.5)
+    @state(m, z, z0==0.5)
+
+"""
+macro state(args...)
     length(args) <= 1 &&
-        error("in @defStateVar: expected model as first argument, then variable information.")
+        error("in @state: expected model as first argument, then variable information.")
     m = esc(args[1])
     x = args[2]
     x0 = args[3]
@@ -64,7 +98,7 @@ macro defStateVar(args...)
                 # lb <= x <= u
                 var = x.args[3]
                 (x.args[4] != :<= && x.args[4] != :≤) &&
-                    error("in @defStateVar ($var): expected <= operator after variable name.")
+                    error("in @state ($var): expected <= operator after variable name.")
                 lb = esc_nonconstant(x.args[1])
                 ub = esc_nonconstant(x.args[5])
             else
@@ -84,7 +118,7 @@ macro defStateVar(args...)
             ub = esc(x.args[3])
         else
             # Its a comparsion, but not using <= ... <=
-            error("in @defStateVar ($(string(x))): use the form lb <= ... <= ub.")
+            error("in @state ($(string(x))): use the form lb <= ... <= ub.")
         end
     else
         # No bounds provided - free variable
@@ -120,7 +154,7 @@ macro defStateVar(args...)
             $(esc(var)), $(esc(x0_name))
         end)
     end
-    isa(var,Expr) || error("in @defStateVar: expected $var to be a variable name")
+    isa(var,Expr) || error("in @state: expected $var to be a variable name")
 
     var2 = deepcopy(var)
     var2.args[1] = x0_name
@@ -166,76 +200,11 @@ macro defStateVar(args...)
 
 end
 
-# macro defStateVar(m, x, x0)
-#     m = esc(m)
-#     @assert x0.head == :comparison
-#     if typeof(x) == Symbol
-#         x_sym = x
-#     elseif x.head == :comparison
-#         if length(x.args)  == 5 # Two sided
-#             x_sym = x.args[3]
-#         elseif length(x.args) == 3 # One sided
-#             x_sym = x.args[1]
-#         else
-#             error("Too many arguments for $(x.args)")
-#         end
-#     end
-#     x = esc(x)
-#     k = x0.args[1]
-#     quote
-#         @assert is_sp($m)
-#         @defVar $m $x
-#         @defVar $m $(esc(k))
-#         push!($stagedata(m).state_vars, $(Expr(:quote, x_sym)))
-#         $stagedata(m).dual_constraints[$(Expr(:quote, x_sym))] = (@addConstraint $m $(esc(x0)))
-#     end
-# end
-
+@deprecate_macro addScenarioConstraint scenarioconstraint
 """
-Define the value to go variable.
-
-Usage:
-
-    @defValueToGo(m, 0<=theta<=1)
-    @defStateVar(m, theta<=1)
-    @defStateVar(m, theta)
-
+Add a scenario constraint (changes in RHS) to model
 """
-macro defValueToGo(m, x)
-    m = esc(m)
-    if typeof(x) == Symbol
-        x_sym = x
-    elseif x.head == :comparison
-        if length(x.args)  == 5 # Two sided
-            x_sym = x.args[3]
-        elseif length(x.args) == 3 # One sided
-            x_sym = x.args[1]
-        else
-            error("Too many arguments for $(x.args)")
-        end
-    end
-    quote
-        @assert is_sp($m)
-        stagedata($m).theta = @defVar $m $(esc(x))
-    end
-end
-
-"""
-Right now you can only add an additive RHS with no coefficient. ie
-    @addScenarioConstraint(m, rhs=[1,2,3], (...) <= (...) + rhs
-"""
-# macro addScenarioConstraint(m, kw, c)
-#     m = esc(m)
-#     v = esc(kw.args[2])
-#     quote
-#         @assert length(collect($v)) == length(stagedata($m).objective_value)
-#         $(esc(kw.args[1])) = 0
-#         con = @addConstraint($m, $(esc(c)))
-#         push!(stagedata($m).scenario_constraints, (con, collect($v)))
-#     end
-# end
-
-macro addScenarioConstraint(m, kw, c)
+macro scenarioconstraint(m, kw, c)
     m = esc(m)
     v = esc(kw.args[2])
 
@@ -245,25 +214,25 @@ macro addScenarioConstraint(m, kw, c)
     elseif c.args[2] == :(>=)
         ex = :($(c.args[3]) - $(c.args[1]))
     else
-        error("Error in @addScenarioConstraint with $c")
+        error("Error in @scenarioconstraint with $c")
     end
     quote
         rhs = Float64[]
         for val in $v
             $(esc(kw.args[1])) = val
-            push!(rhs, -@defExpr($(esc(ex))).constant)
+            push!(rhs, -@expression($m, $(esc(gensym())), $(esc(ex))).constant)
          end
 
         $(esc(kw.args[1])) = $v[1]
-        con = @addConstraint($m, $(esc(c)))
+        con = @constraint($m, $(esc(c)))
         push!(stagedata($m).scenario_constraints, (con, rhs))
     end
 end
-# @addScenarioConstraint2(sp, i=1:4, x + y <= 2*i)
 
-macro setStageProfit(m, ex)
+@deprecate_macro setStageProfit stageprofit
+macro stageprofit(m, ex)
     m = esc(m)
     quote
-        stagedata($m).stage_profit = @defExpr $(esc(gensym())) $(esc(ex))
+        stagedata($m).stage_profit = @expression($m, $(esc(gensym())), $(esc(ex)))
     end
 end

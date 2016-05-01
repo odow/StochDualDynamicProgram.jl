@@ -6,8 +6,8 @@ using Formatting
 using Distributions, StatsBase
 
 export SDDPModel,
-    @defStateVar, @defValueToGo, @addScenarioConstraint, @setStageProfit,
-    simulate, load_cuts!,
+    @state, @scenarioconstraint, @stageprofit,
+    simulate, loadcuts!,
     LevelOne, Deterministic, NoSelection,
     ForwardPass, BackwardPass, Parallel,
     NestedCVar,
