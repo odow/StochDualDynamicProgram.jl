@@ -228,6 +228,22 @@ macro scenarioconstraint(m, kw, c)
         push!(stagedata($m).scenario_constraints, (con, rhs))
     end
 end
+macro scenarioconstraints(m, kw, c)
+    @assert c.head == :block || error("Invalid syntax for @scenarioconstraints")
+    code = quote end
+    for it in c.args
+        if isexpr(it, :line)
+            # do nothing
+        else
+            push!(code.args, quote
+                @scenarioconstraint($(esc(m)), $(esc(kw)), $(esc(it)))
+            end)
+        end
+    end
+    push!(code.args, :(nothing))
+    return code
+end
+
 
 @deprecate_macro setStageProfit stageprofit
 macro stageprofit(m, ex)

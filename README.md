@@ -98,6 +98,17 @@ for i=1:4
 end
 ```
 
+There is also a plural version of the macro similar to JuMP's `@constraints`:
+
+```julia
+Ω = rand(3,2)
+@scenarioconstraints(sp, i=1:3, begin
+  x[i] <= Ω[i, 1]
+
+  y[i] <= Ω[i, 2]
+end)
+```
+
 
 ### Solve
 

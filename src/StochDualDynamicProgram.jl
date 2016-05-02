@@ -6,7 +6,7 @@ using Formatting
 using Distributions, StatsBase
 
 export SDDPModel,
-    @state, @scenarioconstraint, @stageprofit,
+    @state, @scenarioconstraint, @scenarioconstraints, @stageprofit,
     simulate, loadcuts!,
     LevelOne, Deterministic, NoSelection,
     ForwardPass, BackwardPass, Parallel,
