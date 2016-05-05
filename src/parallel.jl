@@ -145,6 +145,20 @@ function parallel_forward_pass!(m::SDDPModel, npasses::Int, cut_selection::CutSe
     test_and_set_ci!(m, vcat(results...))
     return (rtol(m) < 0., npasses)
 end
+function parallel_forward_pass!(m::SDDPModel, npasses::Range, cut_selection::CutSelectionMethod)
+    OBJ = Float64[]
+    for n in npasses
+        results = Array(Array{Float64}, length(workers()))
+        nn = ceil(Int, (n - length(OBJ)) / length(workers()))
+        distribute_work!(results, worker_forward_pass!, m.stagecuts, nn, cut_selection)
+        push!(OBJ, vcat(results...)...)
+        test_and_set_ci!(m, OBJ)
+        if rtol(m) > 0.
+            return (false, n)
+        end
+    end
+    return (rtol(m) < 0., npasses[end])
+end
 
 # ------------------------------------------------------------------------------
 #
@@ -153,7 +167,7 @@ end
 function worker_simulate!{T}(sc::Array{T,2}, n::Int, vars::Vector{Symbol}=Symbol[])
     m.stagecuts = deepcopy(sc)
     rebuild_stageproblems!(m)
-    simulate(m, n, vars)
+    serial_simulate(m, n, vars)
 end
 
 function merge_dicts!(m::SDDPModel, d1::Dict{Symbol, Any}, d2::Dict{Symbol, Any})

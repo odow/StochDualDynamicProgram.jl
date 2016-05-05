@@ -358,15 +358,23 @@ Solve a StageProblem.
 function solve!(sp::Model)
     @assert is_sp(sp)
 
+    colval = copy(sp.colVal)
+
     status = solve(sp)
 
     # Catch case where we aren't optimal
     if status != :Optimal
-        @show stagedata(sp).theta
-        @show stagedata(sp).stage_profit
-        JuMP.writeMPS(sp, "C:/temp/infeasible_subproblem.mps")
-        JuMP.writeLP(sp, "C:/temp/infeasible_subproblem.lp")
-        error("SDDP Subproblems must be feasible. Current status: $(status).")
+        JuMP.writeMPS(sp, "C:/temp/a_infeasible_subproblem_$(myid()).mps")
+        status = solve(sp)
+        if status != :Optimal
+            JuMP.writeMPS(sp, "C:/temp/b_infeasible_subproblem_$(myid()).mps")
+            open("C:/temp/b_rhs.csv", "w") do f
+                for c in sp.linconstr
+                    write(f, "$(string(c)), $(c.lb), $(c.ub)\n)")
+                end
+            end
+            error("SDDP Subproblems must be feasible. Current status: $(status).")
+        end
     end
 
     # Get current scenario
@@ -531,10 +539,12 @@ function test_and_set_ci!(m::SDDPModel, obj)
     end
 end
 
-@inline store_results!(results::Void, vars, sp, stage, pass, scenario) = nothing
-function store_results!(results::Dict{Symbol, Any}, vars, sp, stage, pass, scenario)
+@inline store_results!(results::Void, vars, sp, stage, pass, markov, scenario) = nothing
+function store_results!(results::Dict{Symbol, Any}, vars, sp, stage, pass, markov, scenario)
     results[:Objective][pass] += get_true_value(sp)         # Add objective
     results[:Scenario][stage][pass] = scenario
+    results[:Markov][stage][pass] = markov
+    results[:Future][stage][pass] = getobjectivevalue(sp) - get_true_value(sp)
     for v in vars
         results[v][stage][pass] = getvalue(getvariable(sp, v))
     end
@@ -571,7 +581,7 @@ function forward_pass_kernel!(m::SDDPModel, n::Int, results::Union{Void, Dict{Sy
             obj[pass] += get_true_value(sp)
 
             # Save results if necesary
-            store_results!(results, vars, sp, stage, pass, scenario)
+            store_results!(results, vars, sp, stage, pass, markov, scenario)
 
             # pass forward if necessary
             if stage < m.stages
@@ -616,19 +626,13 @@ Simulate SDDP model and return variable solutions contained in [vars]
 """
 function serial_simulate(m::SDDPModel, n::Int, vars::Vector{Symbol}=Symbol[])
     results = Dict{Symbol, Any}(:Objective=>zeros(Float64,n))
-    for v in vars
-        results[v] = Array(Vector{Any}, m.stages)
+    for (s, t) in vcat(collect(zip(vars, fill(Any, length(vars)))), [(:Scenario, Int), (:Markov, Int), (:Future, Float64)])
+        results[s] = Array(Vector{t}, m.stages)
         for i=1:m.stages
-            results[v][i] = Array(Any, n)
+            results[s][i] = Array(t, n)
         end
     end
-    results[:Scenario] = Array(Vector{Int}, m.stages)
-    for i=1:m.stages
-        results[:Scenario][i] = zeros(n)
-    end
-
     forward_pass_kernel!(m, n, results, vars)
-
     return results
 end
 
