@@ -4,6 +4,7 @@ type StageData
     theta::Union{Void, JuMP.Variable}
     old_scenario::Tuple{Int, Int}
     scenario_constraints::Vector{Tuple{Any, Vector{Any}}}
+    scenario_constraint_names::Dict{Symbol, Int}
     last_scenario::Int
     current_scenario::Int
     objective_value::Vector{Float64}
@@ -11,7 +12,7 @@ type StageData
     stage_profit
     cut_data::Dict{Tuple{Float64, Float64}, Vector{Vector{Float64}}}
 end
-StageData(scenarios::Int=1) = StageData(Variable[], ConstraintRef[], nothing, (0,0), Tuple{Any, Vector{Any}}[], 0, 0, zeros(scenarios), Vector{Float64}[], nothing, Dict{Tuple{Float64, Float64}, Vector{Vector{Float64}}}())
+StageData(scenarios::Int=1) = StageData(Variable[], ConstraintRef[], nothing, (0,0), Tuple{Any, Vector{Any}}[], Dict{Symbol, Int}(), 0, 0, zeros(scenarios), Vector{Float64}[], nothing, Dict{Tuple{Float64, Float64}, Vector{Vector{Float64}}}())
 
 """
 Instaniates a new StageProblem which is a JuMP.Model object with an extension
@@ -29,7 +30,7 @@ function stagedata(m::Model)
 end
 
 function Base.copy(sd::StageData)
-    return StageData(sd.state_vars, sd.dual_constraints, sd.theta, sd.old_scenario, sd.scenario_constraints, sd.last_scenario, sd.current_scenario, sd.objective_value, sd.dual_values, sd.stage_profit, sd.cut_data)
+    return StageData(sd.state_vars, sd.dual_constraints, sd.theta, sd.old_scenario, sd.scenario_constraints, sd.scenario_constraint_names, sd.last_scenario, sd.current_scenario, sd.objective_value, sd.dual_values, sd.stage_profit, sd.cut_data)
 end
 
 # Check this is a StageProblem

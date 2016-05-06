@@ -173,3 +173,25 @@ results = simulate(m, 5, [:x])
 # The five realisations of the x variable in stage 1
 results[:x][1] --> [1, 1.5, 1, 1.25, 1.25]
 ```
+
+#### Historical Simulation
+Often we may wanto to evaluate the policy give a particular historical realisation. This may contain correlation structures between our random variables that are not captured by the markov chain or independent scenarios. We can do this with a few modifications to the model.
+
+First, we need to name our `@scenarioconstraint`s. i.e.
+```julia
+@scenarioconstraint(sp, con_name_1, i=rand(3), x<=i)
+
+@scenarioconstraints(sp, i=rand(3), begin
+  con_name_1, x<=i
+  con_name_2, i - 0.5 <= x
+end)
+```
+
+Next, when calling the `simulate` function, we need to supply it the RHS values for each of the named constraints for each stage as keyword arguments. *This is different to the construction of the constraints where we could used indexed sets.* We also drop the number of simulation passes since only one historical realisation is allowed.
+
+```julia
+results = simulate(m, [:x], con_name_1=rand(10), con_name_2=rand(10))
+
+# The one realisation of the x variable in stage 1
+results[:x][1] --> [1.25]
+```

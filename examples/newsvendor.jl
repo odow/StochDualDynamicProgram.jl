@@ -44,7 +44,7 @@ function solve_newsvendor()
 
         # ====================
         #   Scenarios
-        @scenarioconstraint(sp, D=Demand[stage,:], sell <= D)
+        @scenarioconstraint(sp, demand, D=Demand[stage,:], sell <= D)
 
         # ====================
         #   Objective
@@ -64,6 +64,13 @@ function solve_newsvendor()
         risk_measure = NestedCVar(beta=0.6, lambda=0.5)
     )
 
+    # Historical simulation
+    results = simulate(m,   # Simulate the policy
+        [:stock, :buy, :sell],
+        demand=[10, 10, 10]
+        )
+
+    # Monte-carlo simulation
     results = simulate(m,   # Simulate the policy
         1000,               # number of monte carlo realisations
         [:stock, :buy, :sell]

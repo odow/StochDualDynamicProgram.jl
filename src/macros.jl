@@ -204,7 +204,19 @@ end
 """
 Add a scenario constraint (changes in RHS) to model
 """
-macro scenarioconstraint(m, kw, c)
+macro scenarioconstraint(m, args...)
+    if length(args) == 3
+        name = args[1]
+        kw = args[2]
+        c = args[3]
+    elseif length(args) == 2
+        name = :nothing
+        kw = args[1]
+        c = args[2]
+    else
+        error("Wrong number of arguments in @scenariocostraint")
+    end
+
     m = esc(m)
     v = esc(kw.args[2])
 
@@ -226,6 +238,9 @@ macro scenarioconstraint(m, kw, c)
         $(esc(kw.args[1])) = $v[1]
         con = @constraint($m, $(esc(c)))
         push!(stagedata($m).scenario_constraints, (con, rhs))
+        if $(Expr(:quote, name)) != :nothing
+            stagedata($m).scenario_constraint_names[$(Expr(:quote, name))] = length(stagedata($m).scenario_constraints)
+        end
     end
 end
 macro scenarioconstraints(m, kw, c)
@@ -235,9 +250,20 @@ macro scenarioconstraints(m, kw, c)
         if isexpr(it, :line)
             # do nothing
         else
-            push!(code.args, quote
-                @scenarioconstraint($(esc(m)), $(esc(kw)), $(esc(it)))
-            end)
+            if it.head == :comparison
+                push!(code.args, quote
+                    @scenarioconstraint($(esc(m)), $(esc(kw)), $(esc(it)))
+                end)
+            elseif it.head == :tuple
+                if length(it.args) != 2
+                    error("Unknown arguments in @scenarioconstraint")
+                end
+                push!(code.args, quote
+                    @scenarioconstraint($(esc(m)), $(esc(it.args[1])), $(esc(kw)), $(esc(it.args[2])))
+                end)
+            else
+                error("Unknown arguments in @scenarioconstraints")
+            end
         end
     end
     push!(code.args, :(nothing))
