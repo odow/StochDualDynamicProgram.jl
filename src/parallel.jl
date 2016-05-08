@@ -131,26 +131,30 @@ end
 #
 #   Forwards pass functionality
 #
-function worker_forward_pass!{T}(sc::Array{T,2}, n::Int, cut_selection::CutSelectionMethod=NoSelection())
+function worker_forward_pass!{T}(sc::Array{T,2}, n::Int, cut_selection::CutSelectionMethod=NoSelection(), variancereduction::Bool=true)
     m.stagecuts = deepcopy(sc)
     rebuild_stageproblems!(cut_selection, m)
-    forward_pass_kernel!(m, n)
+    forward_pass_kernel!(m, n, variancereduction)
 end
 
-function parallel_forward_pass!(m::SDDPModel, npasses::Int, cut_selection::CutSelectionMethod)
+function parallel_forward_pass!(m::SDDPModel, convergence::Convergence, cut_selection::CutSelectionMethod)
+    parallel_forward_pass!(m, convergence.n, convergence.variancereduction, cut_selection)
+end
+
+function parallel_forward_pass!(m::SDDPModel, npasses::Int, variancereduction::Bool, cut_selection::CutSelectionMethod)
     results = Array(Array{Float64}, length(workers()))
     nn = ceil(Int, npasses / length(workers()))
-    distribute_work!(results, worker_forward_pass!, m.stagecuts, nn, cut_selection)
+    distribute_work!(results, worker_forward_pass!, m.stagecuts, nn, cut_selection, variancereduction)
     # set new lower bound
     test_and_set_ci!(m, vcat(results...))
     return (rtol(m) < 0., npasses)
 end
-function parallel_forward_pass!(m::SDDPModel, npasses::Range, cut_selection::CutSelectionMethod)
+function parallel_forward_pass!(m::SDDPModel, npasses::Range, variancereduction::Bool, cut_selection::CutSelectionMethod)
     OBJ = Float64[]
     for n in npasses
         results = Array(Array{Float64}, length(workers()))
         nn = ceil(Int, (n - length(OBJ)) / length(workers()))
-        distribute_work!(results, worker_forward_pass!, m.stagecuts, nn, cut_selection)
+        distribute_work!(results, worker_forward_pass!, m.stagecuts, nn, cut_selection, variancereduction)
         push!(OBJ, vcat(results...)...)
         test_and_set_ci!(m, OBJ)
         if rtol(m) > 0.

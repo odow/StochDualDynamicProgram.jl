@@ -279,8 +279,7 @@ markov_state - the current markov state
 Returns:
     the new markov state::Int
 """
-function transition(m::SDDPModel, stage::Int, markov_state::Int)
-    r = rand(Float64)
+function transition(m::SDDPModel, stage::Int, markov_state::Int, r::Float64)
     for new_markov_state=1:m.markov_states
         k = get_transition(m, stage, markov_state, new_markov_state)
         if r <= k
@@ -291,6 +290,8 @@ function transition(m::SDDPModel, stage::Int, markov_state::Int)
     end
     return m.markov_states
 end
+transition(m::SDDPModel, stage::Int, markov_state::Int) = transition(m, stage, markov_state, rand())
+
 function get_transition(m::SDDPModel{Array{Float64, 2}}, stage::Int, current_markov_state::Int, new_markov_state::Int)
     if current_markov_state==0
         return 1./m.markov_states

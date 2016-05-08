@@ -1,3 +1,5 @@
+isdefined(Base, :__precompile__) && __precompile__()
+
 module StochDualDynamicProgram
 
 importall JuMP
@@ -31,12 +33,13 @@ type Convergence
     frequency::Int
     terminate::Bool
     quantile::Float64
-    function Convergence(simulations, frequency::Int, terminate::Bool=false, quantile::Float64=0.95)
+    variancereduction::Bool
+    function Convergence(simulations, frequency::Int, terminate::Bool=false, quantile::Float64=0.95, variancereduction::Bool=true)
         @assert quantile >= 0 && quantile <= 1.
-        new(simulations, frequency, terminate, quantile)
+        new(simulations, frequency, terminate, quantile, variancereduction)
     end
 end
-Convergence(;simulations=1, frequency=1, terminate=false, quantile=0.95) = Convergence(simulations, frequency, terminate, quantile)
+Convergence(;simulations=1, frequency=1, terminate=false, quantile=0.95, variancereduction=true) = Convergence(simulations, frequency, terminate, quantile, variancereduction)
 
 include("macros.jl")
 include("cut_selection.jl")
@@ -109,8 +112,8 @@ terminate(converged::Bool, do_test::Bool) = converged & do_test
 terminate(converged::Bool, do_test::Bool, simulation_passes::Range) = converged
 terminate(converged::Bool, do_test::Bool, simulation_passes) = terminate(converged, do_test)
 
-forward_pass!(ty::Serial, m::SDDPModel, simulation_passes, cut_selection::CutSelectionMethod) = forward_pass!(m, simulation_passes)
-forward_pass!(ty::ForwardPass, m::SDDPModel, simulation_passes, cut_selection::CutSelectionMethod) = parallel_forward_pass!(m, simulation_passes, cut_selection)
+forward_pass!(ty::Serial, m::SDDPModel, convergence, cut_selection::CutSelectionMethod) = forward_pass!(m, convergence)
+forward_pass!(ty::ForwardPass, m::SDDPModel, convergence, cut_selection::CutSelectionMethod) = parallel_forward_pass!(m, convergence, cut_selection)
 
 backward_pass!(ty::BackwardPass, m::SDDPModel, method::CutSelectionMethod) = parallel_backward_pass!(m, ty.cuts_per_processor, method)
 backward_pass!(ty::Serial, m::SDDPModel, method::CutSelectionMethod) = backward_pass!(m, method.frequency > 0, method)
@@ -157,7 +160,7 @@ function solve!(m::SDDPModel, solution::Solution, convergence::Convergence, maxi
         if convergence.frequency > 0 && last_convergence_test >= convergence.frequency
             last_convergence_test = 0
             tic()
-            (is_converged, n) = forward_pass!(parallel.forward_pass, m, convergence.n, cut_selection)
+            (is_converged, n) = forward_pass!(parallel.forward_pass, m, convergence, cut_selection)
             nsimulations += Int(n)
             time_forwards += toq()
 
