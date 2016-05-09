@@ -222,20 +222,13 @@ end
 # # Tell JuMP/Gurobi to use our callback function
 # addLazyCallback(m, corners)
 
-
-
-
-
-function aggregate_terms(sp::Model, ex::JuMP.GenericAffExpr)
+function aggregateterms(sp::Model, ex::JuMP.GenericAffExpr)
     data = stagedata(sp)::StageData
-    # Initialise storage
     y = zeros(length(data.state_vars))
-    # Aggregate coefficients
-    for i in 1:length(ex.vars)
-        for j in 1:length(data.state_vars)
-            if ex.vars[i] == data.state_vars[j]
+    for i=1:length(ex.vars)
+        for j in 1:length(y)
+            if data.state_vars[j].col == ex.vars[i].col
                 y[j] += ex.coeffs[i]
-                break
             end
         end
     end
@@ -249,7 +242,8 @@ function write_cut(filename::ASCIIString, sp::Model, stage::Int, markov_state::I
     n = length(rhs.vars)
     open(filename, "a") do f
         write(f, string(stage, ", ", markov_state, ", ", rhs.constant))
-        for y in aggregate_terms(sp, rhs)
+        coeffs = aggregateterms(sp, rhs)
+        for y in coeffs
             write(f, string(", ", y))
         end
         write(f, "\n")

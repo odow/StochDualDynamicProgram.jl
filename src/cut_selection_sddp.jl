@@ -8,7 +8,7 @@ function initialise_cut_selection!(m::SDDPModel)
 end
 
 function add_cut!(sense, sp::Model, rhs::JuMP.GenericAffExpr, stagecut::StageCuts)
-    add_cut!(sense, Cut(rhs.constant, aggregate_terms(sp, rhs)), stagecut)
+    add_cut!(sense, Cut(rhs.constant, aggregateterms(sp, rhs)), stagecut)
 end
 
 """

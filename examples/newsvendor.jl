@@ -29,8 +29,7 @@ function solve_newsvendor()
             scenarios=2,
             transition=Transition,
             initial_markov_state=1,
-            value_to_go_bound = 1000,
-            cuts_filename="news_vendor.csv"
+            value_to_go_bound = 1000
         ) do sp, stage, markov_state
 
         # ====================
@@ -55,8 +54,6 @@ function solve_newsvendor()
         @constraint(sp, stock == stock0 + buy - sell)
 
     end
-
-    # loadcuts!(m)
 
     solve(m,                # Solve the model using the SDDP algorithm
         convergence=Convergence(1000, 10),
@@ -109,6 +106,7 @@ function solve_newsvendor2()
             transition=Transition,
             initial_markov_state=1,
             value_to_go_bound = 1000,
+            cuts_filename="news_vendor.csv"
         ) do sp, stage, markov_state
 
         # ====================
@@ -163,6 +161,34 @@ function solve_newsvendor2()
         1000,               # number of monte carlo realisations
         [:stock, :buy, :sell]
         )
+
+    # Initialise SDDP Model
+    m2 = SDDPModel(
+            stages=3,
+            markov_states=2,
+            scenarios=2,
+            transition=Transition,
+            initial_markov_state=1,
+            value_to_go_bound = 1000,
+        ) do sp, stage, markov_state
+        @state(sp, 0 <= stock <= 100, stock0=5)
+        @variables(sp, begin
+            buy  >= 0  # Quantity to buy
+            sell >= 0  # Quantity to sell
+        end)
+        @scenarioconstraint(sp, scenario=1:2, sell <= Demand[stage,scenario])
+        @stageprofit(sp, sell * RetailPrice - buy * PurchasePrice[markov_state])
+        @constraint(sp, stock == stock0 + buy - sell)
+    end
+    loadcuts!(m2, "news_vendor.csv")
+    results1 = simulate(m2,   # Simulate the policy
+        1000,               # number of monte carlo realisations
+        [:stock, :buy, :sell]
+        )
+
+    @show mean(results[:Objective]), mean(results1[:Objective])
+
+    rm("news_vendor.csv")
 
     return results
 end

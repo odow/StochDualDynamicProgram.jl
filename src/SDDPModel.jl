@@ -328,7 +328,11 @@ function loadcuts!(m::SDDPModel, filename::ASCIIString)
             else
                 xcoeff = [parse(Float64, line[4])]
             end
-            @constraint(sp, stagedata(sp).theta <= theta + sum{xcoeff[i]*getvariable(sp, v), (i, v) in enumerate(stagedata(sp).state_vars)})
+            if isa(m.sense, Val{:Max})
+                @constraint(sp, stagedata(sp).theta >= theta + sum{xcoeff[i] * v, (i, v) in enumerate(stagedata(sp).state_vars)})
+            else
+                @constraint(sp, stagedata(sp).theta <= theta + sum{xcoeff[i] * v, (i, v) in enumerate(stagedata(sp).state_vars)})
+            end
         end
     end
 end
