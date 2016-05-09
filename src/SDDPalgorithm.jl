@@ -30,6 +30,18 @@ function pass_states_forward!(m::SDDPModel, stage::Int, markov_state::Int)
     end
 end
 
+function StatsBase.sample(wv::WeightVec, r::Float64)
+    t = r * sum(wv)
+    w = values(wv)
+    n = length(w)
+    i = 1
+    cw = w[1]
+    while cw < t && i < n
+        i += 1
+        @inbounds cw += w[i]
+    end
+    return i
+end
 """
 Backward pass for the SDDP algorithm
 
@@ -40,10 +52,16 @@ m        - an SDDPModel
 
 """
 function load_scenario!(m::SDDPModel, sp::Model)
-    scenario = sample(1:m.scenarios, m.scenario_probability)
+    scenario = sample(m.scenario_probability)
     load_scenario!(sp, scenario)
     return scenario
 end
+function load_scenario!(m::SDDPModel, sp::Model, r::Float64)
+    scenario = sample(m.scenario_probability, r)
+    load_scenario!(sp, scenario)
+    return scenario
+end
+
 function backward_pass!(m::SDDPModel, cut_selection::Bool, method=NoSelection())
     # Initialise markov state
     markov = 0
@@ -550,54 +568,67 @@ function store_results!(results::Dict{Symbol, Any}, vars, sp, stage, pass, marko
     end
 end
 
-function forward_pass_kernel!(m::SDDPModel, n::Int, results::Union{Void, Dict{Symbol, Any}}=nothing, vars::Vector{Symbol}=Symbol[])
-    # Initialise scenario
-    markov, old_markov, scenario = 0, 0, 0
-
+function forward_pass_kernel!(m::SDDPModel, n::Int, variancereduction::Bool=true, results::Union{Void, Dict{Symbol, Any}}=nothing, vars::Vector{Symbol}=Symbol[])
     # Initialise the objective storage
     obj = zeros(n)
 
     # For a number of realisations
-    for pass=1:n
-        # Transition if need be
-        if m.init_markov_state==0
-            markov = transition(m, 1, m.init_markov_state)
-        else
-            markov = m.init_markov_state
-        end
-
-        # For all stages
-        for stage=1:m.stages
-            old_markov = markov
-
-            # realise on scenario
-            sp = m.stage_problems[stage, markov]
-            scenario = load_scenario!(m, sp)
-
-            # solve
-            solve!(sp)
-
-            # Add objective (stage profit only)
-            obj[pass] += get_true_value(sp)
-
-            # Save results if necesary
-            store_results!(results, vars, sp, stage, pass, markov, scenario)
-
-            # pass forward if necessary
-            if stage < m.stages
-                pass_states_forward!(m, stage, old_markov)
-
-                # transition to new scenario
-                markov = transition(m, stage, old_markov)
-            end
-
+    pass = 1
+    while pass <= n
+        Rscenario, Rmarkov = rand(m.stages), rand(m.stages)
+        forward_pass_kernel_inner!(m, obj, pass, results, vars, Rscenario, Rmarkov)
+        pass += 1
+        if variancereduction && ((pass+1) <= n)
+            forward_pass_kernel_inner!(m, obj, pass, results, vars, 1 - Rscenario, 1 - Rmarkov)
+            pass += 1
         end
     end
     return obj
 end
 
-function forward_pass!(m::SDDPModel, npasses::Int=1)
-    obj = forward_pass_kernel!(m, npasses)
+function forward_pass_kernel_inner!(m::SDDPModel, obj::Vector{Float64}, pass::Int, results::Union{Void, Dict{Symbol, Any}}, vars::Vector{Symbol}, Rscenario::Vector{Float64}, Rmarkov::Vector{Float64})
+    # Initialise scenario
+    markov, old_markov, scenario = 0, 0, 0
+
+    # Transition if need be
+    if m.init_markov_state==0
+        markov = transition(m, 1, m.init_markov_state, Rmarkov[1])
+    else
+        markov = m.init_markov_state
+    end
+
+    # For all stages
+    for stage=1:m.stages
+        old_markov = markov
+
+        # realise on scenario
+        sp = m.stage_problems[stage, markov]
+        scenario = load_scenario!(m, sp, Rscenario[stage])
+
+        # solve
+        solve!(sp)
+
+        # Add objective (stage profit only)
+        obj[pass] += get_true_value(sp)
+
+        # Save results if necesary
+        store_results!(results, vars, sp, stage, pass, markov, scenario)
+
+        # pass forward if necessary
+        if stage < m.stages
+            pass_states_forward!(m, stage, old_markov)
+
+            # transition to new scenario
+            markov = transition(m, stage, old_markov, Rmarkov[stage+1])
+        end
+
+    end
+end
+
+forward_pass!(m::SDDPModel, convergence::Convergence) = forward_pass!(m, convergence.n, convergence.variancereduction)
+
+function forward_pass!(m::SDDPModel, npasses::Int=1, variancereduction::Bool=true)
+    obj = forward_pass_kernel!(m, npasses, variancereduction)
 
     # set new lower bound
     test_and_set_ci!(m, obj)
@@ -605,10 +636,10 @@ function forward_pass!(m::SDDPModel, npasses::Int=1)
     return (rtol(m) < 0., npasses)
 end
 
-function forward_pass!(m::SDDPModel, npasses::Range)
+function forward_pass!(m::SDDPModel, npasses::Range, variancereduction::Bool)
     OBJ = Float64[]
     for n in npasses
-        push!(OBJ, forward_pass_kernel!(m, round(Int, n) - length(OBJ))...)
+        push!(OBJ, forward_pass_kernel!(m, round(Int, n) - length(OBJ), variancereduction)...)
 
         test_and_set_ci!(m, OBJ)
 
@@ -624,7 +655,7 @@ end
 """
 Simulate SDDP model and return variable solutions contained in [vars]
 """
-function serial_simulate(m::SDDPModel, n::Int, vars::Vector{Symbol}=Symbol[])
+function serial_simulate(m::SDDPModel, n::Int, vars::Vector{Symbol}=Symbol[]; variancereduction=true)
     results = Dict{Symbol, Any}(:Objective=>zeros(Float64,n))
     for (s, t) in vcat(collect(zip(vars, fill(Any, length(vars)))), [(:Scenario, Int), (:Markov, Int), (:Future, Float64)])
         results[s] = Array(Vector{t}, m.stages)
@@ -632,7 +663,7 @@ function serial_simulate(m::SDDPModel, n::Int, vars::Vector{Symbol}=Symbol[])
             results[s][i] = Array(t, n)
         end
     end
-    forward_pass_kernel!(m, n, results, vars)
+    forward_pass_kernel!(m, n, variancereduction, results, vars)
     return results
 end
 

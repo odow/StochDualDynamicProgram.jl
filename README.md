@@ -147,7 +147,7 @@ You can change the parallelisation options by constructing a `Parallel()` type a
 The `solve(m::SDDPModel [; kwargs...])` function solves the SDDP model `m`. There are the following keyword parameters:
 - `maximum_iterations::Int` default = `1`
   - The maximum number of iterations (cutting passes, convergence testing) to complete before termination
-- `convergence::Convergence([;simulations=1, frequency=1, terminate=false, quantile=0.95])`
+- `convergence::Convergence([;simulations=1, frequency=1, terminate=false, quantile=0.95, variancereduction=true])`
   - `simulations::Int` default = `1`
     - The number of realisations to conduct when testing for convergence
   - `frequency::Int` default = `1`
@@ -157,6 +157,8 @@ The `solve(m::SDDPModel [; kwargs...])` function solves the SDDP model `m`. Ther
       - We choose to default this to false since if there is high variance in objective, the method may terminate earlier than desired.
   - `quantile::Float64` default = `0.95`
     - Level of confidence interval to construct when testing for convergence
+  - `variancereduction::Bool` default = `true`
+    - Use antithetic variates when simulating the policy to reduce the variance in the estimate
 - `risk_measure::RiskMeasure` default = `Expectation()`
   - See section Risk Measures above.
 - `cut_selection::CutSelectionMethod` default = `NoSelection()`
