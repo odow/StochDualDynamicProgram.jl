@@ -80,7 +80,7 @@ function deterministic_prune!{N}(sense, bound, sp::Model, sc::StageCuts{N})
     @variable(m, getlowerbound(stagedata(sp).state_vars[i]) <= x[i=1:N] <= getupperbound(stagedata(sp).state_vars[i]))
     @variable(m, y)
     for cut in sc.cuts
-        if isa(sense, Val{:Max})
+        if isa(sense, Type{Val{:Max}})
             @constraints(m, begin
                 y <= bound
                 y <= cut.intercept + sum{cut.coefficients[i] * x[i], i=1:N}
@@ -94,7 +94,7 @@ function deterministic_prune!{N}(sense, bound, sp::Model, sc::StageCuts{N})
     end
     activecuts = Cut{N}[]
     for cut in sc.cuts
-        if isa(sense, Val{:Max})
+        if isa(sense, Type{Val{:Max}})
             @objective(m, Min, cut.intercept + sum{cut.coefficients[i] * x[i], i=1:N} - y)
         else
             @objective(m, Min, y - cut.intercept + sum{cut.coefficients[i] * x[i], i=1:N})

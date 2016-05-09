@@ -328,14 +328,17 @@ function loadcuts!(m::SDDPModel, filename::ASCIIString)
             else
                 xcoeff = [parse(Float64, line[4])]
             end
-            if isa(m.sense, Val{:Max})
-                @constraint(sp, stagedata(sp).theta >= theta + sum{xcoeff[i] * v, (i, v) in enumerate(stagedata(sp).state_vars)})
-            else
-                @constraint(sp, stagedata(sp).theta <= theta + sum{xcoeff[i] * v, (i, v) in enumerate(stagedata(sp).state_vars)})
-            end
+            loadcut!(m.sense, sp, theta, xcoeff)
         end
     end
 end
+function loadcut!(::Type{Val{:Max}}, sp::Model, theta::Float64, xcoeff::Vector{Float64})
+    @constraint(sp, stagedata(sp).theta <= theta + sum{xcoeff[i] * v, (i, v) in enumerate(stagedata(sp).state_vars)})
+end
+function loadcut!(::Type{Val{:Min}}, sp::Model, theta::Float64, xcoeff::Vector{Float64})
+    @constraint(sp, stagedata(sp).theta >= theta + sum{xcoeff[i] * v, (i, v) in enumerate(stagedata(sp).state_vars)})
+end
+
 function loadcuts!(m::SDDPModel)
     if m.cuts_filename == nothing
         error("Please specify a file to load cuts from.")
