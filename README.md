@@ -137,8 +137,8 @@ Note: Tuning the `frequency` parameter is a trade off between the model creation
 
 #### Parallelisation
 You can change the parallelisation options by constructing a `Parallel()` type and passing it one or both of the following in any order. The default is to run the pass in serial mode on a single processor.
-- `ForwardPass()`
-  - Forward (simulation) passes are conducted independently on all available processors. This option scales well with the number of processors due to the independent nature of estimating the objective of the policy.
+- `ConvergenceTest()`
+  - Convergence test (simulation) passes are conducted independently on all available processors. This option scales well with the number of processors due to the independent nature of estimating the objective of the policy.
 - `BackwardPass(n::Int)`
  - `n` backwards (cutting) passes are computed independently on all available processors before the cuts are shared and syncronised across all processors.
  - Tuning this parameter is a trade off between the parallel overhead (copying the model and cuts between processors) and the extra cuts discovered by solving in parallel. For small models, it is likely that low values of `n` may reduce performance due to this additional overhead. In addition, since cuts are discovered independently, cuts generated on one processor will not benefit from the cuts generated on other processors until they are combined.

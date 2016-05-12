@@ -44,7 +44,7 @@ import JuMP: EMPTYSTRING
 using Base.Meta
 
 function State(m::Model, lower::Number, upper::Number, name)
-    v = Variable(m,lower,upper,:Cont,utf8(string(name)),NaN)
+    v = Variable(m,lower,upper,:Cont,utf8(string(name)),0.5*(lower+upper))
     push!(stagedata(m).state_vars, v)
     return v
 end
@@ -54,7 +54,6 @@ function State0(m::Model, init, name, name0)
     push!(stagedata(m).dual_constraints, @constraint(m, v0 == init))
     return v0
 end
-
 
 @deprecate_macro defStateVar state
 """

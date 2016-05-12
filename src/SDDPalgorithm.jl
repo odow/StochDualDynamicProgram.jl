@@ -14,6 +14,13 @@ function pass_states_forward!(m::SDDPModel, stage::Int, markov_state::Int)
 
     sp = m.stage_problems[stage, markov_state]
 
+    # sv = 0.
+    # for v in stagedata(sp).state_vars
+    #     sv += getvalue(v)
+    # end
+    # JuMP.setRHS(stagedata(sp).regularisecons[1], sv)
+    # JuMP.setRHS(stagedata(sp).regularisecons[2], -sv)
+
     # For each of the problems in the next stage
     for next_sp in m.stage_problems[stage+1,:]
         # Check sanity
@@ -74,8 +81,6 @@ function backward_pass!(m::SDDPModel, cut_selection::Bool, method=NoSelection())
     # Initialise some storage
     old_markov, old_scenario, scenario=m.init_markov_state, 0,0
 
-    obj = 0.
-
     # For all stages going forwards
     for stage=1:(m.stages-1)
         # Get the stage problem
@@ -87,10 +92,10 @@ function backward_pass!(m::SDDPModel, cut_selection::Bool, method=NoSelection())
         # Lets store the scenario we just came from
         stagedata(sp).old_scenario = (old_markov, old_scenario)
 
+
+        # set_objective!(Val{:Regularise}, m.sense, sp)
         # solve
         solve!(sp)
-
-        obj += get_true_value(sp)
 
         # Keep track of old markov state and scenario
         old_markov, old_scenario = markov, scenario
@@ -103,7 +108,7 @@ function backward_pass!(m::SDDPModel, cut_selection::Bool, method=NoSelection())
     end
 
     # Solve all the final stage problems
-    obj += solve_all_stage_problems!(m, m.stages, sample(1:m.scenarios, m.scenario_probability))
+    solve_all_stage_problems!(m, m.stages)
 
     # Stepping back throught the stages
     for stage=reverse(1:(m.stages-1))
@@ -115,12 +120,11 @@ function backward_pass!(m::SDDPModel, cut_selection::Bool, method=NoSelection())
 
         # Solve all the stage problems
         solve_all_stage_problems!(m, stage)
+
     end
 
     # Calculate a new upper bound
     set_valid_bound!(m)
-
-    obj
 end
 
 """
@@ -130,18 +134,14 @@ Inputs:
 m     - the SDDP model object
 stage - the stage to solve all problems in
 """
-function solve_all_stage_problems!(m::SDDPModel, stage::Int, scenario::Int=0)
-    obj = 0.
+function solve_all_stage_problems!(m::SDDPModel, stage::Int)
     for markov_state in 1:m.markov_states
+        # set_objective!(m.sense, m.stage_problems[stage,markov_state])
         for s=1:m.scenarios
             load_scenario!(m.stage_problems[stage,markov_state], s)
             solve!(m.stage_problems[stage,markov_state])
-            if s==scenario
-                obj += get_true_value(m.stage_problems[stage, markov_state])
-            end
         end
     end
-    obj
 end
 
 """
@@ -166,6 +166,7 @@ function add_cut!(m::SDDPModel, stage::Int, markov_state::Int, cut_selection::Bo
                 stagedata(new_sp).objective_value[scenario] +
                 sum{
                     stagedata(new_sp).dual_values[i][scenario] * (
+                    # (stagedata(new_sp).dual_values[i][scenario] + 1e-10*(rand()-0.5)) * (
                         stagedata(sp).state_vars[i] - getRHS(stagedata(new_sp).dual_constraints[i])
                     )
                 , i in 1:length(stagedata(sp).state_vars)}
@@ -173,6 +174,12 @@ function add_cut!(m::SDDPModel, stage::Int, markov_state::Int, cut_selection::Bo
         ,scenario in 1:m.scenarios; m.weightings_matrix[new_markov, scenario] > 1e-6}
     , (new_markov, new_sp) in enumerate(m.stage_problems[stage+1, :])}
     )
+
+    # for yi in aggregateterms(sp, rhs)
+    #     if abs(yi) < 1e-10
+    #         warn("Dual Degeneracy detected. When simulating the policy you may find sub-optimal solutions")
+    #     end
+    # end
 
     if cut_selection
         if add_cut!(m.sense, sp, rhs, m.stagecuts[stage, markov_state])
@@ -377,6 +384,7 @@ function solve!(sp::Model)
     # Catch case where we aren't optimal
     if status != :Optimal
         JuMP.writeMPS(sp, "C:/temp/a_infeasible_subproblem_$(myid()).mps")
+        sp.internalModelLoaded = false
         status = solve(sp)
         if status != :Optimal
             JuMP.writeMPS(sp, "C:/temp/b_infeasible_subproblem_$(myid()).mps")
@@ -600,6 +608,7 @@ function forward_pass_kernel_inner!(m::SDDPModel, obj::Vector{Float64}, pass::In
         scenario = load_scenario!(m, sp, Rscenario[stage])
 
         # solve
+        # set_objective!(Val{:Regularise}, m.sense, sp)
         solve!(sp)
 
         # Add objective (stage profit only)
@@ -619,9 +628,9 @@ function forward_pass_kernel_inner!(m::SDDPModel, obj::Vector{Float64}, pass::In
     end
 end
 
-forward_pass!(m::SDDPModel, convergence::Convergence) = forward_pass!(m, convergence.n, convergence.variancereduction)
+convergence_pass!(m::SDDPModel, convergence::Convergence) = convergence_pass!(m, convergence.n, convergence.variancereduction)
 
-function forward_pass!(m::SDDPModel, npasses::Int=1, variancereduction::Bool=true)
+function convergence_pass!(m::SDDPModel, npasses::Int=1, variancereduction::Bool=true)
     obj = forward_pass_kernel!(m, npasses, variancereduction)
 
     # set new lower bound
@@ -630,7 +639,7 @@ function forward_pass!(m::SDDPModel, npasses::Int=1, variancereduction::Bool=tru
     return (rtol(m) < 0., npasses)
 end
 
-function forward_pass!(m::SDDPModel, npasses::Range, variancereduction::Bool)
+function convergence_pass!(m::SDDPModel, npasses::Range, variancereduction::Bool)
     OBJ = Float64[]
     for n in npasses
         push!(OBJ, forward_pass_kernel!(m, round(Int, n) - length(OBJ), variancereduction)...)

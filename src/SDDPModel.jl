@@ -1,5 +1,7 @@
 type StageData
     state_vars::Vector{JuMP.Variable}
+    regularisecons::Vector{JuMP.ConstraintRef}
+    regularisepen::Union{Void, JuMP.Variable}
     dual_constraints::Vector{JuMP.ConstraintRef}
     theta::Union{Void, JuMP.Variable}
     old_scenario::Tuple{Int, Int}
@@ -11,8 +13,9 @@ type StageData
     dual_values::Vector{Vector{Float64}}
     stage_profit
     cut_data::Dict{Tuple{Float64, Float64}, Vector{Vector{Float64}}}
+    regularisecoefficient::Float64
 end
-StageData(scenarios::Int=1) = StageData(Variable[], ConstraintRef[], nothing, (0,0), Tuple{Any, Vector{Any}}[], Dict{Symbol, Int}(), 0, 0, zeros(scenarios), Vector{Float64}[], nothing, Dict{Tuple{Float64, Float64}, Vector{Vector{Float64}}}())
+StageData(scenarios::Int=1) = StageData(Variable[], ConstraintRef[], nothing, ConstraintRef[], nothing, (0,0), Tuple{Any, Vector{Any}}[], Dict{Symbol, Int}(), 0, 0, zeros(scenarios), Vector{Float64}[], nothing, Dict{Tuple{Float64, Float64}, Vector{Vector{Float64}}}(), 1.)
 
 """
 Instaniates a new StageProblem which is a JuMP.Model object with an extension
@@ -30,18 +33,20 @@ function stagedata(m::Model)
 end
 
 function Base.copy(sd::StageData)
-    return StageData(sd.state_vars, sd.dual_constraints, sd.theta, sd.old_scenario, sd.scenario_constraints, sd.scenario_constraint_names, sd.last_scenario, sd.current_scenario, sd.objective_value, sd.dual_values, sd.stage_profit, sd.cut_data)
+    return StageData(sd.state_vars, sd.regularisecons, sd.regularisepen, sd.dual_constraints, sd.theta, sd.old_scenario, sd.scenario_constraints, sd.scenario_constraint_names, sd.last_scenario, sd.current_scenario, sd.objective_value, sd.dual_values, sd.stage_profit, sd.cut_data, sd.regularisecoefficient)
 end
 
 # Check this is a StageProblem
 is_sp(m::JuMP.Model) = isa(stagedata(m), StageData)
 is_sp(m) = false
 
+const Sense = Union{Type{Val{:Min}}, Type{Val{:Max}}}
+
 type SDDPModel{T<:Union{Array{Float64,2}, Vector{Array{Float64, 2}}}, M<:Real}
     stages::Int
     markov_states::Int
     scenarios::Int
-    sense::Union{Type{Val{:Min}}, Type{Val{:Max}}}
+    sense::Sense
 
     stage_problems::Array{JuMP.Model}
     transition::T#Array{Union{Float64, Array{Float64, 2}}, T}
@@ -229,12 +234,21 @@ function create_subproblems!(m::SDDPModel)
 
             # If the user hasn't specified an objective
             if is_zero_objective(getobjective(sp))
+                # stagedata(sp).regularisepen = @variable(sp, regularisepen >= 0)
+                # @constraints(sp, begin
+                #     regpos, stagedata(sp).regularisepen + sum{v, v in stagedata(sp).state_vars} >= 0
+                #     regneg, stagedata(sp).regularisepen - sum{v, v in stagedata(sp).state_vars} >= 0
+                # end)
+                # push!(stagedata(sp).regularisecons, regpos)
+                # push!(stagedata(sp).regularisecons, regneg)
+
                 if stage==m.stages
                     # If its the last stage then its just the stage profit
                     set_objective!(m.sense, sp)
                 else
+                    addtheta!(m.sense, sp, m.value_to_go_bound)
                     # Otherwise create a value/cost to go variable
-                    set_objective!(m.sense, sp, m.value_to_go_bound)
+                    set_objective!(m.sense, sp)
                 end
             end
             # Store the stage problem
@@ -246,20 +260,64 @@ function create_subproblems!(m::SDDPModel)
     return
 end
 
-function set_objective!(::Type{Val{:Min}}, sp::Model, value_to_go_bound)
-    stagedata(sp).theta = @variable(sp, theta >= value_to_go_bound)
-    @objective(sp, Min, stagedata(sp).stage_profit + stagedata(sp).theta)
+addtheta!(::Type{Val{:Min}}, sp::Model, value_to_go_bound) = (stagedata(sp).theta = @variable(sp, theta >= value_to_go_bound))
+addtheta!(::Type{Val{:Max}}, sp::Model, value_to_go_bound) = (stagedata(sp).theta = @variable(sp, theta <= value_to_go_bound))
+#
+# function set_objective!(::Type{Val{:Min}}, sp::Model, value_to_go_bound)
+#     stagedata(sp).theta = @variable(sp, theta >= value_to_go_bound)
+#     @objective(sp, Min, stagedata(sp).stage_profit + stagedata(sp).theta + regularisation(sp))
+# end
+# function set_objective!(::Type{Val{:Max}}, sp::Model, value_to_go_bound)
+#     stagedata(sp).theta = @variable(sp, theta <= value_to_go_bound)
+#     @objective(sp, Max, stagedata(sp).stage_profit + stagedata(sp).theta - regularisation(sp))
+# end
+# set_objective!(::Type{Val{:Regularise}}, ::Type{Val{:Min}}, sp::Model) = @objective(sp, Min, stagedata(sp).stage_profit + regularisation(sp))
+# set_objective!(::Type{Val{:Regularise}}, ::Type{Val{:Max}}, sp::Model) = @objective(sp, Max, stagedata(sp).stage_profit - regularisation(sp))
+# set_objective!(::Type{Val{:Normal}}, ::Type{Val{:Min}}, sp::Model) = @objective(sp, Min, stagedata(sp).stage_profit + regularisation(sp))
+# set_objective!(::Type{Val{:Normal}}, ::Type{Val{:Max}}, sp::Model) = @objective(sp, Max, stagedata(sp).stage_profit - regularisation(sp))
+# set_objective!(sense, sp::Model) = set_objective(Val{:Normal}, sense, sp)
+#
+#
+# set_objective!(::Type{Val{:Min}}, sp, aff) = @objective(sp, Min, stagedata(sp).stage_profit + aff)
+# set_objective!(::Type{Val{:Max}}, sp, aff) = @objective(sp, Max, stagedata(sp).stage_profit + aff)
+# set_objective!(sense, sp::Model) = set_objective!(sense, sp, 0.)
+#
+# set_objective!(::Type{Val{:Regularise}}, sense, sp, aff) = set_objective!(sense, sp, regularisation(sp))
+# set_objective!(::Type{Val{:Regularise}}, sense, sp, aff) = set_objective!(sense, sp, regularisation(sp))
+
+setobj!(::Type{Val{:Min}}, sp, aff) = @objective(sp, Min, aff)
+setobj!(::Type{Val{:Max}}, sp, aff) = @objective(sp, Max, aff)
+function oldvalue(v)
+    ov = getvalue(v)
+    if isnan(ov) || ov == -Inf || ov == Inf
+        ov = 0.
+    end
+    ov
 end
-function set_objective!(::Type{Val{:Max}}, sp::Model, value_to_go_bound)
-    stagedata(sp).theta = @variable(sp, theta <= value_to_go_bound)
-    @objective(sp, Max, stagedata(sp).stage_profit + stagedata(sp).theta)
+function regularise!(::Type{Val{:Regularise}}, sense::Sense, sp)
+    stagedata(sp).regularisecoefficient *= 0.95
+    # @expression(sp, regulariser, sum{(v - oldvalue(v))^2, v=stagedata(sp).state_vars})
+    # @expression(sp, regulariser, sum{(v - oldvalue(v))^2, v=stagedata(sp).state_vars})
+    # regularise!(sense, stagedata(sp).regularisecoefficient*regulariser)
+    return stagedata(sp).regularisecoefficient * stagedata(sp).regularisepen
 end
-function set_objective!(::Type{Val{:Min}}, sp::Model)
-    @objective(sp, Min, stagedata(sp).stage_profit)
+regularise!(ty, sense::Sense, sp) = 0.
+regularise!(::Type{Val{:Min}}, expr) = expr
+regularise!(::Type{Val{:Max}}, expr) = -expr
+
+function futurecost!(sp)
+    if stagedata(sp).theta != nothing
+        return stagedata(sp).theta
+    end
+    return 0.
 end
-function set_objective!(::Type{Val{:Max}}, sp::Model)
-    @objective(sp, Max, stagedata(sp).stage_profit)
+function set_objective!(regularise, sense::Sense, sp::Model)
+    aff = stagedata(sp).stage_profit
+    aff += futurecost!(sp)
+    aff += regularise!(regularise, sense, sp)
+    setobj!(sense, sp, aff)
 end
+set_objective!(sense::Sense, sp::Model) = set_objective!(nothing, sense, sp)
 
 """
 So we can copy an SDDPModel

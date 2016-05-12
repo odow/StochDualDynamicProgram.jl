@@ -11,7 +11,7 @@ export SDDPModel,
     @state, @scenarioconstraint, @scenarioconstraints, @stageprofit,
     simulate, loadcuts!,
     LevelOne, Deterministic, NoSelection,
-    ForwardPass, BackwardPass, Parallel,
+    ConvergenceTest, BackwardPass, Parallel,
     NestedCVar,
     Convergence
 
@@ -112,8 +112,8 @@ terminate(converged::Bool, do_test::Bool) = converged & do_test
 terminate(converged::Bool, do_test::Bool, simulation_passes::Range) = converged
 terminate(converged::Bool, do_test::Bool, simulation_passes) = terminate(converged, do_test)
 
-forward_pass!(ty::Serial, m::SDDPModel, convergence, cut_selection::CutSelectionMethod) = forward_pass!(m, convergence)
-forward_pass!(ty::ForwardPass, m::SDDPModel, convergence, cut_selection::CutSelectionMethod) = parallel_forward_pass!(m, convergence, cut_selection)
+convergence_pass!(ty::Serial, m::SDDPModel, convergence, cut_selection::CutSelectionMethod) = convergence_pass!(m, convergence)
+convergence_pass!(ty::ConvergenceTest, m::SDDPModel, convergence, cut_selection::CutSelectionMethod) = parallel_convergence_pass!(m, convergence, cut_selection)
 
 backward_pass!(ty::BackwardPass, m::SDDPModel, method::CutSelectionMethod) = parallel_backward_pass!(m, ty.cuts_per_processor, method)
 backward_pass!(ty::Serial, m::SDDPModel, method::CutSelectionMethod) = backward_pass!(m, method.frequency > 0, method)
@@ -160,7 +160,7 @@ function solve!(m::SDDPModel, solution::Solution, convergence::Convergence, maxi
         if convergence.frequency > 0 && last_convergence_test >= convergence.frequency
             last_convergence_test = 0
             tic()
-            (is_converged, n) = forward_pass!(parallel.forward_pass, m, convergence, cut_selection)
+            (is_converged, n) = convergence_pass!(parallel.convergence_test, m, convergence, cut_selection)
             nsimulations += Int(n)
             time_forwards += toq()
 
