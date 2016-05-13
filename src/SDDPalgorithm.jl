@@ -14,12 +14,12 @@ function pass_states_forward!(m::SDDPModel, stage::Int, markov_state::Int)
 
     sp = m.stage_problems[stage, markov_state]
 
-    # sv = 0.
-    # for v in stagedata(sp).state_vars
-    #     sv += getvalue(v)
-    # end
-    # JuMP.setRHS(stagedata(sp).regularisecons[1], sv)
-    # JuMP.setRHS(stagedata(sp).regularisecons[2], -sv)
+    sv = 0.
+    for v in stagedata(sp).state_vars
+        sv += getvalue(v)
+    end
+    JuMP.setRHS(stagedata(sp).regularisecons[1], sv)
+    JuMP.setRHS(stagedata(sp).regularisecons[2], -sv)
 
     # For each of the problems in the next stage
     for next_sp in m.stage_problems[stage+1,:]
@@ -69,7 +69,7 @@ function load_scenario!(m::SDDPModel, sp::Model, r::Float64)
     return scenario
 end
 
-function backward_pass!(m::SDDPModel, cut_selection::Bool, method=NoSelection())
+function backward_pass!(m::SDDPModel, cut_selection::Bool, method=NoSelection(), regularisation=NoRegularisation())
     # Initialise markov state
     markov = 0
     if m.init_markov_state==0
@@ -93,7 +93,7 @@ function backward_pass!(m::SDDPModel, cut_selection::Bool, method=NoSelection())
         stagedata(sp).old_scenario = (old_markov, old_scenario)
 
 
-        # set_objective!(Val{:Regularise}, m.sense, sp)
+        set_regularised_objective!(regularisation, m.sense, sp)
         # solve
         solve!(sp)
 
@@ -108,7 +108,7 @@ function backward_pass!(m::SDDPModel, cut_selection::Bool, method=NoSelection())
     end
 
     # Solve all the final stage problems
-    solve_all_stage_problems!(m, m.stages)
+    solve_all_stage_problems!(m, m.stages, regularisation)
 
     # Stepping back throught the stages
     for stage=reverse(1:(m.stages-1))
@@ -119,7 +119,7 @@ function backward_pass!(m::SDDPModel, cut_selection::Bool, method=NoSelection())
         old_markov, old_scenario = stagedata(m.stage_problems[stage, old_markov]).old_scenario
 
         # Solve all the stage problems
-        solve_all_stage_problems!(m, stage)
+        solve_all_stage_problems!(m, stage, regularisation)
 
     end
 
@@ -134,9 +134,9 @@ Inputs:
 m     - the SDDP model object
 stage - the stage to solve all problems in
 """
-function solve_all_stage_problems!(m::SDDPModel, stage::Int)
+function solve_all_stage_problems!(m::SDDPModel, stage::Int, regularisation::Regularisation=NoRegularisation())
     for markov_state in 1:m.markov_states
-        # set_objective!(m.sense, m.stage_problems[stage,markov_state])
+        set_nonregularised_objective!(regularisation, m.sense, m.stage_problems[stage,markov_state])
         for s=1:m.scenarios
             load_scenario!(m.stage_problems[stage,markov_state], s)
             solve!(m.stage_problems[stage,markov_state])

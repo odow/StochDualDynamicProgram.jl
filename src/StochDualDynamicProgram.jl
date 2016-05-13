@@ -13,7 +13,8 @@ export SDDPModel,
     LevelOne, Deterministic, NoSelection,
     ConvergenceTest, BackwardPass, Parallel,
     NestedCVar,
-    Convergence
+    Convergence,
+    NoRegularisation, LinearRegularisation#, QuadraticRegularisation
 
 const CONVERGENCE_TERMINATION = :Convergenced
 const ITERATION_TERMINATION = :MaximumIterations
@@ -40,6 +41,23 @@ type Convergence
     end
 end
 Convergence(;simulations=1, frequency=1, terminate=false, quantile=0.95, variancereduction=true) = Convergence(simulations, frequency, terminate, quantile, variancereduction)
+
+abstract Regularisation
+type NoRegularisation <: Regularisation
+    initial::Float64
+    decayrate::Float64
+    NoRegularisation() = new(0., 0.)
+end
+type LinearRegularisation <: Regularisation
+    initial::Float64
+    decayrate::Float64
+    LinearRegularisation(initial=1., decayrate=0.95) = new(initial, decayrate)
+end
+type QuadraticRegularisation <: Regularisation
+    initial::Float64
+    decayrate::Float64
+    QuadraticRegularisation(initial=1., decayrate=0.95) = (error("QuadraticRegularisation not really implemented yet. Something weird happens"); new(initial, decayrate))
+end
 
 include("macros.jl")
 include("cut_selection.jl")
@@ -78,7 +96,7 @@ end
 """
 Solve the model using the SDDP algorithm.
 """
-function JuMP.solve(m::SDDPModel; maximum_iterations=1, convergence=Convergence(1, 1, false, 0.95), risk_measure=Expectation(), cut_selection=NoSelection(), parallel=Parallel(), simulation_passes=-1, log_frequency=-1)
+function JuMP.solve(m::SDDPModel; maximum_iterations=1, convergence=Convergence(1, 1, false, 0.95), risk_measure=Expectation(), cut_selection=NoSelection(), parallel=Parallel(), simulation_passes=-1, log_frequency=-1, regularisation=NoRegularisation())
 
     if simulation_passes != -1 || log_frequency != -1
         warn("The options [log_frequency] and [simulation_passes] are deprecated. Use [convergence=Convergence(simulation_passes, frequency::Int, terminate::Bool)] instead.")
@@ -93,6 +111,10 @@ function JuMP.solve(m::SDDPModel; maximum_iterations=1, convergence=Convergence(
         parallel = Parallel()
     end
 
+    for sp in m.stage_problems
+        stagedata(sp).regularisecoefficient = regularisation.initial
+    end
+
     # Initial output for user
     print_stats_header()
 
@@ -101,7 +123,7 @@ function JuMP.solve(m::SDDPModel; maximum_iterations=1, convergence=Convergence(
     m.QUANTILE = convergence.quantile
 
     # try
-    solve!(m, solution, convergence, maximum_iterations, risk_measure, cut_selection, parallel)
+    solve!(m, solution, convergence, maximum_iterations, risk_measure, cut_selection, parallel, regularisation)
     # catch InterruptException
         # warn("Terminating early")
     # end
@@ -115,10 +137,10 @@ terminate(converged::Bool, do_test::Bool, simulation_passes) = terminate(converg
 convergence_pass!(ty::Serial, m::SDDPModel, convergence, cut_selection::CutSelectionMethod) = convergence_pass!(m, convergence)
 convergence_pass!(ty::ConvergenceTest, m::SDDPModel, convergence, cut_selection::CutSelectionMethod) = parallel_convergence_pass!(m, convergence, cut_selection)
 
-backward_pass!(ty::BackwardPass, m::SDDPModel, method::CutSelectionMethod) = parallel_backward_pass!(m, ty.cuts_per_processor, method)
-backward_pass!(ty::Serial, m::SDDPModel, method::CutSelectionMethod) = backward_pass!(m, method.frequency > 0, method)
+backward_pass!(ty::BackwardPass, m::SDDPModel, method::CutSelectionMethod, regularisation::Regularisation) = parallel_backward_pass!(m, ty.cuts_per_processor, method)
+backward_pass!(ty::Serial, m::SDDPModel, method::CutSelectionMethod, regularisation::Regularisation) = backward_pass!(m, method.frequency > 0, method, regularisation)
 
-function solve!(m::SDDPModel, solution::Solution, convergence::Convergence, maximum_iterations::Int, risk_measure::RiskMeasure, cut_selection::CutSelectionMethod, parallel::Parallel)
+function solve!(m::SDDPModel, solution::Solution, convergence::Convergence, maximum_iterations::Int, risk_measure::RiskMeasure, cut_selection::CutSelectionMethod, parallel::Parallel, regularisation::Regularisation)
 
     # Intialise model on worker processors
     if !isa(parallel, Parallel{Serial, Serial})
@@ -146,7 +168,7 @@ function solve!(m::SDDPModel, solution::Solution, convergence::Convergence, maxi
 
         # Cutting passes
         tic()
-        backward_pass!(parallel.backward_pass, m, cut_selection)
+        backward_pass!(parallel.backward_pass, m, cut_selection, regularisation)
         time_backwards += toq()
 
         # Rebuild models if using Cut Selection

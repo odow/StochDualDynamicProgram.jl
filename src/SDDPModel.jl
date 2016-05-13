@@ -234,13 +234,13 @@ function create_subproblems!(m::SDDPModel)
 
             # If the user hasn't specified an objective
             if is_zero_objective(getobjective(sp))
-                # stagedata(sp).regularisepen = @variable(sp, regularisepen >= 0)
-                # @constraints(sp, begin
-                #     regpos, stagedata(sp).regularisepen + sum{v, v in stagedata(sp).state_vars} >= 0
-                #     regneg, stagedata(sp).regularisepen - sum{v, v in stagedata(sp).state_vars} >= 0
-                # end)
-                # push!(stagedata(sp).regularisecons, regpos)
-                # push!(stagedata(sp).regularisecons, regneg)
+                stagedata(sp).regularisepen = @variable(sp, regularisepen >= 0)
+                @constraints(sp, begin
+                    regpos, stagedata(sp).regularisepen + sum{v, v in stagedata(sp).state_vars} >= 0
+                    regneg, stagedata(sp).regularisepen - sum{v, v in stagedata(sp).state_vars} >= 0
+                end)
+                push!(stagedata(sp).regularisecons, regpos)
+                push!(stagedata(sp).regularisecons, regneg)
 
                 if stage==m.stages
                     # If its the last stage then its just the stage profit
@@ -262,28 +262,6 @@ end
 
 addtheta!(::Type{Val{:Min}}, sp::Model, value_to_go_bound) = (stagedata(sp).theta = @variable(sp, theta >= value_to_go_bound))
 addtheta!(::Type{Val{:Max}}, sp::Model, value_to_go_bound) = (stagedata(sp).theta = @variable(sp, theta <= value_to_go_bound))
-#
-# function set_objective!(::Type{Val{:Min}}, sp::Model, value_to_go_bound)
-#     stagedata(sp).theta = @variable(sp, theta >= value_to_go_bound)
-#     @objective(sp, Min, stagedata(sp).stage_profit + stagedata(sp).theta + regularisation(sp))
-# end
-# function set_objective!(::Type{Val{:Max}}, sp::Model, value_to_go_bound)
-#     stagedata(sp).theta = @variable(sp, theta <= value_to_go_bound)
-#     @objective(sp, Max, stagedata(sp).stage_profit + stagedata(sp).theta - regularisation(sp))
-# end
-# set_objective!(::Type{Val{:Regularise}}, ::Type{Val{:Min}}, sp::Model) = @objective(sp, Min, stagedata(sp).stage_profit + regularisation(sp))
-# set_objective!(::Type{Val{:Regularise}}, ::Type{Val{:Max}}, sp::Model) = @objective(sp, Max, stagedata(sp).stage_profit - regularisation(sp))
-# set_objective!(::Type{Val{:Normal}}, ::Type{Val{:Min}}, sp::Model) = @objective(sp, Min, stagedata(sp).stage_profit + regularisation(sp))
-# set_objective!(::Type{Val{:Normal}}, ::Type{Val{:Max}}, sp::Model) = @objective(sp, Max, stagedata(sp).stage_profit - regularisation(sp))
-# set_objective!(sense, sp::Model) = set_objective(Val{:Normal}, sense, sp)
-#
-#
-# set_objective!(::Type{Val{:Min}}, sp, aff) = @objective(sp, Min, stagedata(sp).stage_profit + aff)
-# set_objective!(::Type{Val{:Max}}, sp, aff) = @objective(sp, Max, stagedata(sp).stage_profit + aff)
-# set_objective!(sense, sp::Model) = set_objective!(sense, sp, 0.)
-#
-# set_objective!(::Type{Val{:Regularise}}, sense, sp, aff) = set_objective!(sense, sp, regularisation(sp))
-# set_objective!(::Type{Val{:Regularise}}, sense, sp, aff) = set_objective!(sense, sp, regularisation(sp))
 
 setobj!(::Type{Val{:Min}}, sp, aff) = @objective(sp, Min, aff)
 setobj!(::Type{Val{:Max}}, sp, aff) = @objective(sp, Max, aff)
@@ -294,13 +272,16 @@ function oldvalue(v)
     end
     ov
 end
-function regularise!(::Type{Val{:Regularise}}, sense::Sense, sp)
-    stagedata(sp).regularisecoefficient *= 0.95
-    # @expression(sp, regulariser, sum{(v - oldvalue(v))^2, v=stagedata(sp).state_vars})
-    # @expression(sp, regulariser, sum{(v - oldvalue(v))^2, v=stagedata(sp).state_vars})
-    # regularise!(sense, stagedata(sp).regularisecoefficient*regulariser)
+function regularise!(regularisation::LinearRegularisation, sense::Sense, sp)
+    stagedata(sp).regularisecoefficient *= regularisation.decayrate
     return stagedata(sp).regularisecoefficient * stagedata(sp).regularisepen
 end
+function regularise!(regularisation::QuadraticRegularisation, sense::Sense, sp)
+    stagedata(sp).regularisecoefficient *= regularisation.decayrate
+    @expression(sp, regulariser, sum{(v - oldvalue(v))^2, v in stagedata(sp).state_vars})
+    return stagedata(sp).regularisecoefficient * regulariser
+end
+
 regularise!(ty, sense::Sense, sp) = 0.
 regularise!(::Type{Val{:Min}}, expr) = expr
 regularise!(::Type{Val{:Max}}, expr) = -expr
@@ -319,6 +300,11 @@ function set_objective!(regularise, sense::Sense, sp::Model)
 end
 set_objective!(sense::Sense, sp::Model) = set_objective!(nothing, sense, sp)
 
+set_nonregularised_objective!(regularisation::Regularisation, sense::Sense, sp::Model) = set_objective!(nothing, sense, sp)
+set_nonregularised_objective!(::NoRegularisation, sense::Sense, sp::Model) = nothing
+
+set_regularised_objective!(regularisation::Regularisation, sense::Sense, sp::Model) = set_objective!(regularisation, sense, sp)
+set_regularised_objective!(regularisation::NoRegularisation, sense::Sense, sp::Model) = nothing
 """
 So we can copy an SDDPModel
 """
