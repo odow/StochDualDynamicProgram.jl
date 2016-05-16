@@ -562,6 +562,7 @@ end
 @inline store_results!(results::Void, vars, sp, stage, pass, markov, scenario) = nothing
 function store_results!(results::Dict{Symbol, Any}, vars, sp, stage, pass, markov, scenario)
     results[:Objective][pass] += get_true_value(sp)         # Add objective
+    results[:Current][stage][pass] = get_true_value(sp)
     results[:Scenario][stage][pass] = scenario
     results[:Markov][stage][pass] = markov
     results[:Future][stage][pass] = getobjectivevalue(sp) - get_true_value(sp)
@@ -660,7 +661,7 @@ Simulate SDDP model and return variable solutions contained in [vars]
 """
 function serial_simulate(m::SDDPModel, n::Int, vars::Vector{Symbol}=Symbol[]; variancereduction=true)
     results = Dict{Symbol, Any}(:Objective=>zeros(Float64,n))
-    for (s, t) in vcat(collect(zip(vars, fill(Any, length(vars)))), [(:Scenario, Int), (:Markov, Int), (:Future, Float64)])
+    for (s, t) in vcat(collect(zip(vars, fill(Any, length(vars)))), [(:Scenario, Int), (:Markov, Int), (:Future, Float64), (:Current, Float64)])
         results[s] = Array(Vector{t}, m.stages)
         for i=1:m.stages
             results[s][i] = Array(t, n)
