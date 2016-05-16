@@ -107,7 +107,7 @@ function JuMP.solve(m::SDDPModel; maximum_iterations=1, convergence=Convergence(
     @assert maximum_iterations >= 0
 
     if !isa(parallel, Parallel{Serial, Serial}) && length(workers()) < 2
-        warn("Paralleisation requested (cuts_per_processor=$(cuts_per_processor)) but Julia is only running with a single processor. Start julia with `julia -p N` or use the `addprocs(N)` function to load N workers. Running in serial mode.")
+        warn("Paralleisation requested but Julia is only running with a single processor. Start julia with `julia -p N` or use the `addprocs(N)` function to load N workers. Running in serial mode.")
         parallel = Parallel()
     end
 
