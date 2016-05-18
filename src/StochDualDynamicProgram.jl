@@ -14,7 +14,7 @@ export SDDPModel,
     ConvergenceTest, BackwardPass, Parallel,
     NestedCVar,
     Convergence,
-    NoRegularisation, LinearRegularisation#, QuadraticRegularisation
+    NoRegularisation, LinearRegularisation, QuadraticRegularisation
 
 const CONVERGENCE_TERMINATION = :Convergenced
 const ITERATION_TERMINATION = :MaximumIterations
@@ -56,7 +56,8 @@ end
 type QuadraticRegularisation <: Regularisation
     initial::Float64
     decayrate::Float64
-    QuadraticRegularisation(initial=1., decayrate=0.95) = (error("QuadraticRegularisation not really implemented yet. Something weird happens"); new(initial, decayrate))
+    QuadraticRegularisation(initial=1., decayrate=0.95) = new(initial, decayrate)
+    # QuadraticRegularisation(initial=1., decayrate=0.95) = (error("QuadraticRegularisation not really implemented yet. Something weird happens"); new(initial, decayrate))
 end
 
 include("macros.jl")
@@ -72,7 +73,12 @@ type SolutionLog
     bound::Float64
     cuts::Int
     time_backwards::Float64
+    simulations::Int
     time_forwards::Float64
+    time_cutselection::Float64
+end
+function textify(s::SolutionLog)
+    string(s.ci_lower, ",", s.ci_upper, ",", s.bound, ",", s.cuts, ",", s.time_backwards, ",", s.simulations, ",", s.time_forwards, ",", s.time_cutselection)
 end
 
 type Solution
@@ -82,8 +88,8 @@ end
 Solution() = Solution(UNKNOWN_TERMINATION, SolutionLog[])
 setStatus!(s::Solution, sym::Symbol) = (s.status = sym)
 
-function log!(s::Solution, ci_lower::Float64, ci_upper::Float64, bound::Float64, cuts::Int, time_backwards::Float64, time_forwards::Float64)
-    push!(s.trace, SolutionLog(ci_lower, ci_upper, bound, cuts, time_backwards, time_forwards))
+function log!(s::Solution, ci_lower::Float64, ci_upper::Float64, bound::Float64, cuts::Int, time_backwards::Float64, simulations::Int, time_forwards::Float64, time_cutselection::Float64)
+    push!(s.trace, SolutionLog(ci_lower, ci_upper, bound, cuts, time_backwards, simulations, time_forwards, time_cutselection))
 end
 
 function getTrace(sol::Solution, sym::Symbol)
@@ -96,7 +102,7 @@ end
 """
 Solve the model using the SDDP algorithm.
 """
-function JuMP.solve(m::SDDPModel; maximum_iterations=1, convergence=Convergence(1, 1, false, 0.95), risk_measure=Expectation(), cut_selection=NoSelection(), parallel=Parallel(), simulation_passes=-1, log_frequency=-1, regularisation=NoRegularisation())
+function JuMP.solve(m::SDDPModel; maximum_iterations=1, convergence=Convergence(1, 1, false, 0.95), risk_measure=Expectation(), cut_selection=NoSelection(), parallel=Parallel(), simulation_passes=-1, log_frequency=-1, regularisation=NoRegularisation(), output=nothing)
 
     if simulation_passes != -1 || log_frequency != -1
         warn("The options [log_frequency] and [simulation_passes] are deprecated. Use [convergence=Convergence(simulation_passes, frequency::Int, terminate::Bool)] instead.")
@@ -123,7 +129,7 @@ function JuMP.solve(m::SDDPModel; maximum_iterations=1, convergence=Convergence(
     m.QUANTILE = convergence.quantile
 
     # try
-    solve!(m, solution, convergence, maximum_iterations, risk_measure, cut_selection, parallel, regularisation)
+    solve!(m, solution, convergence, maximum_iterations, risk_measure, cut_selection, parallel, regularisation, output)
     # catch InterruptException
         # warn("Terminating early")
     # end
@@ -140,7 +146,7 @@ convergence_pass!(ty::ConvergenceTest, m::SDDPModel, convergence, cut_selection:
 backward_pass!(ty::BackwardPass, m::SDDPModel, method::CutSelectionMethod, regularisation::Regularisation) = parallel_backward_pass!(m, ty.cuts_per_processor, method)
 backward_pass!(ty::Serial, m::SDDPModel, method::CutSelectionMethod, regularisation::Regularisation) = backward_pass!(m, method.frequency > 0, method, regularisation)
 
-function solve!(m::SDDPModel, solution::Solution, convergence::Convergence, maximum_iterations::Int, risk_measure::RiskMeasure, cut_selection::CutSelectionMethod, parallel::Parallel, regularisation::Regularisation)
+function solve!(m::SDDPModel, solution::Solution, convergence::Convergence, maximum_iterations::Int, risk_measure::RiskMeasure, cut_selection::CutSelectionMethod, parallel::Parallel, regularisation::Regularisation, output::Union{Void, ASCIIString})
 
     # Intialise model on worker processors
     if !isa(parallel, Parallel{Serial, Serial})
@@ -187,8 +193,13 @@ function solve!(m::SDDPModel, solution::Solution, convergence::Convergence, maxi
             time_forwards += toq()
 
             # Output to user
-            log!(solution, m.confidence_interval[1], m.confidence_interval[2], m.valid_bound, iterations, time_backwards, time_forwards)
+            log!(solution, m.confidence_interval[1], m.confidence_interval[2], m.valid_bound, iterations, time_backwards, nsimulations, time_forwards, time_cutselection)
             print_stats(m, iterations, time_backwards, nsimulations, time_forwards, time_cutselection)
+            if output != nothing
+                open(output, "a") do outputfile
+                    write(outputfile, textify(solution[end]))
+                end
+            end
 
             # Terminate if converged and appropriate
             if terminate(is_converged, convergence.terminate, convergence.n)
