@@ -78,7 +78,7 @@ type SolutionLog
     time_cutselection::Float64
 end
 function textify(s::SolutionLog)
-    string(s.ci_lower, ",", s.ci_upper, ",", s.bound, ",", s.cuts, ",", s.time_backwards, ",", s.simulations, ",", s.time_forwards, ",", s.time_cutselection)
+    string(s.ci_lower, ",", s.ci_upper, ",", s.bound, ",", s.cuts, ",", s.time_backwards, ",", s.simulations, ",", s.time_forwards, ",", s.time_cutselection, "\n")
 end
 
 type Solution
