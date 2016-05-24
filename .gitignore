@@ -4,3 +4,4 @@
 ~*.xlsx
 .tags1
 *.csv
+*run.json

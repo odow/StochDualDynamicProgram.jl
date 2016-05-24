@@ -9,6 +9,7 @@ using Distributions, StatsBase
 
 export SDDPModel,
     @state, @scenarioconstraint, @scenarioconstraints, @stageprofit,
+    @visualise,
     simulate, loadcuts!,
     LevelOne, Deterministic, NoSelection,
     ConvergenceTest, BackwardPass, Parallel,
@@ -66,6 +67,7 @@ include("SDDPModel.jl")
 include("cut_selection_sddp.jl")
 include("SDDPalgorithm.jl")
 include("parallel.jl")
+include("visualiser/visualise.jl")
 
 type SolutionLog
     ci_lower::Float64
