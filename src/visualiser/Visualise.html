@@ -43,7 +43,7 @@ body {
 var margin = {top: 20, right: 80, bottom: 50, left: 125}
 var width = 800 - margin.left - margin.right
 var height = 400 - margin.top - margin.bottom;
-var nbins = 8
+var nbins = 12
 var maxbarheight = margin.right/2
 
 // X axis
@@ -157,7 +157,54 @@ var runmain = function(data) {
           // thin again
           elements[i].style["stroke-width"]="2px";
         }
-      }); // end sim.append("path")
+      })
+	  .on("mousedown", function(yvalues, lineindex) {
+		var xpos = d3.mouse(this)[0];
+		var stageindex =  Math.round(xpos * (yvalues.length-1) / width)
+		var color = d3.scale.linear()
+			.domain([0,
+				Math.max(
+					Math.abs(yvalues[stageindex] - d3.min(plotdata.data, function(sim) {return sim[stageindex];})),
+					Math.abs(yvalues[stageindex] - d3.max(plotdata.data, function(sim) {return sim[stageindex];}))
+				)
+				])
+			.range(["#009AC7", "white"]);
+		var opacity = d3.scale.linear()
+			.domain([0,
+				Math.max(
+					Math.abs(yvalues[stageindex] - d3.min(plotdata.data, function(sim) {return sim[stageindex];})),
+					Math.abs(yvalues[stageindex] - d3.max(plotdata.data, function(sim) {return sim[stageindex];}))
+				)
+				])
+			.range([0.8, 0]);
+		for (var i=0;i<plotdata.data.length;i++) {
+			// for each line
+
+			if (i!=lineindex) {
+				// For all lines except this one, recolour
+				// get all corresponding lines from all plots
+				elements = document.getElementsByClassName("line " + i);
+				for (var j = 0; j < elements.length; j++) {
+				  elements[j].style.stroke=color(Math.abs(plotdata.data[i][stageindex] - yvalues[stageindex]))//"#8D9091";
+				  elements[j].style.opacity=opacity(Math.abs(plotdata.data[i][stageindex] - yvalues[stageindex]))//"#8D9091";
+				}
+			}
+		}
+	  })
+	  .on("mouseup", function(yvalues, lineindex) {
+		// restore colour from mousedown event
+		for (var i=0;i<plotdata.data.length;i++) {
+			if (i!=lineindex) {
+				// get all corresponding lines from all plots
+				elements = document.getElementsByClassName("line " + i);
+				for (var j = 0; j < elements.length; j++) {
+				  // light grey
+				  elements[j].style.stroke="#8D9091";
+				  elements[j].style.opacity=0.1;
+				}
+			}
+		}
+	  }); // end sim.append("path")
 
       // Add the text label for the x axis
       svg.append("text")
@@ -188,12 +235,11 @@ var runmain = function(data) {
     plots.map(function(plot) {
       add_density(plot)
       var nstages = plot.histdata.length
-      plot.svg.on("mousemove", function() {
+      plot.svg.on("dblclick", function() {
         // get the x location
         xpos = d3.mouse(this)[0];
-        // console.log(x(1), xpos)
         // check its within the x domain
-        if (xpos >= x(1) && xpos < x(nstages+1)) {
+        if (xpos >= x(1) && xpos < x(nstages+0.49)) {
           // bin to integer weeks
           xact =  Math.round(xpos * (nstages-1) / width) * width / (nstages-1)
           // for all the lines
@@ -207,7 +253,7 @@ var runmain = function(data) {
             updatedensity(d, Math.round(xpos * (nstages-1) / width))
           });
         }
-      }); // end plot.svg.on
+      })// end plot.svg.on
     }); // end plots.map
   // }); // end d3.json
 };  // end runmain
@@ -275,6 +321,7 @@ function updatedensity(plot, column) {
     }
   }
 };
+
 
 runmain(
   <!--DATA-->

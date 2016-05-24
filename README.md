@@ -176,6 +176,13 @@ results = simulate(m, 5, [:x])
 results[:x][1] --> [1, 1.5, 1, 1.25, 1.25]
 ```
 
+In addition to the variables you specify via the `variables` option, the following keys are stored
+
+ - `:Current`:  stage cost
+ - `:Future`:   value of the approximated future cost variable
+ - `:Markov`:   index (1, 2, ... , M) of the markov state
+ - `:Scenario`: index (1,2,...,S) of the scenario
+
 #### Historical Simulation
 Often we may wanto to evaluate the policy give a particular historical realisation. This may contain correlation structures between our random variables that are not captured by the markov chain or independent scenarios. We can do this with a few modifications to the model.
 
@@ -196,4 +203,20 @@ results = simulate(m, [:x], con_name_1=rand(10), con_name_2=rand(10))
 
 # The one realisation of the x variable in stage 1
 results[:x][1] --> [1.25]
+```
+
+#### Visualisation
+It is possible to create an interactive visualisation of the simulated policy with the `@visualise` macro.
+
+```julia
+@visualise(results, (stage, replication), begin
+	results[:Current][stage][replication], "Accumulated Profit (\$)", (cumulative=true)
+
+	results[:Current][stage][replication], "Week Profit (\$)"
+
+	results[:reservoir][stage][replication][:upper], "Upper Reservoir"
+	results[:reservoir][stage][replication][:lower], "Lower Reservoir"
+
+	Price[stage, results[:Markov][stage][replication]], "Price"
+end)
 ```
