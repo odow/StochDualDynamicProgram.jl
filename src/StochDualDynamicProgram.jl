@@ -199,7 +199,7 @@ function solve!(m::SDDPModel, solution::Solution, convergence::Convergence, maxi
             print_stats(m, iterations, time_backwards, nsimulations, time_forwards, time_cutselection)
             if output != nothing
                 open(output, "a") do outputfile
-                    write(outputfile, textify(solution[end]))
+                    write(outputfile, textify(solution.trace[end]))
                 end
             end
 
