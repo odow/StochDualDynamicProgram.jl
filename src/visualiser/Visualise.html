@@ -161,7 +161,7 @@ var runmain = function(data) {
 	  .on("mousedown", function(yvalues, lineindex) {
 		var xpos = d3.mouse(this)[0];
 		var stageindex =  Math.round(xpos * (yvalues.length-1) / width)
-		var color = d3.scale.linear()
+		var color = d3.scale.pow().exponent(0.25)
 			.domain([0,
 				Math.max(
 					Math.abs(yvalues[stageindex] - d3.min(plotdata.data, function(sim) {return sim[stageindex];})),
@@ -169,24 +169,25 @@ var runmain = function(data) {
 				)
 				])
 			.range(["#009AC7", "white"]);
-		var opacity = d3.scale.linear()
+		var opacity = d3.scale.pow().exponent(0.25)
 			.domain([0,
 				Math.max(
 					Math.abs(yvalues[stageindex] - d3.min(plotdata.data, function(sim) {return sim[stageindex];})),
 					Math.abs(yvalues[stageindex] - d3.max(plotdata.data, function(sim) {return sim[stageindex];}))
-				)
+					)
 				])
 			.range([0.8, 0]);
+
 		for (var i=0;i<plotdata.data.length;i++) {
 			// for each line
-
 			if (i!=lineindex) {
 				// For all lines except this one, recolour
 				// get all corresponding lines from all plots
 				elements = document.getElementsByClassName("line " + i);
 				for (var j = 0; j < elements.length; j++) {
-				  elements[j].style.stroke=color(Math.abs(plotdata.data[i][stageindex] - yvalues[stageindex]))//"#8D9091";
-				  elements[j].style.opacity=opacity(Math.abs(plotdata.data[i][stageindex] - yvalues[stageindex]))//"#8D9091";
+          var diff = Math.abs(plotdata.data[i][stageindex] - yvalues[stageindex]);
+				  elements[j].style.stroke=color(diff);
+				  elements[j].style.opacity=opacity(diff);
 				}
 			}
 		}
@@ -321,7 +322,6 @@ function updatedensity(plot, column) {
     }
   }
 };
-
 
 runmain(
   <!--DATA-->
