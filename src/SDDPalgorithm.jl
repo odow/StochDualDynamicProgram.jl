@@ -383,17 +383,10 @@ function solve!(sp::Model)
 
     # Catch case where we aren't optimal
     if status != :Optimal
-        JuMP.writeMPS(sp, "C:/temp/a_infeasible_subproblem_$(myid()).mps")
         sp.internalModelLoaded = false
         status = solve(sp)
         if status != :Optimal
-            JuMP.writeMPS(sp, "C:/temp/b_infeasible_subproblem_$(myid()).mps")
-            open("C:/temp/b_rhs.csv", "w") do f
-                for c in sp.linconstr
-                    write(f, "$(string(c)), $(c.lb), $(c.ub)\n)")
-                end
-            end
-            error("SDDP Subproblems must be feasible. Current status: $(status).")
+            error("SDDP Subproblems must be feasible. Current status: $(status). I tried rebuilding from the JuMP model but it didn't work...")
         end
     end
 
