@@ -276,7 +276,7 @@ end
 function simulate(m::SDDPModel, vars::Vector{Symbol}=Symbol[]; markov=ones(Int, m.stages), kwargs...)
     n=1
     results = Dict{Symbol, Any}(:Objective=>zeros(Float64,n))
-    for (s, t) in vcat(collect(zip(vars, fill(Any, length(vars)))), [(:Scenario, Int), (:Markov, Int), (:Future, Float64)])
+    for (s, t) in vcat(collect(zip(vars, fill(Any, length(vars)))), [(:Scenario, Int), (:Markov, Int), (:Future, Float64), (:Current, Float64)])
         results[s] = Array(Vector{t}, m.stages)
         for i=1:m.stages
             results[s][i] = Array(t, n)
