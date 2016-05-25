@@ -124,7 +124,8 @@ body {
       .attr("class", function(d,i) {return "line " + i})
       // add the line
       .attr("d", function(d,i) {return line(d,i); })
-      .style("stroke", "#8D9091")
+      //.style("stroke", "#8D9091")
+      .style("stroke", "#009AC7")
       // highlight simulation on mouseover
       .on("mouseover", function(d) {
         if (isdrag == false) {
@@ -156,7 +157,8 @@ body {
 
         for (var i = 0; i < elements.length; i++) {
           // light grey
-          elements[i].style.stroke="#8D9091";
+          //elements[i].style.stroke="#8D9091";
+          elements[i].style.stroke="#009AC7";
           // transparent again
           elements[i].style.opacity=0.1;
           // thin again
@@ -208,7 +210,8 @@ body {
             elements = document.getElementsByClassName("line " + i);
             for (var j = 0; j < elements.length; j++) {
               // light grey
-              elements[j].style.stroke="#8D9091";
+              //elements[j].style.stroke="#8D9091";
+              elements[j].style.stroke="#009AC7";
               elements[j].style.opacity=0.1;
             }
           }
