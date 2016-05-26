@@ -89,9 +89,8 @@ function backward_pass!(m::SDDPModel, cut_selection::Bool, method=NoSelection(),
         # pick a scenario
         scenario = load_scenario!(m, sp)
 
-        # Lets store the scenario we just came from
-        stagedata(sp).old_scenario = (old_markov, old_scenario)
-
+        # Lets store the markov state we just came from
+        stagedata(sp).last_markov = old_markov
 
         set_regularised_objective!(regularisation, m.sense, sp)
         # solve
@@ -116,7 +115,7 @@ function backward_pass!(m::SDDPModel, cut_selection::Bool, method=NoSelection(),
         add_cut!(m, stage, old_markov, cut_selection, method)
 
         # Look up the scenario to step back to
-        old_markov, old_scenario = stagedata(m.stage_problems[stage, old_markov]).old_scenario
+        old_markov = stagedata(m.stage_problems[stage, old_markov]).last_markov
 
         # Solve all the stage problems
         solve_all_stage_problems!(m, stage, regularisation)
@@ -139,7 +138,7 @@ function solve_all_stage_problems!(m::SDDPModel, stage::Int, regularisation::Reg
         set_nonregularised_objective!(regularisation, m.sense, m.stage_problems[stage,markov_state])
         for s=1:m.scenarios
             load_scenario!(m.stage_problems[stage,markov_state], s)
-            solve!(m.stage_problems[stage,markov_state])
+            solve!(m.stage_problems[stage,markov_state], s)
         end
     end
 end
@@ -166,7 +165,6 @@ function add_cut!(m::SDDPModel, stage::Int, markov_state::Int, cut_selection::Bo
                 stagedata(new_sp).objective_value[scenario] +
                 sum{
                     stagedata(new_sp).dual_values[i][scenario] * (
-                    # (stagedata(new_sp).dual_values[i][scenario] + 1e-10*(rand()-0.5)) * (
                         stagedata(sp).state_vars[i] - getRHS(stagedata(new_sp).dual_constraints[i])
                     )
                 , i in 1:length(stagedata(sp).state_vars)}
@@ -174,12 +172,6 @@ function add_cut!(m::SDDPModel, stage::Int, markov_state::Int, cut_selection::Bo
         ,scenario in 1:m.scenarios; m.weightings_matrix[new_markov, scenario] > 1e-6}
     , (new_markov, new_sp) in enumerate(m.stage_problems[stage+1, :])}
     )
-
-    # for yi in aggregateterms(sp, rhs)
-    #     if abs(yi) < 1e-10
-    #         warn("Dual Degeneracy detected. When simulating the policy you may find sub-optimal solutions")
-    #     end
-    # end
 
     if cut_selection
         if add_cut!(m.sense, sp, rhs, m.stagecuts[stage, markov_state])
@@ -194,16 +186,16 @@ function add_cut!(m::SDDPModel, stage::Int, markov_state::Int, cut_selection::Bo
     return
 end
 
-function add_cut!(::Type{Val{:Min}}, sp::Model, rhs::JuMP.GenericAffExpr, method::CutSelectionMethod=NoSelection())
+function add_cut!(::Min, sp::Model, rhs::JuMP.GenericAffExpr, method::CutSelectionMethod=NoSelection())
     @constraint(sp, stagedata(sp).theta >= rhs)
 end
-function add_cut!(::Type{Val{:Max}}, sp::Model, rhs::JuMP.GenericAffExpr, method::CutSelectionMethod=NoSelection())
+function add_cut!(::Max, sp::Model, rhs::JuMP.GenericAffExpr, method::CutSelectionMethod=NoSelection())
     @constraint(sp, stagedata(sp).theta <= rhs)
 end
-# function add_cut!(::Type{Val{:Min}}, sp::Model, rhs::JuMP.GenericAffExpr, method::LazyConstraint)
+# function add_cut!(::Min, sp::Model, rhs::JuMP.GenericAffExpr, method::LazyConstraint)
 #     @addLazyConstraint(sp, stagedata(sp).theta >= rhs)
 # end
-# function add_cut!(::Type{Val{:Max}}, sp::Model, rhs::JuMP.GenericAffExpr, method::LazyConstraint)
+# function add_cut!(::Max, sp::Model, rhs::JuMP.GenericAffExpr, method::LazyConstraint)
 #     @addLazyConstraint(sp, stagedata(sp).theta <= rhs)
 # end
 # function corners(cb)
@@ -288,7 +280,7 @@ function risk_weightings!(m::SDDPModel, stage::Int, markov::Int)
         @assert abs(sum(P) - 1) < 1e-5
 
         # Construct risk averse weightings for CVar
-        w = risk_averse_weightings(vcat([stagedata(sp).objective_value for sp in m.stage_problems[stage+1, :]]...), P,  m.beta_quantile, isa(m.sense, Type{Val{:Max}}))
+        w = risk_averse_weightings(vcat([stagedata(sp).objective_value for sp in m.stage_problems[stage+1, :]]...), P,  m.beta_quantile, isa(m.sense, Max))
 
         # Construct weightings as a convex combination of Expectation (P) and risk averse (w)
         i=1
@@ -374,13 +366,10 @@ Solve a StageProblem.
 
     solve!(sp::Model)
 """
-function solve!(sp::Model)
+function solve!(sp::Model, scenario::Int=0)
     @assert is_sp(sp)
 
-    colval = copy(sp.colVal)
-
     status = solve(sp)
-
     # Catch case where we aren't optimal
     if status != :Optimal
         sp.internalModelLoaded = false
@@ -390,18 +379,14 @@ function solve!(sp::Model)
         end
     end
 
-    # Get current scenario
-    s = stagedata(sp).current_scenario
-
-    # store the objective value
-    stagedata(sp).objective_value[s] = getobjectivevalue(sp)
-
-    # store the dual value for each of the state variables
-    for i in 1:length(stagedata(sp).state_vars)
-        stagedata(sp).dual_values[i][s] = getdual(stagedata(sp).dual_constraints[i])
+    if scenario > 0
+        # store the objective value
+        stagedata(sp).objective_value[scenario] = getobjectivevalue(sp)
+        # store the dual value for each of the state variables
+        for i in 1:length(stagedata(sp).state_vars)
+            stagedata(sp).dual_values[i][scenario] = getdual(stagedata(sp).dual_constraints[i])
+        end
     end
-
-    return
 end
 
 """
@@ -412,29 +397,10 @@ m        - Stage problem
 scenario - the scenario to load
 """
 function load_scenario!(sp::Model, scenario::Int)
-    # Store old scenario
-    stagedata(sp).last_scenario = stagedata(sp).current_scenario
-
     # for each scenario constraint
     for (constr, Ω) in stagedata(sp).scenario_constraints
-        # Look up last scenario.
-        if stagedata(sp).last_scenario == 0
-            # No old scenario loaded so zero constant
-            old_scenario = 0.
-        else
-            # Look up old constant from scenario set Ω
-            old_scenario = Ω[stagedata(sp).last_scenario]
-        end
-
-        # Update RHS
-        # JuMP.setRHS(constr, getRHS(constr) - old_scenario + Ω[scenario])
         JuMP.setRHS(constr, Ω[scenario])
     end
-
-    # Store new scenario
-    stagedata(sp).current_scenario = scenario
-
-    return
 end
 
 # Some helper functions
@@ -444,15 +410,15 @@ JuMP.getupperbound(c::ConstraintRef) = c.m.linconstr[c.idx].ub
 """
 This function gets the appropriate simulated bound closest to the outer bound
 """
-getCloseCIBound(::Type{Val{:Min}}, m::SDDPModel) = m.confidence_interval[1]
-getCloseCIBound(::Type{Val{:Max}}, m::SDDPModel) = m.confidence_interval[2]
+getCloseCIBound(::Min, m::SDDPModel) = m.confidence_interval[1]
+getCloseCIBound(::Max, m::SDDPModel) = m.confidence_interval[2]
 getCloseCIBound(m::SDDPModel) = getCloseCIBound(m.sense, m)
 
 """
 And vice versa
 """
-getFarCIBound(::Type{Val{:Min}}, m::SDDPModel) = m.confidence_interval[2]
-getFarCIBound(::Type{Val{:Max}}, m::SDDPModel) = m.confidence_interval[1]
+getFarCIBound(::Min, m::SDDPModel) = m.confidence_interval[2]
+getFarCIBound(::Max, m::SDDPModel) = m.confidence_interval[1]
 getFarCIBound(m::SDDPModel) = getFarCIBound(m.sense, m)
 
 """
@@ -474,8 +440,8 @@ Actual tolerance of the solution
 
 Defined as [Outer bound - closest simulated bound]
 """
-atol(::Type{Val{:Min}}, m::SDDPModel) = getCloseCIBound(m) - getBound(m)
-atol(::Type{Val{:Max}}, m::SDDPModel) = getBound(m) - getCloseCIBound(m)
+atol(::Min, m::SDDPModel) = getCloseCIBound(m) - getBound(m)
+atol(::Max, m::SDDPModel) = getBound(m) - getCloseCIBound(m)
 atol(m::SDDPModel) = atol(m.sense, m)
 
 """
@@ -526,12 +492,12 @@ function set_valid_bound!(m::SDDPModel)
     return
 end
 
-function decide_set_bound!(::Type{Val{:Min}}, m::SDDPModel, obj)
+function decide_set_bound!(::Min, m::SDDPModel, obj)
     if obj > getBound(m)
         setBound!(m, obj)
     end
 end
-function decide_set_bound!(::Type{Val{:Max}}, m::SDDPModel, obj)
+function decide_set_bound!(::Max, m::SDDPModel, obj)
     if obj < getBound(m)
         setBound!(m, obj)
     end

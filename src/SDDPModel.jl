@@ -1,26 +1,31 @@
 type StageData
+    # vector of state variables
     state_vars::Vector{JuMP.Variable}
-    regularisecons::Vector{JuMP.ConstraintRef}
-    regularisepen::Union{Void, JuMP.Variable}
+    # vector of dummy constraints to get duals from
     dual_constraints::Vector{JuMP.ConstraintRef}
+    # value/cost-to-go variable
     theta::Union{Void, JuMP.Variable}
-    old_scenario::Tuple{Int, Int}
+
+    # index of last markov state
+    last_markov::Int
+
+    # Storage for scenarioconstraints
     scenario_constraints::Vector{Tuple{Any, Vector{Any}}}
     scenario_constraint_names::Dict{Symbol, Int}
-    last_scenario::Int
-    current_scenario::Int
+
+    # Store values across scenarios
     objective_value::Vector{Float64}
     dual_values::Vector{Vector{Float64}}
-    stage_profit
-    cut_data::Dict{Tuple{Float64, Float64}, Vector{Vector{Float64}}}
-    regularisecoefficient::Float64
-end
-StageData(scenarios::Int=1) = StageData(Variable[], ConstraintRef[], nothing, ConstraintRef[], nothing, (0,0), Tuple{Any, Vector{Any}}[], Dict{Symbol, Int}(), 0, 0, zeros(scenarios), Vector{Float64}[], nothing, Dict{Tuple{Float64, Float64}, Vector{Vector{Float64}}}(), 1.)
 
-"""
-Instaniates a new StageProblem which is a JuMP.Model object with an extension
-dictionary.
-"""
+    stage_profit
+
+    # Regularisation stuff
+    regularisecoefficient::Float64
+    regularisecons::Vector{JuMP.ConstraintRef}
+    regularisepen::Union{Void, JuMP.Variable}
+end
+StageData(scenarios::Int=1) = StageData(Variable[], ConstraintRef[], nothing, (0,0), Tuple{Any, Vector{Any}}[], Dict{Symbol, Int}(), zeros(scenarios), Vector{Float64}[], nothing, Vector{Vector{Float64}}}(), 1., ConstraintRef[], nothing)
+
 function StageProblem(scenarios::Int=1)
     sp = Model()
     sp.ext[:data] = StageData(scenarios)
@@ -33,14 +38,12 @@ function stagedata(m::Model)
 end
 
 function Base.copy(sd::StageData)
-    return StageData(sd.state_vars, sd.regularisecons, sd.regularisepen, sd.dual_constraints, sd.theta, sd.old_scenario, sd.scenario_constraints, sd.scenario_constraint_names, sd.last_scenario, sd.current_scenario, sd.objective_value, sd.dual_values, sd.stage_profit, sd.cut_data, sd.regularisecoefficient)
+    return StageData(sd.state_vars, sd.dual_constraints, sd.theta, sd.last_markov, sd.scenario_constraints, sd.scenario_constraint_names, sd.objective_value, sd.dual_values, sd.stage_profit, sd.regularisecoefficient, sd.regularisecons, sd.regularisepen)
 end
 
 # Check this is a StageProblem
 is_sp(m::JuMP.Model) = isa(stagedata(m), StageData)
 is_sp(m) = false
-
-const Sense = Union{Type{Val{:Min}}, Type{Val{:Max}}}
 
 type SDDPModel{T<:Union{Array{Float64,2}, Vector{Array{Float64, 2}}}, M<:Real}
     stages::Int
@@ -130,7 +133,7 @@ function SDDPModel(;
     end
 
     my_inf = (sense==:Max?Inf:-Inf)
-    sense_type = (sense==:Max?Val{:Max}:Val{:Min})
+    sense_type = (sense==:Max?Max():Min())
 
     SDDPModel(stages,markov_states,scenarios, sense_type, Array(JuMP.Model, (stages, markov_states)), transition, WeightVec(scenario_probability), initial_markov_state, (-my_inf, -my_inf), my_inf, 0.95, solver, value_to_go_bound, 1., 1., zeros(markov_states, scenarios), cuts_filename, build_function, Array(StageCuts, (0, 0)))
 end
@@ -260,11 +263,11 @@ function create_subproblems!(m::SDDPModel)
     return
 end
 
-addtheta!(::Type{Val{:Min}}, sp::Model, value_to_go_bound) = (stagedata(sp).theta = @variable(sp, theta >= value_to_go_bound))
-addtheta!(::Type{Val{:Max}}, sp::Model, value_to_go_bound) = (stagedata(sp).theta = @variable(sp, theta <= value_to_go_bound))
+addtheta!(::Min, sp::Model, value_to_go_bound) = (stagedata(sp).theta = @variable(sp, theta >= value_to_go_bound))
+addtheta!(::Max, sp::Model, value_to_go_bound) = (stagedata(sp).theta = @variable(sp, theta <= value_to_go_bound))
 
-setobj!(::Type{Val{:Min}}, sp, aff) = @objective(sp, Min, aff)
-setobj!(::Type{Val{:Max}}, sp, aff) = @objective(sp, Max, aff)
+setobj!(::Min, sp, aff) = @objective(sp, Min, aff)
+setobj!(::Max, sp, aff) = @objective(sp, Max, aff)
 function oldvalue(v)
     ov = getvalue(v)
     if isnan(ov) || ov == -Inf || ov == Inf
@@ -283,8 +286,8 @@ function regularise!(regularisation::QuadraticRegularisation, sense::Sense, sp)
 end
 
 regularise!(ty, sense::Sense, sp) = 0.
-regularise!(::Type{Val{:Min}}, expr) = expr
-regularise!(::Type{Val{:Max}}, expr) = -expr
+regularise!(::Min, expr) = expr
+regularise!(::Max, expr) = -expr
 
 function futurecost!(sp)
     if stagedata(sp).theta != nothing
@@ -376,10 +379,10 @@ function loadcuts!(m::SDDPModel, filename::ASCIIString)
         end
     end
 end
-function loadcut!(::Type{Val{:Max}}, sp::Model, theta::Float64, xcoeff::Vector{Float64})
+function loadcut!(::Max, sp::Model, theta::Float64, xcoeff::Vector{Float64})
     @constraint(sp, stagedata(sp).theta <= theta + sum{xcoeff[i] * v, (i, v) in enumerate(stagedata(sp).state_vars)})
 end
-function loadcut!(::Type{Val{:Min}}, sp::Model, theta::Float64, xcoeff::Vector{Float64})
+function loadcut!(::Min, sp::Model, theta::Float64, xcoeff::Vector{Float64})
     @constraint(sp, stagedata(sp).theta >= theta + sum{xcoeff[i] * v, (i, v) in enumerate(stagedata(sp).state_vars)})
 end
 

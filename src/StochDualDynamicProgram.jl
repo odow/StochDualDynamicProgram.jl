@@ -7,6 +7,8 @@ using MathProgBase, Clp
 using Formatting
 using Distributions, StatsBase
 
+import Base.dot
+
 export SDDPModel,
     @state, @scenarioconstraint, @scenarioconstraints, @stageprofit,
     @visualise,
@@ -17,100 +19,18 @@ export SDDPModel,
     Convergence,
     NoRegularisation, LinearRegularisation, QuadraticRegularisation
 
-const CONVERGENCE_TERMINATION = :Convergenced
-const ITERATION_TERMINATION = :MaximumIterations
-const UNKNOWN_TERMINATION = :Unknown
-
-abstract RiskMeasure
-immutable NestedCVar <: RiskMeasure
-    beta::Float64
-    lambda::Float64
-    NestedCVar{T<:Real, S<:Real}(beta::T, lambda::S) = (@assert beta >= 0. && beta <= 1. && lambda >= 0. && lambda <= 1.; new(beta, lambda))
-end
-NestedCVar(;beta=1., lambda=1.) = NestedCVar(beta, lambda)
-Expectation() = NestedCVar(1., 1.)
-
-type Convergence
-    n
-    frequency::Int
-    terminate::Bool
-    quantile::Float64
-    variancereduction::Bool
-    function Convergence(simulations, frequency::Int, terminate::Bool=false, quantile::Float64=0.95, variancereduction::Bool=true)
-        @assert quantile >= 0 && quantile <= 1.
-        new(simulations, frequency, terminate, quantile, variancereduction)
-    end
-end
-Convergence(;simulations=1, frequency=1, terminate=false, quantile=0.95, variancereduction=true) = Convergence(simulations, frequency, terminate, quantile, variancereduction)
-
-abstract Regularisation
-type NoRegularisation <: Regularisation
-    initial::Float64
-    decayrate::Float64
-    NoRegularisation() = new(0., 0.)
-end
-type LinearRegularisation <: Regularisation
-    initial::Float64
-    decayrate::Float64
-    LinearRegularisation(initial=1., decayrate=0.95) = new(initial, decayrate)
-end
-type QuadraticRegularisation <: Regularisation
-    initial::Float64
-    decayrate::Float64
-    QuadraticRegularisation(initial=1., decayrate=0.95) = new(initial, decayrate)
-    # QuadraticRegularisation(initial=1., decayrate=0.95) = (error("QuadraticRegularisation not really implemented yet. Something weird happens"); new(initial, decayrate))
-end
-
+include("types.jl")
 include("macros.jl")
-include("cut_selection.jl")
 include("SDDPModel.jl")
-include("cut_selection_sddp.jl")
+include("cut_selection.jl")
 include("SDDPalgorithm.jl")
 include("parallel.jl")
 include("visualiser/visualise.jl")
 
-type SolutionLog
-    ci_lower::Float64
-    ci_upper::Float64
-    bound::Float64
-    cuts::Int
-    time_backwards::Float64
-    simulations::Int
-    time_forwards::Float64
-    time_cutselection::Float64
-end
-function textify(s::SolutionLog)
-    string(s.ci_lower, ",", s.ci_upper, ",", s.bound, ",", s.cuts, ",", s.time_backwards, ",", s.simulations, ",", s.time_forwards, ",", s.time_cutselection, "\n")
-end
-
-type Solution
-    status::Symbol
-    trace::Vector{SolutionLog}
-end
-Solution() = Solution(UNKNOWN_TERMINATION, SolutionLog[])
-setStatus!(s::Solution, sym::Symbol) = (s.status = sym)
-
-function log!(s::Solution, ci_lower::Float64, ci_upper::Float64, bound::Float64, cuts::Int, time_backwards::Float64, simulations::Int, time_forwards::Float64, time_cutselection::Float64)
-    push!(s.trace, SolutionLog(ci_lower, ci_upper, bound, cuts, time_backwards, simulations, time_forwards, time_cutselection))
-end
-
-function getTrace(sol::Solution, sym::Symbol)
-    if !(sym in fieldnames(sol))
-        error("[sym] in getTrace(sol::Solution, sym::Symbol) must be one of $(fieldnames(sol))")
-    end
-    return [s.(sym) for s in sol.trace]
-end
-
 """
 Solve the model using the SDDP algorithm.
 """
-function JuMP.solve(m::SDDPModel; maximum_iterations=1, convergence=Convergence(1, 1, false, 0.95), risk_measure=Expectation(), cut_selection=NoSelection(), parallel=Parallel(), simulation_passes=-1, log_frequency=-1, regularisation=NoRegularisation(), output=nothing)
-
-    if simulation_passes != -1 || log_frequency != -1
-        warn("The options [log_frequency] and [simulation_passes] are deprecated. Use [convergence=Convergence(simulation_passes, frequency::Int, terminate::Bool)] instead.")
-        log_frequency != -1 && (convergence.frequency = log_frequency)
-        simulation_passes != -1 && (convergence.n = simulation_passes)
-    end
+function JuMP.solve(m::SDDPModel; maximum_iterations=1, convergence=Convergence(1, 1, false, 0.95), risk_measure=Expectation(), cut_selection=NoSelection(), parallel=Parallel(), regularisation=NoRegularisation(), output=nothing)
 
     @assert maximum_iterations >= 0
 
@@ -214,51 +134,6 @@ function solve!(m::SDDPModel, solution::Solution, convergence::Convergence, maxi
     # We have terminated due to iteration limit
     setStatus!(solution, ITERATION_TERMINATION)
 end
-
-function print_stats(m::SDDPModel, iterations, back_time, simulations, forward_time, cut_time)
-    printfmt("{1:>9s} {2:>9s} | {3:>9s} {4:>6.2f} | {5:6s} {6:6s} | {7:6s} {8:6s} | {9:5s}\n",
-        humanize(m.confidence_interval[1], "7.3f"), humanize(m.confidence_interval[2], "7.3f"), humanize(m.valid_bound, "7.3f"), 100*rtol(m), humanize(iterations), humanize(back_time), humanize(simulations), humanize(forward_time), humanize(cut_time, "6.2f"))
-end
-
-function print_stats_header()
-    printfmt("{1:38s} | {2:13s} | {3:13s} |   Cut\n", "                  Objective", "  Backward", "   Forward")
-    printfmt("{1:19s} | {2:9s} {3:6s} | {4:6s} {5:6s} | {6:6s} {7:6s} |  Time\n", "      Expected", "  Bound", " % Gap", " Iters", " Time", " Iters", " Time")
-end
-
-#----------------------------------------------------------------------
-# The following a modified version of that found at
-#
-# Humanize.jl    https://github.com/IainNZ/Humanize.jl
-# Based on jmoiron's humanize Python library (MIT licensed):
-#  https://github.com/jmoiron/humanize/
-# All original code is (c) Iain Dunning and MIT licensed.
-const gnu_suf = ["", "K", "M", "G", "T", "P", "E", "Z", "Y"]
-function humanize(value::Int)
-    if value < 1000 && value > -1000
-        return humanize(value, "5d")
-    else
-        return humanize(value, "5.1f")
-    end
-end
-
-function humanize(value::Number, format="5.1f")
-    suffix  = gnu_suf
-    base    = 1000.0
-    bytes   = float(value)
-    sig=sign(value)
-    bytes   = abs(bytes)
-    format  = "%$(format)%s"
-    fmt_str = @eval (v,s)->@sprintf($format,v,s)
-    unit    = base
-    s       = suffix[1]
-    for (i,s) in enumerate(suffix)
-        unit = base ^ (i)
-        bytes < unit && break
-    end
-    return fmt_str(sig*base * bytes / unit, s)
-end
-# End excerpt
-#----------------------------------------------------------------------
 
 function simulate(m::SDDPModel, n::Int, vars::Vector{Symbol}=[]; parallel=false)
     if parallel && length(workers()) < 2
