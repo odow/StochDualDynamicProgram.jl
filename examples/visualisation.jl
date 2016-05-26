@@ -109,12 +109,10 @@ results = simulate(m,   # Simulate the policy
     )
 
 @visualise(results, (stage, replication), begin
-	results[:Current][stage][replication], "Accumulated Profit (\$)", (cumulative=true)
-
-	results[:Current][stage][replication], "Week Profit (\$)"
-
-	results[:reservoir][stage][replication][:upper], "Upper Reservoir"
-	results[:reservoir][stage][replication][:lower], "Lower Reservoir"
-
-	Price[stage, results[:Markov][stage][replication]], "Price"
+	results[:Current][stage][replication],              (title="Accumulated Profit", ylabel="Accumulated Profit (\$)", cumulative=true)
+	results[:Current][stage][replication],              (title="Weekly Income",      ylabel="Week Profit (\$)")
+	results[:reservoir][stage][replication][:upper],    (title="Upper Reservoir",    ylabel="Level")
+	results[:reservoir][stage][replication][:lower],    (title="Lower Reservoir")
+	Price[stage, results[:Markov][stage][replication]], (ylabel="Price")
+    results[:Future][stage][replication]
 end)

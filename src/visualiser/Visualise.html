@@ -6,6 +6,19 @@ body {
   font: 20px Arial;
 }
 
+.title {
+  font-size: 22px;
+}
+
+.axislabel {
+  font-size: 22px;
+  text-anchor: middle;
+}
+
+.axis {
+  font-size: 22px;
+}
+
 .axis path,
 .axis line {
   fill: none;
@@ -19,13 +32,21 @@ body {
 
 .line {
   fill: none;
-  stroke: "#8D9091";
+  stroke: #8D9091;
   stroke-width: 2px;
   opacity: 0.1;
 }
 
 .bar {
   fill: #00467F;
+  opacity:0.5;
+}
+
+.vertline {
+  stroke-width: 2;
+  stroke: #00467F;
+  fill: none;
+  opacity:0.5;
 }
 
 </style>
@@ -48,7 +69,7 @@ body {
 
   <script>
 
-  var margin = {top: 20, right: 80, bottom: 50, left: 125}
+  var margin = {top: 50, right: 80, bottom: 50, left: 100}
   var width = 800 - margin.left - margin.right
   var height = 400 - margin.top - margin.bottom;
   var maxbarheight = margin.right/2
@@ -61,7 +82,15 @@ body {
 
   // Y axis
   var y = d3.scale.linear().range([height, 0]);
-  var yAxis = d3.svg.axis().scale(y).orient("left");
+  var yAxis = d3.svg.axis().scale(y).orient("left")
+  .tickFormat(function (d) {
+    var prefix = d3.formatPrefix(d);
+    if (Math.abs(d) >= 1000.) {
+      return prefix.scale(d) + prefix.symbol;
+    } else {
+      return d;
+    }
+  });
 
   // d3 line function
   var line = d3.svg.line()
@@ -124,17 +153,13 @@ body {
       .attr("class", function(d,i) {return "line " + i})
       // add the line
       .attr("d", function(d,i) {return line(d,i); })
-      //.style("stroke", "#8D9091")
-      .style("stroke", "#009AC7")
       // highlight simulation on mouseover
       .on("mouseover", function(d) {
         if (isdrag == false) {
           // class name
           var classstring = d3.select(this)[0][0].className.baseVal.split(" ");
-
           // all corresponding simulations from all plots
           elements = document.getElementsByClassName(classstring[1]);
-
           for (var i = 0; i < elements.length; i++) {
             // change to light blue
             elements[i].style.stroke="#009AC7";
@@ -151,14 +176,12 @@ body {
       .on("mouseout", function(d) {
         // class name
         var classstring = d3.select(this)[0][0].className.baseVal.split(" ");
-
         // get all corresponding lines from all plots
         elements = document.getElementsByClassName(classstring[1]);
-
         for (var i = 0; i < elements.length; i++) {
           // light grey
-          //elements[i].style.stroke="#8D9091";
-          elements[i].style.stroke="#009AC7";
+          elements[i].style.stroke="#8D9091";
+          //elements[i].style.stroke="#009AC7";
           // transparent again
           elements[i].style.opacity=0.1;
           // thin again
@@ -177,7 +200,7 @@ body {
               Math.abs(yvalues[stageindex] - d3.max(plotdata.data, function(sim) {return sim[stageindex];}))
             )
           ])
-          .range(["#009AC7", "white"]);
+          .range(["#8D9091", "white"]);
           var opacity = d3.scale.pow().exponent(0.25)
           .domain([0,
             Math.max(
@@ -185,7 +208,7 @@ body {
               Math.abs(yvalues[stageindex] - d3.max(plotdata.data, function(sim) {return sim[stageindex];}))
             )
           ])
-          .range([0.8, 0]);
+          .range([1., 0]);
 
           for (var i=0;i<plotdata.data.length;i++) {
             // for each line
@@ -210,8 +233,8 @@ body {
             elements = document.getElementsByClassName("line " + i);
             for (var j = 0; j < elements.length; j++) {
               // light grey
-              //elements[j].style.stroke="#8D9091";
-              elements[j].style.stroke="#009AC7";
+              elements[j].style.stroke="#8D9091";
+              //elements[j].style.stroke="#009AC7";
               elements[j].style.opacity=0.1;
             }
           }
@@ -221,7 +244,8 @@ body {
       // Add the text label for the x axis
       svg.append("text")
       .attr("transform", "translate(" + (width / 2) + " ," + (height + margin.bottom) + ")")
-      .style("text-anchor", "middle").text("Stages");
+      .attr("class", "axislabel")
+      .text(plotdata.xlabel);
 
       // Add the text label for the Y axis
       svg.append("text")
@@ -229,17 +253,21 @@ body {
       .attr("y", 0 - margin.left)
       .attr("x",0 - (height / 2))
       .attr("dy", "1em")
-      .style("text-anchor", "middle")
-      .text(plotdata.label);
+      .attr("class", "axislabel")
+      .text(plotdata.ylabel);
+
+      svg.append("text")
+      .attr("x", (width / 2))
+      .attr("y", 0 - (margin.top / 2))
+      .attr("text-anchor", "middle")
+      .attr("class", "title")
+      .text(plotdata.title);
 
       // add the vertical line
       svg.append("line")
       .attr("x1", width).attr("y1", 0)
       .attr("x2", width).attr("y2", height)
-      .attr("class", "vertline")
-      .style("stroke-width", 2)
-      .style("stroke", "#8D9091")
-      .style("fill", "none");
+      .attr("class", "vertline");
 
       plots[fileindex] = {svg:svg, domain:domain, file:fileindex, data:plotdata.data}
     }); // end data.map
