@@ -211,10 +211,13 @@ type SDDPModel{T, M, S, X<:AbstractSense, TM}
 
     forwardstorage::ForwardPassData
 end
+
+# Define some short cuts to access members
 stagecut(m::SDDPModel, t, i) = m.stagecuts[t,i]
 subproblem(m::SDDPModel, t, i) = m.stage_problems[t,i]
 subproblems(m::SDDPModel, t) = m.stage_problems[t,:]
 stagedata(m::SDDPModel, t, i) = stagedata(subproblem(m,t,i))
+
 # ==============================================================================
 #   Terminsation status
 const CONVERGENCE_TERMINATION = :Convergenced
@@ -310,6 +313,7 @@ Parallel(bp::BackwardPass, fp::ConvergenceTest) = Parallel(fp, bp)
 Parallel(bp::BackwardPass) = Parallel(Serial(), bp)
 Parallel(fp::ConvergenceTest) = Parallel(fp, Serial())
 Parallel() = Parallel(Serial(), Serial())
+
 # ==============================================================================
 #   Solution
 type SolutionLog

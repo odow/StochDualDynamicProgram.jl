@@ -1,7 +1,7 @@
 function JuMP.solve{T, M, S, X, TM}(m::SDDPModel{T, M, S, X, TM};
     maximum_iterations = 1,
     convergence        = Convergence(1, 1, false, 0.95),
-    # forward_pass       = ForwardPass(1),
+    forward_scenarios  = 1,
     risk_measure       = Expectation(),
     cut_selection      = NoSelection(),
     parallel           = Parallel(),
@@ -17,22 +17,21 @@ function JuMP.solve{T, M, S, X, TM}(m::SDDPModel{T, M, S, X, TM};
 
     printheader()
 
-    N = 1
-
+    cutswrittentofile = 0
     while solution.iterations < maximum_iterations
         # resize storage for forward pass
-        resizeforwardstorage!(m, N)
+        resizeforwardstorage!(m, forward_scenarios)
 
         # forward pass
-        forwardpass!(m, N, isa(cut_selection, LevelOne))
+        forwardpass!(m, forward_scenarios, isa(cut_selection, LevelOne))
 
         # estimate bound
         setCI!(m, estimatebound(getobj(m), 0.95))
         log.ci_lower, log.ci_upper = m.confidence_interval
 
         # backward pass
-        backwardpass!(m, regularisation)
-        log.cuts += m.forwardstorage.n
+        backwardpass!(m, risk_measure, regularisation)
+        log.cuts += forward_scenarios
 
         # Calculate a new upper bound
         setbound!(m)
@@ -41,9 +40,14 @@ function JuMP.solve{T, M, S, X, TM}(m::SDDPModel{T, M, S, X, TM};
         # run cut selection
         cutselection!(m, cut_selection, solution.iterations)
 
-        solution.iterations += N
+        solution.iterations += forward_scenarios
         push!(solution.trace, copy(log))
         print(m, log)
+
+        if cut_output_file != nothing
+            writecuts!(m, cut_output_file, cutswrittentofile)
+            cutswrittentofile += forward_scenarios
+        end
     end
 end
 
@@ -54,7 +58,6 @@ function cutselection!(m::SDDPModel, cutselection::CutSelectionMethod, iteration
     end
 end
 cutselection!(m::SDDPModel, cutselection::NoSelection, iteration) = nothing
-
 
 function setriskmeasure!(m::SDDPModel, riskmeasure::RiskMeasure)
     for sp in m.stage_problems

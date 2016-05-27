@@ -106,7 +106,6 @@ function solve_newsvendor2()
             transition=Transition,
             initial_markov_state=1,
             value_to_go_bound = 1000,
-            cuts_filename="news_vendor.csv"
         ) do sp, stage, markov_state
 
         # ====================
@@ -139,7 +138,8 @@ function solve_newsvendor2()
     info("Don't check for duplicate cuts")
     @time solve(m,                # Solve the model using the SDDP algorithm
         convergence=Convergence(10000, 30),
-        maximum_iterations=30
+        maximum_iterations=30,
+        cut_output_file = "news_vendor.csv"
     )
 
     srand(11111)

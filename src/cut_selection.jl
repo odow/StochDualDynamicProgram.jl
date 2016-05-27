@@ -84,7 +84,7 @@ function addsamplepoint!{N}(sense::Sense, stagecut::StageCuts{N}, x::Vector{Floa
     end
     return
 end
-addsamplepoint!{T, M, S, X, TM}(m::SDDPModel{T, M, S, X, TM}, t::Int, i::Int) = addsamplepoint!(X, stagecut(m, t, i), getx(m, t, i))
+addsamplepoint!{T, M, S, X, TM}(m::SDDPModel{T, M, S, X, TM}, pass, t::Int, i::Int) = addsamplepoint!(X, stagecut(m, t, i), getx(m, pass, t))
 
 function rebuildcuts!(::NoSelection, sense, sp, stagecut)
     cuts_added = 0
@@ -102,6 +102,52 @@ function rebuildcuts!(::LevelOne, sense, sp, stagecut)
         cuts_added += 1
     end
     cuts_added
+end
+
+function writecuts!{T, M, S, X, TM}(m::SDDPModel{T, M, S, X, TM}, cut_output_file::ASCIIString, cutswrittentofile::Int)
+    open(cut_output_file, "a") do f
+        for t=1:(T-1)
+            for i=1:M
+                sc = stagecut(m, t, i)
+                for cut in sc.cuts[(cutswrittentofile+1):end]
+                    write(f, "$t, $i, $(cut.intercept)")
+                    for coef in cut.coefficients
+                        write(f, ", $(coef)")
+                    end
+                    write(f, "\n")
+                end
+            end
+        end
+    end
+end
+
+"""
+    loadcuts!(model, filename)
+
+This function loads cuts from the file at `filename` to the SDDPModel `model`.
+"""
+function loadcuts!{T, M, S, X, TM}(m::SDDPModel{T, M, S, X, TM}, filename::ASCIIString)
+    open(filename, "r") do f
+        while true
+            line = readline(f)
+            (line == nothing || line == "") && break
+            line = split(strip(line), ",")
+            @assert length(line) >= 3
+            t = parse(Int, line[1])
+            i = parse(Int, line[2])
+            theta = parse(Float64, line[3])
+            if length(line) > 4
+                xcoeff = map(x->parse(Float64, x), line[4:end])
+            else
+                xcoeff = [parse(Float64, line[4])]
+            end
+            cut = Cut(theta, xcoeff)
+            # add to cutselection storage
+            add_cut!(X, cut, stagecut(m, t, i))
+            # add to problem
+            addcut!(X, subproblem(m, t, i), cut)
+        end
+    end
 end
 
 # # This function recalculates dominance
@@ -179,34 +225,3 @@ end
 #     end
 # end
 #
-# """
-# This function loads cuts from a file.
-# """
-# function loadcuts!(m::SDDPModel, filename::ASCIIString)
-#     open(filename, "r") do f
-#         while true
-#             line = readline(f)
-#             (line == nothing || line == "") && break
-#             line = split(strip(line), ",")
-#             @assert length(line) >= 3
-#             stage = parse(Int, line[1])
-#             markov_state = parse(Int, line[2])
-#             sp = m.stage_problems[stage, markov_state]
-#             theta = parse(Float64, line[3])
-#
-#             @assert length(line) == (3 + length(stagedata(sp).state_vars))
-#             if length(line) > 4
-#                 xcoeff = map(x->parse(Float64, x), line[4:end])
-#             else
-#                 xcoeff = [parse(Float64, line[4])]
-#             end
-#             loadcut!(m.sense, sp, theta, xcoeff)
-#         end
-#     end
-# end
-# function loadcut!(::Type{Max}, sp::Model, theta::Float64, xcoeff::Vector{Float64})
-#     @constraint(sp, stagedata(sp).theta <= theta + sum{xcoeff[i] * v, (i, v) in enumerate(stagedata(sp).state_vars)})
-# end
-# function loadcut!(::Type{Min}, sp::Model, theta::Float64, xcoeff::Vector{Float64})
-#     @constraint(sp, stagedata(sp).theta >= theta + sum{xcoeff[i] * v, (i, v) in enumerate(stagedata(sp).state_vars)})
-# end

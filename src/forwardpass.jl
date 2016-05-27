@@ -20,7 +20,7 @@ function forwardpass!{T, M, S, X, TM}(m::SDDPModel{T, M, S, X, TM}, n::Int, stor
             saveobj!(m, pass, getstagevalue(sp))     # store objective
             savex!(m, sp, pass, t)                   # store state
             if storesamplepoints
-                addsamplepoint!(m, t, markov)        # store sample points for cutselection
+                addsamplepoint!(m, pass, t, markov)        # store sample points for cutselection
             end
             if t < T
                 pass_states!(m, sp, t)               # pass state values forward

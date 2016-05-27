@@ -1,46 +1,18 @@
 # ------------------------------------------------------------------------------
 #
-# Deprecate macro taken from
+# This file contains JuMP extension macros
 #
-# https://github.com/JuliaOpt/JuMP.jl/blob/1e0228abc6f9e968d5c03f21d914f713bd7d334a/src/deprecated.jl#L12-L28
-#
+# Much of the functionality in @state is shamelessly copied from
+# both the JuMP @variable
+
 #  Copyright 2016, Iain Dunning, Joey Huchette, Miles Lubin, and contributors
 #  This Source Code Form is subject to the terms of the Mozilla Public
 #  License, v. 2.0. If a copy of the MPL was not distributed with this
 #  file, You can obtain one at http://mozilla.org/MPL/2.0/.
-#############################################################################
-# JuMP
-# An algebraic modeling language for Julia
-# See http://github.com/JuliaOpt/JuMP.jl
-#############################################################################
-macro deprecate_macro(old,new)
-    oldmac = symbol(string("@",old))
-    newmac = symbol(string("@",new))
-    s = string(oldmac," is deprecated, use ", newmac, " instead.")
-    if VERSION > v"0.5-"
-        # backtraces are ok on 0.5
-        depwarn = :(Base.depwarn($s,$(quot(oldmac))))
-    else
-        # backtraces are junk on 0.4
-        depwarn = :(Base.warn_once($s))
-    end
-    @eval macro $old(args...)
-        return Expr(:block, $depwarn, Expr(:macrocall, $(quot(newmac)), [esc(x) for x in args]...))
-    end
-    eval(Expr(:export,oldmac))
-    return
-end
-# ------------------------------------------------------------------------------
-#
-# This file contains JuMP extension macros
-#
-# Much of the functionality in @state is shamelessly copied from
-# both the JuMP @variable and JuMPer @defUnc(https://github.com/IainNZ/JuMPeR.jl/blob/master/src/robustmacro.jl)
 
 import JuMP: assert_validmodel, validmodel, esc_nonconstant
 import JuMP: getloopedcode, buildrefsets, getname, registervar
 import JuMP: storecontainerdata, isdependent, JuMPContainerData, pushmeta!, JuMPContainer
-import JuMP: EMPTYSTRING
 using Base.Meta
 
 function State(m::Model, lower::Number, upper::Number, name)
@@ -55,15 +27,20 @@ function State0(m::Model, init, name, name0)
     return v0
 end
 
-@deprecate_macro defStateVar state
 """
-Define a new state variable in the stage problem.
+    @state(sp, stateleaving, stateentering)
+
+Define a new state variable in the subproblem `sp`.
+
+Arguments:
+    sp               the subproblem
+    stateleaving     any valid JuMP `@variable` syntax to define the value of the state variable at the end of the stage
+    stateentering    any valid JuMP `@variable` syntax to define the value of the state variable at the beginning of the stage
 
 Usage:
-
-    @state(m, 0<=x[i=1:3]<=1, x0==rand(3)[i])
-    @state(m, y<=1, y0==0.5)
-    @state(m, z, z0==0.5)
+    @state(sp, 0 <= x[i=1:3] <= 1, x0=rand(3)[i] )
+    @state(sp,      y        <= 1, y0=0.5        )
+    @state(sp,      z            , z0=0.5        )
 
 """
 macro state(args...)
@@ -168,7 +145,6 @@ macro state(args...)
 
     refcall2, idxvars2, idxsets2, idxpairs2, condition2 = buildrefsets(var2)
     clear_dependencies2(i) = (isdependent(idxvars2,idxsets2[i],i) ? nothing : idxsets2[i])
-    # code = :( $(refcall) = State($m, $lb, $ub, $x0_value, EMPTYSTRING, EMPTYSTRING) )
     code1 = :( $(refcall1) = State($m, $lb, $ub, $quotvarname) )
     code2 = :( $(refcall2) = State0($m, $x0_value, $quotvarname, $quotx0name) )
 
@@ -199,9 +175,21 @@ macro state(args...)
 
 end
 
-@deprecate_macro addScenarioConstraint scenarioconstraint
 """
-Add a scenario constraint (changes in RHS) to model
+    @scenarioconstraint(sp, [name,] rhs, constraint)
+
+Add a scenario constraint (changes in RHS vector) to the subproblem `sp`.
+
+Arguments:
+    sp             the subproblem
+    name           optional name for the scenarioconstraint
+    rhs            keyword argument `key=value` where `value` is a one-dimensional array containing the scenario realisations
+    constraint     any valid JuMP `@constraint` syntax that includes the keyword defined by `rhs`
+
+Usage:
+    @scenarioconstraint(sp, i=1:2, x + y <= i )
+    @scenarioconstraint(sp, i=1:2, x + y <= 3 * rand(2)[i] )
+    @scenarioconstraint(sp, mysc1, i=1:2, x + y <= 3 * rand(2)[i] )
 """
 macro scenarioconstraint(m, args...)
     if length(args) == 3
@@ -242,6 +230,22 @@ macro scenarioconstraint(m, args...)
         end
     end
 end
+
+
+"""
+    @scenarioconstraints(sp, rhs, begin
+        [name, ] constraint
+    end)
+
+The plural form of `@scenarioconstraint` similar to the JuMP macro `@constraints`.
+
+Usage:
+    @scenarioconstraints(sp, i=1:2, begin
+               x + y <= i
+               x + y <= 3 * rand(2)[i]
+        mysc1, x + y <= 3 * rand(2)[i]
+    end)
+"""
 macro scenarioconstraints(m, kw, c)
     @assert c.head == :block || error("Invalid syntax for @scenarioconstraints")
     code = quote end
@@ -270,7 +274,18 @@ macro scenarioconstraints(m, kw, c)
 end
 
 
-@deprecate_macro setStageProfit stageprofit
+"""
+    @stageprofit(sp, ex)
+
+Define the stage profit for subproblem `sp`.
+
+Arguments:
+    sp    the subproblem
+    ex    a JuMP expression for the costs accrued in the subproblem
+
+Usage:
+    @stageprofit(sp, x + y)
+"""
 macro stageprofit(m, ex)
     m = esc(m)
     quote

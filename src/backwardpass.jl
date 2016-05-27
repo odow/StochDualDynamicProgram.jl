@@ -1,8 +1,9 @@
-function backwardpass!{T, M, S, X, TM}(m::SDDPModel{T, M, S, X, TM}, regularisation::Regularisation=NoRegularisation())
+function backwardpass!{T, M, S, X, TM}(m::SDDPModel{T, M, S, X, TM}, riskmeasure::RiskMeasure, regularisation::Regularisation=NoRegularisation())
     for pass = 1:getn(m)
         for t=(T-1):-1:1
             setrhs!(m, pass, t)
             solveall!(m, t+1, regularisation)
+            reweightscenarios!(m, t, getmarkov(m, pass, t), riskmeasure.beta, riskmeasure.lambda)
             addcut!(m, pass, t, getmarkov(m, pass, t))
         end
     end
@@ -12,13 +13,14 @@ function addcut!{T, M, S, X, TM}(m::SDDPModel{T, M, S, X, TM}, pass::Int, t::Int
     # calculate coefficients
     xbar = getx(m, pass, t)
     cut = Cut(length(xbar))
+    sd1 = stagedata(m, t, i)
     for j=1:M
         for s=1:S
             sd = stagedata(m, t+1, j)
-            cut.intercept += sd.weightings_matrix[j,s] * sd.objective_values[s]
+            cut.intercept += sd1.weightings_matrix[j,s] * sd.objective_values[s]
             for v = 1:length(xbar)
-                cut.intercept -= sd.weightings_matrix[j,s] * sd.dual_values[v][s] * xbar[v]
-                cut.coefficients[v] += sd.weightings_matrix[j,s] * sd.dual_values[v][s]
+                cut.intercept -= sd1.weightings_matrix[j,s] * sd.dual_values[v][s] * xbar[v]
+                cut.coefficients[v] += sd1.weightings_matrix[j,s] * sd.dual_values[v][s]
             end
         end
     end
