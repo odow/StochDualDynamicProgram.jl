@@ -186,16 +186,16 @@ function add_cut!(m::SDDPModel, stage::Int, markov_state::Int, cut_selection::Bo
     return
 end
 
-function add_cut!(::Min, sp::Model, rhs::JuMP.GenericAffExpr, method::CutSelectionMethod=NoSelection())
+function add_cut!(::Type{Min}, sp::Model, rhs::JuMP.GenericAffExpr, method::CutSelectionMethod=NoSelection())
     @constraint(sp, stagedata(sp).theta >= rhs)
 end
-function add_cut!(::Max, sp::Model, rhs::JuMP.GenericAffExpr, method::CutSelectionMethod=NoSelection())
+function add_cut!(::Type{Max}, sp::Model, rhs::JuMP.GenericAffExpr, method::CutSelectionMethod=NoSelection())
     @constraint(sp, stagedata(sp).theta <= rhs)
 end
-# function add_cut!(::Min, sp::Model, rhs::JuMP.GenericAffExpr, method::LazyConstraint)
+# function add_cut!(::Type{Min}, sp::Model, rhs::JuMP.GenericAffExpr, method::LazyConstraint)
 #     @addLazyConstraint(sp, stagedata(sp).theta >= rhs)
 # end
-# function add_cut!(::Max, sp::Model, rhs::JuMP.GenericAffExpr, method::LazyConstraint)
+# function add_cut!(::Type{Max}, sp::Model, rhs::JuMP.GenericAffExpr, method::LazyConstraint)
 #     @addLazyConstraint(sp, stagedata(sp).theta <= rhs)
 # end
 # function corners(cb)
@@ -222,7 +222,7 @@ end
 # addLazyCallback(m, corners)
 
 function aggregateterms(sp::Model, ex::JuMP.GenericAffExpr)
-    data = stagedata(sp)::StageData
+    data = stagedata(sp)::StageDataExt
     y = zeros(length(data.state_vars))
     for i=1:length(ex.vars)
         for j in 1:length(y)
@@ -367,7 +367,7 @@ Solve a StageProblem.
     solve!(sp::Model)
 """
 function solve!(sp::Model, scenario::Int=0)
-    @assert is_sp(sp)
+    @assert issubproblem(sp)
 
     status = solve(sp)
     # Catch case where we aren't optimal
@@ -403,22 +403,19 @@ function load_scenario!(sp::Model, scenario::Int)
     end
 end
 
-# Some helper functions
-JuMP.getlowerbound(c::ConstraintRef) = c.m.linconstr[c.idx].lb
-JuMP.getupperbound(c::ConstraintRef) = c.m.linconstr[c.idx].ub
 
 """
 This function gets the appropriate simulated bound closest to the outer bound
 """
-getCloseCIBound(::Min, m::SDDPModel) = m.confidence_interval[1]
-getCloseCIBound(::Max, m::SDDPModel) = m.confidence_interval[2]
+getCloseCIBound(::Type{Min}, m::SDDPModel) = m.confidence_interval[1]
+getCloseCIBound(::Type{Max}, m::SDDPModel) = m.confidence_interval[2]
 getCloseCIBound(m::SDDPModel) = getCloseCIBound(m.sense, m)
 
 """
 And vice versa
 """
-getFarCIBound(::Min, m::SDDPModel) = m.confidence_interval[2]
-getFarCIBound(::Max, m::SDDPModel) = m.confidence_interval[1]
+getFarCIBound(::Type{Min}, m::SDDPModel) = m.confidence_interval[2]
+getFarCIBound(::Type{Max}, m::SDDPModel) = m.confidence_interval[1]
 getFarCIBound(m::SDDPModel) = getFarCIBound(m.sense, m)
 
 """
@@ -440,8 +437,8 @@ Actual tolerance of the solution
 
 Defined as [Outer bound - closest simulated bound]
 """
-atol(::Min, m::SDDPModel) = getCloseCIBound(m) - getBound(m)
-atol(::Max, m::SDDPModel) = getBound(m) - getCloseCIBound(m)
+atol(::Type{Min}, m::SDDPModel) = getCloseCIBound(m) - getBound(m)
+atol(::Type{Max}, m::SDDPModel) = getBound(m) - getCloseCIBound(m)
 atol(m::SDDPModel) = atol(m.sense, m)
 
 """
@@ -457,7 +454,7 @@ end
 Get the value of the current stage (i.e. not including the value to go)
 """
 function get_true_value(sp::Model)
-    @assert is_sp(sp)
+    @assert issubproblem(sp)
     if stagedata(sp).theta != nothing
         return (getobjectivevalue(sp) - getvalue(stagedata(sp).theta))::Float64
     else
@@ -492,12 +489,12 @@ function set_valid_bound!(m::SDDPModel)
     return
 end
 
-function decide_set_bound!(::Min, m::SDDPModel, obj)
+function decide_set_bound!(::Type{Min}, m::SDDPModel, obj)
     if obj > getBound(m)
         setBound!(m, obj)
     end
 end
-function decide_set_bound!(::Max, m::SDDPModel, obj)
+function decide_set_bound!(::Type{Max}, m::SDDPModel, obj)
     if obj < getBound(m)
         setBound!(m, obj)
     end
