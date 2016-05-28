@@ -36,6 +36,8 @@ getn(m::SDDPModel) = m.forwardstorage.n
 getmarkov(m::SDDPModel, pass, t) = m.forwardstorage.W[pass][t]
 getx(m::SDDPModel, pass, t, idx) = m.forwardstorage.x[pass][idx,t]
 getx(m::SDDPModel, pass, t) = m.forwardstorage.x[pass][:,t]
+getobj(m::SDDPModel) = m.forwardstorage.obj
+
 function setn!(m::SDDPModel, n::Int)
     m.forwardstorage.n = n
 end
@@ -79,6 +81,20 @@ function Base.copy{T, M, S, X, TM}(m::SDDPModel{T, M, S, X, TM})
         m.valuetogobound,
         m.forwardstorage
     )
+end
+
+"""
+    getstagevalue(subproblem)
+
+This function gets the stage costs accrued in the current stage (i.e. the objective less the cost-to-go).
+"""
+function getstagevalue(sp::Model)
+    @assert issubproblem(sp)
+    if stagedata(sp).theta != nothing
+        return (getobjectivevalue(sp) - getvalue(stagedata(sp).theta))::Float64
+    else
+        return getobjectivevalue(sp)::Float64
+    end
 end
 
 """
@@ -362,3 +378,50 @@ function setbound!(::Type{Max}, m::SDDPModel, obj)
     end
 end
 setbound!{T, M, S, X, TM}(m::SDDPModel{T, M, S, X, TM}, obj) = setbound!(X, m, obj)
+
+"""
+    setbound!(SDDPModel)
+
+Calculate the upper bound of the first stage problem
+"""
+function setbound!{T, M, S, X, TM}(m::SDDPModel{T, M, S, X, TM})
+    # Initialise
+    obj = 0.0
+    if m.initial_markov_state == 0
+        # Lets average over all first stage probles (markov states x scenarios)
+        for i=1:M
+            sp = subproblem(m, 1, i)        # get subproblem
+            for s=1:S
+                load_scenario!(sp, s)   # realise scenario
+                forwardsolve!(sp)          # solve
+                obj += transitionprobability(m, 1, m.initial_markov_state, i) * m.scenario_probability[s] * getobjectivevalue(sp)
+            end
+        end
+    else
+        # Lets just  average over the scenarios in the initial markov state
+        sp = subproblem(m, 1, m.initial_markov_state) # get subproblem
+        for s=1:S
+            load_scenario!(sp, s)                  # load scenario
+            forwardsolve!(sp)                         # solve
+            obj += m.scenario_probability[s] * getobjectivevalue(sp)
+        end
+    end
+    setbound!(m, obj)    # Update the bound
+end
+
+function estimatebound(obj::Vector{Float64}, conflevel)
+    if length(obj) > 5
+        return confidenceinterval(obj, conflevel)
+    else
+        return (mean(obj), mean(obj))
+    end
+end
+
+# Construct a confidence interval
+function confidenceinterval(x, conf_level=0.95)
+    tstar = quantile(TDist(length(x)-1), 1 - (1 - conf_level)/2)
+    SE = std(x)/sqrt(length(x))
+    lo, hi = mean(x) + [-1, 1] * tstar * SE
+    return (lo, hi)
+end
+setconfidenceinterval!{T<:Real}(m::SDDPModel, v::Tuple{T,T}) = (m.confidence_interval = v)

@@ -18,6 +18,19 @@ function Base.copy{N}(s::StageCuts{N})
     StageCuts(s.n, deepcopy(s.samplepoints), deepcopy(c.cuts), copy(s.nondominated), copy(s.activecut))
 end
 
+"""
+    cutselection!(SDDPModel, CutSelectionMethod, iteration)
+
+If `iteration` mod the CutSelectionMethod.frequency is zero, then the subproblems are rebuilt using the CutSelectionMethod.
+"""
+function cutselection!(m::SDDPModel, cutselection::CutSelectionMethod, iteration)
+    if mod(iteration, cutselection.frequency) == 0
+        info("Running cut selection")
+        rebuild_stageproblems!(m, cutselection)
+    end
+end
+cutselection!(m::SDDPModel, cutselection::NoSelection, iteration) = nothing
+
 # true if y0 is dominated by y1
 is_dominated(::Type{Min}, y0::Float64, y1::Float64) = y0 < y1
 is_dominated(::Type{Max}, y0::Float64, y1::Float64) = y0 > y1
@@ -176,11 +189,6 @@ end
 #     rebuild_stageproblems!(NoSelection(), m)
 # end
 # rebuild_stageproblems!(m::SDDPModel) = rebuild_stageproblems!(NoSelection(), m)
-#
-# function add_cut!(sense, sp::Model, cut::Cut, method::CutSelectionMethod=NoSelection())
-#     @expression(sp, rhs, cut.intercept + sum{coeff * stagedata(sp).state_vars[i], (i, coeff) in enumerate(cut.coefficients)})
-#     add_cut!(sense, sp, rhs, method)
-# end
 #
 # # Run the exact method for cut selection
 # function deterministic_prune!{N}(sense::Sense, bound::Real, sp::Model, sc::StageCuts{N})

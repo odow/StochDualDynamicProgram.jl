@@ -33,11 +33,13 @@ end
 Define a new state variable in the subproblem `sp`.
 
 Arguments:
+
     sp               the subproblem
     stateleaving     any valid JuMP `@variable` syntax to define the value of the state variable at the end of the stage
     stateentering    any valid JuMP `@variable` syntax to define the value of the state variable at the beginning of the stage
 
 Usage:
+
     @state(sp, 0 <= x[i=1:3] <= 1, x0=rand(3)[i] )
     @state(sp,      y        <= 1, y0=0.5        )
     @state(sp,      z            , z0=0.5        )
@@ -181,12 +183,14 @@ end
 Add a scenario constraint (changes in RHS vector) to the subproblem `sp`.
 
 Arguments:
+
     sp             the subproblem
     name           optional name for the scenarioconstraint
     rhs            keyword argument `key=value` where `value` is a one-dimensional array containing the scenario realisations
     constraint     any valid JuMP `@constraint` syntax that includes the keyword defined by `rhs`
 
 Usage:
+
     @scenarioconstraint(sp, i=1:2, x + y <= i )
     @scenarioconstraint(sp, i=1:2, x + y <= 3 * rand(2)[i] )
     @scenarioconstraint(sp, mysc1, i=1:2, x + y <= 3 * rand(2)[i] )
@@ -240,6 +244,7 @@ end
 The plural form of `@scenarioconstraint` similar to the JuMP macro `@constraints`.
 
 Usage:
+
     @scenarioconstraints(sp, i=1:2, begin
                x + y <= i
                x + y <= 3 * rand(2)[i]
@@ -280,10 +285,12 @@ end
 Define the stage profit for subproblem `sp`.
 
 Arguments:
+
     sp    the subproblem
     ex    a JuMP expression for the costs accrued in the subproblem
 
 Usage:
+
     @stageprofit(sp, x + y)
 """
 macro stageprofit(m, ex)

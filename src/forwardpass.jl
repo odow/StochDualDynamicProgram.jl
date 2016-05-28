@@ -4,31 +4,42 @@
 Perform n forward passes on the SDDPModel
 """
 function forwardpass!{T, M, S, X, TM}(m::SDDPModel{T, M, S, X, TM}, n::Int, storesamplepoints=false)
+    resizeforwardstorage!(m, n)                      # resize storage for forward pass
     markov = 0                                       # initialise
-    setn!(m, n)                                      # store number of forward pass
     for pass = 1:n                                   # for n passes
         markov = m.initial_markov_state              # initial markov state
-        if m.initial_markov_state==0
+        if m.initial_markov_state==0                 # no initial state specified
             markov = transition(m, 1, markov)        # transition immediately
         end
         m.forwardstorage.obj[pass] = 0               # reset objective
-        for t=1:T
+        for t=1:T                                    # for each stage
             savemarkov!(m, pass, t, markov)          # store markov state
             sp = subproblem(m, t, markov)            # get subproblem
             load_scenario!(m, sp)                    # realise scenario
             forwardsolve!(sp)                        # solve
             saveobj!(m, pass, getstagevalue(sp))     # store objective
             savex!(m, sp, pass, t)                   # store state
-            if storesamplepoints
-                addsamplepoint!(m, pass, t, markov)        # store sample points for cutselection
+            if storesamplepoints                     # we want to do LevelOne cutselection later
+                addsamplepoint!(m, pass, t, markov)  # store sample points for cutselection
             end
-            if t < T
+            if t < T                                 # don't do this for the last stage
                 pass_states!(m, sp, t)               # pass state values forward
                 markov = transition(m, t, markov)    # transition
             end
         end
     end
 end
+
+function resizeforwardstorage!{T, M, S, X, TM}(m::SDDPModel{T, M, S, X, TM}, n::Int)
+    resize!(m.forwardstorage.obj, n)
+    nx = length(stagedata(m, 1,1).state_vars)
+    for i=(m.forwardstorage.n+1):n
+        push!(m.forwardstorage.x, zeros(nx, T))
+        push!(m.forwardstorage.W, zeros(Int, T))
+    end
+    setn!(m, n)
+end
+
 
 # solve the subproblem in a forward pass
 function forwardsolve!(sp::Model)

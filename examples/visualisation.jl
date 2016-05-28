@@ -1,3 +1,4 @@
+# This example demonstates the D3.js visualisation
 using JuMP, StochDualDynamicProgram
 
 # Names of the reservoirs
@@ -5,7 +6,6 @@ RESERVOIRS = [:upper, :lower]
 
 # Knots of the turbine response function
 A = [(50, 55), (60, 65), (70, 70)]
-
 
 # Prices[stage, markov state]
 Price = [
@@ -60,35 +60,26 @@ m = SDDPModel(stages=3, markov_states=2, scenarios=1, transition=Transition, val
         0 <= dispatch[reservoir=RESERVOIRS, level=1:n] <= 1
     end)
 
-    # ------------------------------------------------------------------
-    # Conservation constraints
     @constraints(sp, begin
+        # ------------------------------------------------------------------
+        # Conservation constraints
         reservoir[:upper] == reservoir0[:upper] - (outflow[:upper] + spill[:upper])
 
         reservoir[:lower] == reservoir0[:lower] +
             (outflow[:upper] + spill[:upper]) -
             (outflow[:lower] + spill[:lower])
+
+        # Total quantity generated
+        generation_quantity == sum{A[level][2] * dispatch[reservoir,level], reservoir=RESERVOIRS, level=1:n}
+
+        # ------------------------------------------------------------------
+        # Reservoir constraints
+        # Flow out
+        flowout[reservoir=RESERVOIRS], outflow[reservoir] == sum{A[level][1] * dispatch[reservoir, level], level=1:n}
+
+        # Dispatch combination of levels
+        dispatched[reservoir=RESERVOIRS], sum{dispatch[reservoir, level], level=1:n} <= 1
     end)
-
-    # ------------------------------------------------------------------
-    # Reservoir constraints
-    for reservoir in RESERVOIRS
-        @constraints(sp, begin
-            # Flow out
-            outflow[reservoir] == sum{
-                A[level][1] * dispatch[reservoir, level],
-                level=1:n}
-
-            # Dispatch combination of levels
-            sum{dispatch[reservoir, level], level=1:n} <= 1
-        end)
-    end
-
-    # Total quantity generated
-    @constraint(sp, generation_quantity == sum{
-        A[level][2] * dispatch[reservoir,level],
-        reservoir=RESERVOIRS, level=1:n}
-    )
 
     # ------------------------------------------------------------------
     #   Objective Function
@@ -102,10 +93,7 @@ end
 
 results = simulate(m,   # Simulate the policy
     100,               # number of monte carlo realisations
-    [:reservoir,  # variables to return
-    :dispatch,
-    :outflow,
-    :spill]
+    [:reservoir]  # variables to return
     )
 
 @visualise(results, (stage, replication), begin

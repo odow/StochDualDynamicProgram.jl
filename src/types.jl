@@ -11,11 +11,15 @@ typealias Sense Union{Type{Max}, Type{Min}}
     Cut{N}
 
 A single cut benders cut for N state variables. Of the form
+
     theta >= intercept + dot(coefficients, x)
 
 Parameters:
+
     N                the number of state variables (length of coefficients)
+
 Fields:
+
     intercept        intercept of cut
     coefficients     vector of coefficients
 """
@@ -32,8 +36,11 @@ Cut(N) = Cut{N}(0., zeros(N))
 A type to hold all the cuts in a single subproblem with dominance.
 
 Parameters:
-    N                the number of state variables (length of coefficients)
+
+    N                  the number of state variables (length of coefficients)
+
 Fields:
+
     n                  the number of samplepoints
     cuts               a vector of all the discovered cuts
     samplepoints       the sample points visited by the algorithm
@@ -58,6 +65,7 @@ end
 JuMP extension structure for SDDPModel subproblems.
 
 Fields:
+
     state_vars                 Vector of state variables in the subproblem
     dual_constraints           Vector of dummy constraints to get incoming duals
     theta                      Cost/Value to go variable
@@ -142,6 +150,7 @@ StageDataExt(scenarios::Int=1) = StageDataExt(
 Storage for the forward pass of the algorithm
 
 Fields:
+
     n       number of realisations in forward pass
     x       array of states visited x[state, stage, realisation]
     obj     vector of objective values obj[realisation]
@@ -166,12 +175,15 @@ ForwardPassData() = ForwardPassData(
 The SDDP model object.
 
 Parameters:
+
     T                          The number of stages in the problems
     M                          The number of markov states in the model
     S                          The number of scenarios in the model
     X                          The sense (max/min) of the model
     TM                         The type of markov transition matrix
+
 Fields:
+
     stage_problems             Array of JuMP models for each subproblem (stage x markov state)
     transition                 The transition matrix
     initial_markov_state       The initial markov state
@@ -236,22 +248,6 @@ end
 
 NestedCVar(;beta=1., lambda=1.) = NestedCVar(beta, lambda)
 Expectation() = NestedCVar(1., 1.)
-
-# ==============================================================================
-#   Convergence
-type Convergence
-    n
-    frequency::Int
-    terminate::Bool
-    quantile::Float64
-    variancereduction::Bool
-    function Convergence(simulations, frequency::Int, terminate::Bool=false, quantile::Float64=0.95, variancereduction::Bool=true)
-        @assert quantile >= 0 && quantile <= 1.
-        new(simulations, frequency, terminate, quantile, variancereduction)
-    end
-end
-
-Convergence(;simulations=1, frequency=1, terminate=false, quantile=0.95, variancereduction=true) = Convergence(simulations, frequency, terminate, quantile, variancereduction)
 
 # ==============================================================================
 #   Regularisation

@@ -59,27 +59,27 @@ facts("@state") do
 end
 
 facts("Hydro Example") do
-    include("../examples/hydro.jl")
-
     context("Version One") do
-        results = solve_hydro()
+        include("../examples/hydro.jl")
         @fact mean(results[:Objective]) --> roughly(904, 20)
     end
 
     context("Version Two") do
-        results = solve_hydro2()
+        include("../examples/hydro2.jl")
         @fact mean(results[:Objective])--> roughly(-1450, 20)
     end
 
 end
 
 facts("Newsvendor Example") do
-    include("../examples/newsvendor.jl")
-    warn("Estimating the CI of bound is fraught")
-    results = solve_newsvendor()
+
+    context("Risk Aversion") do
+        warn("Estimating the CI of bound is fraught")
+        include("../examples/newsvendor.jl")
+    end
 
     context("Fancy improvements of simulated bound") do
-        results = solve_newsvendor2()
+        include("../examples/newsvendor2.jl")
     end
 end
 

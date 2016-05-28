@@ -1,3 +1,11 @@
+# Set the risk measure for all the subproblems
+function setriskmeasure!(m::SDDPModel, riskmeasure::RiskMeasure)
+    for sp in m.stage_problems
+        stagedata(sp).beta_quantile = riskmeasure.beta
+        stagedata(sp).lambda_weight = riskmeasure.lambda
+    end
+end
+
 """
     reweightscenarios!(m, t, i, beta, lambda)
 
