@@ -84,15 +84,17 @@ MonteCarloEstimator(;
                                 )
 
 """
+    getscenarios(forwardscenarios, iteration)
 
-Fields:
-
-    delta       change in lower bound between iterations
-    n           number of iterations with change in lower bound less than delta before terminating
+This function gets the number of scenarios to sample in iteration `iteration`.
 """
-type Bound
-    delta::Float64
-    n::Int
+getscenarios(forwardscenarios::Int, iteration::Int) = forwardscenarios
+function getscenarios(forwardscenarios::Vector, iteration::Int)
+    if iteration < length(forwardscenarios)
+        return forwardscenarios[iteration]
+    else
+        return forwardscenarios[end]
+    end
 end
 
 """
@@ -102,7 +104,7 @@ Solve the SDDPModel
 """
 function JuMP.solve{T, M, S, X, TM}(m::SDDPModel{T, M, S, X, TM};
     maximum_iterations = 1,
-    convergence        = Convergence(1, 1, false, 0.95),
+    convergence        = MonteCarloEstimator(),
     forward_scenarios  = 1,
     risk_measure       = Expectation(),
     cut_selection      = NoSelection(),
@@ -121,14 +123,17 @@ function JuMP.solve{T, M, S, X, TM}(m::SDDPModel{T, M, S, X, TM};
 
     cutswrittentofile = 0
     while solution.iterations < maximum_iterations
+        # number of scenarios to sample on forward pass
+        nscenarios = getscenarios(forward_scenarios, solution.iterations+1)
+
         # forward pass
-        forwardpass!(log, m, forward_scenarios, isa(cut_selection, LevelOne))
+        forwardpass!(log, m, nscenarios, isa(cut_selection, LevelOne))
 
         # estimate bound
         setconfidenceinterval!(log, m, 0.95)
 
         # backward pass
-        backwardpass!(log, m, forward_scenarios, risk_measure, regularisation)
+        backwardpass!(log, m, nscenarios, risk_measure, regularisation)
 
         # Calculate a new upper bound
         setbound!(log, m)
@@ -139,7 +144,7 @@ function JuMP.solve{T, M, S, X, TM}(m::SDDPModel{T, M, S, X, TM};
         if cut_output_file != nothing
             # Write cuts to file if appropriate
             writecuts!(m, cut_output_file, cutswrittentofile)
-            cutswrittentofile += forward_scenarios
+            cutswrittentofile += nscenarios
         end
 
         # print solution to user
@@ -161,10 +166,10 @@ function forwardpass!(log::SolutionLog, m::SDDPModel, n, storesamplepoints)
 end
 
 # a wrapper for backward pass timings
-function backwardpass!(log::SolutionLog, m::SDDPModel, forward_scenarios, risk_measure, regularisation)
+function backwardpass!(log::SolutionLog, m::SDDPModel, nscenarios, risk_measure, regularisation)
     tic()
     backwardpass!(m, risk_measure, regularisation)
-    log.cuts += forward_scenarios
+    log.cuts += nscenarios
     log.time_backwards += toq()
     return
 end
