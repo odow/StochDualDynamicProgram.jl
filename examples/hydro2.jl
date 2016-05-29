@@ -101,7 +101,13 @@ m = SDDPModel(sense=:Min, stages=3, markov_states=2, transition=Transition, valu
 end
 
 solve(m,                # Solve the model using the SDDP algorithm
-    convergence=Convergence(1000, 10),
+    convergence=MonteCarloEstimator(
+        frequency  = 10,
+        minsamples = 5,
+        maxsamples = 100,
+        step       = 10,
+        terminate  = false
+    ),
     maximum_iterations=50
 )
 

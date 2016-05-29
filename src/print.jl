@@ -13,15 +13,18 @@ function getTrace(sol::Solution, sym::Symbol)
     return [s.(sym) for s in sol.trace]
 end
 
-function Base.print(m::SDDPModel, l::SolutionLog, filename::ASCIIString)
+const str_montecarlo = "{1:>9s} {2:>9s} | {3:>9s} {4:>6.2f} | {5:6s} {6:6s} | {7:6s} {8:6s} | {9:5s}\n"
+const str_forwardonly = "     {1:>9s}      | {3:>9s}        | {5:6s} {6:6s} | {7:6s} {8:6s} | {9:5s}\n"
+
+function Base.print(m::SDDPModel, l::SolutionLog, filename::ASCIIString, ismontecarlo::Bool)
     open(filename, "a") do f
         write(f, textify(l))
     end
-    print(m, l)
+    print(m, l, ismontecarlo)
 end
-Base.print(m::SDDPModel, l::SolutionLog, filename::Void) = print(m, l)
-function Base.print(m::SDDPModel, l::SolutionLog)
-    printfmt("{1:>9s} {2:>9s} | {3:>9s} {4:>6.2f} | {5:6s} {6:6s} | {7:6s} {8:6s} | {9:5s}\n",
+Base.print(m::SDDPModel, l::SolutionLog, filename::Void, ismontecarlo) = print(m, l, ismontecarlo)
+function Base.print(m::SDDPModel, l::SolutionLog, ismontecarlo::Bool=false)
+    printfmt(ismontecarlo?str_montecarlo:str_forwardonly,
         humanize(l.ci_lower, "7.3f"), humanize(l.ci_upper, "7.3f"), humanize(l.bound, "7.3f"), 100*rtol(m), humanize(l.cuts), humanize(l.time_backwards), humanize(l.simulations), humanize(l.time_forwards), humanize(l.time_cutselection, "6.2f"))
 end
 
@@ -45,7 +48,7 @@ end
 
 function printheader()
     printfmt("{1:38s} | {2:13s} | {3:13s} |   Cut\n", "                  Objective", "  Backward", "   Forward")
-    printfmt("{1:19s} | {2:9s} {3:6s} | {4:6s} {5:6s} | {6:6s} {7:6s} |  Time\n", "      Expected", "  Bound", " % Gap", " Iters", " Time", " Iters", " Time")
+    printfmt("{1:19s} | {2:9s} {3:6s} | {4:6s} {5:6s} | {6:6s} {7:6s} |  Time\n", "      Expected", "  Bound", " % Gap", " Cuts ", " Time", " Sims ", " Time")
 end
 
 #----------------------------------------------------------------------

@@ -410,7 +410,7 @@ function setbound!{T, M, S, X, TM}(m::SDDPModel{T, M, S, X, TM})
 end
 
 function estimatebound(obj::Vector{Float64}, conflevel)
-    if length(obj) > 5
+    if length(obj) > 1
         return confidenceinterval(obj, conflevel)
     else
         return (mean(obj), mean(obj))

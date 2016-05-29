@@ -1,6 +1,7 @@
 julia 0.4
 JuMP 0.13
 Clp
+Distributions
 Formatting
 JSON
 StatsBase

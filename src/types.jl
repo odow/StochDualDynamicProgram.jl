@@ -231,12 +231,6 @@ subproblems(m::SDDPModel, t) = m.stage_problems[t,:]
 stagedata(m::SDDPModel, t, i) = stagedata(subproblem(m,t,i))
 
 # ==============================================================================
-#   Terminsation status
-const CONVERGENCE_TERMINATION = :Convergenced
-const ITERATION_TERMINATION = :MaximumIterations
-const UNKNOWN_TERMINATION = :Unknown
-
-# ==============================================================================
 #   Risk Measures
 abstract RiskMeasure
 
@@ -311,6 +305,13 @@ Parallel(fp::ConvergenceTest) = Parallel(fp, Serial())
 Parallel() = Parallel(Serial(), Serial())
 
 # ==============================================================================
+#   Terminsation status
+const BOUND_TERMINATION     = :BoundConvergence
+const POLICY_TERMINATION    = :PolicyConverence
+const ITERATION_TERMINATION = :MaximumIterations
+const UNKNOWN_TERMINATION   = :Unknown
+
+# ==============================================================================
 #   Solution
 type SolutionLog
     ci_lower::Float64
@@ -330,6 +331,7 @@ type Solution
     iterations::Int
     trace::Vector{SolutionLog}
 end
+
 Solution() = Solution(UNKNOWN_TERMINATION, 0, SolutionLog[])
 
 setStatus!(s::Solution, sym::Symbol) = (s.status = sym)

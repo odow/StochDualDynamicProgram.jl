@@ -99,15 +99,23 @@ end
 
 m2 = copy(m)
 
+mcestimator = MonteCarloEstimator(
+    frequency  = 1,
+    minsamples = 5,
+    maxsamples = 100,
+    step       = 10
+)
+
 info("Sanity check. Perform more iterations than needed to check bounds do not cross.")
 @time solve(m,
-    convergence=Convergence(1000, 10),
-    maximum_iterations=20
+    convergence=mcestimator,
+    bound_convergence = BoundConvergence(after=5, tol=1e-10),
+    maximum_iterations=50
 )
 
 info("Cut selection comparison.")
 @time solve(m2,
-    convergence=Convergence(1000, 10),
+    convergence=mcestimator,
     maximum_iterations=20,
     cut_selection = LevelOne(5)
 )

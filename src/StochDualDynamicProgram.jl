@@ -5,18 +5,25 @@ module StochDualDynamicProgram
 importall JuMP
 using MathProgBase, Clp
 using Formatting
-using StatsBase
+using Distributions, StatsBase
 
 import Base.dot
 
 export SDDPModel,
-    @state, @scenarioconstraint, @scenarioconstraints, @stageprofit,
-    @visualise,
-    simulate, loadcuts!,
+    # macros
+    @state, @scenarioconstraint, @scenarioconstraints, @stageprofit,@visualise,
+    # Model functions
+    simulate,
+    loadcuts!,
+    # Cut selection options
     LevelOne, Deterministic, NoSelection,
+    # Parallel options
     ConvergenceTest, BackwardPass, Parallel,
-    NestedCVar,
-    Convergence,
+    # Risk averse options
+    NestedCVar, Expectation,
+    # Termination options
+    MonteCarloEstimator, BoundConvergence,
+    # Regularisation options
     NoRegularisation, LinearRegularisation, QuadraticRegularisation
 
 include("types.jl")
@@ -28,23 +35,6 @@ include("backwardpass.jl")
 include("cut_selection.jl")
 include("print.jl")
 include("simulate.jl")
-
-
-# ==============================================================================
-#   Convergence
-type Convergence
-    n
-    frequency::Int
-    terminate::Bool
-    quantile::Float64
-    variancereduction::Bool
-    function Convergence(simulations, frequency::Int, terminate::Bool=false, quantile::Float64=0.95, variancereduction::Bool=true)
-        @assert quantile >= 0 && quantile <= 1.
-        new(simulations, frequency, terminate, quantile, variancereduction)
-    end
-end
-
-Convergence(;simulations=1, frequency=1, terminate=false, quantile=0.95, variancereduction=true) = Convergence(simulations, frequency, terminate, quantile, variancereduction)
 
 """
     MonteCarloEstimator
@@ -84,18 +74,21 @@ MonteCarloEstimator(;
                                 )
 
 """
-    getscenarios(forwardscenarios, iteration)
+    BoundConvergence
 
-This function gets the number of scenarios to sample in iteration `iteration`.
+Used to control the termination of the algorithm if the bound stops changing.
+
+Fields:
+
+    after
+    tol
 """
-getscenarios(forwardscenarios::Int, iteration::Int) = forwardscenarios
-function getscenarios(forwardscenarios::Vector, iteration::Int)
-    if iteration < length(forwardscenarios)
-        return forwardscenarios[iteration]
-    else
-        return forwardscenarios[end]
-    end
+type BoundConvergence
+    after::Int
+    tol::Float64
+    n::Int
 end
+BoundConvergence(;after=0, tol=1e-6) = BoundConvergence(after, tol, 0)
 
 """
     solve(m[; kwargs...])
@@ -105,6 +98,7 @@ Solve the SDDPModel
 function JuMP.solve{T, M, S, X, TM}(m::SDDPModel{T, M, S, X, TM};
     maximum_iterations = 1,
     convergence        = MonteCarloEstimator(),
+    bound_convergence  = BoundConvergence(),
     forward_scenarios  = 1,
     risk_measure       = Expectation(),
     cut_selection      = NoSelection(),
@@ -122,38 +116,129 @@ function JuMP.solve{T, M, S, X, TM}(m::SDDPModel{T, M, S, X, TM};
     printheader()
 
     cutswrittentofile = 0
-    while solution.iterations < maximum_iterations
+    notconverged = true
+    while notconverged
+        # Starting a new iteration
+        solution.iterations += 1
+
         # number of scenarios to sample on forward pass
-        nscenarios = getscenarios(forward_scenarios, solution.iterations+1)
+        nscenarios = getscenarios(forward_scenarios, solution.iterations)
 
         # forward pass
         forwardpass!(log, m, nscenarios, isa(cut_selection, LevelOne))
 
         # estimate bound
-        setconfidenceinterval!(log, m, 0.95)
+        notconverged, ismontecarlo = estimatebound!(log, m, convergence, solution.iterations)
+        !notconverged && setStatus!(solution, POLICY_TERMINATION)
 
-        # backward pass
-        backwardpass!(log, m, nscenarios, risk_measure, regularisation)
+        if notconverged
+            # backward pass
+            backwardpass!(log, m, nscenarios, risk_measure, regularisation)
 
-        # Calculate a new upper bound
-        setbound!(log, m)
+            # run cut selection
+            cutselection!(log, m, cut_selection, solution.iterations)
 
-        # run cut selection
-        cutselection!(log, m, cut_selection, solution.iterations)
+            if cut_output_file != nothing
+                # Write cuts to file if appropriate
+                writecuts!(m, cut_output_file, cutswrittentofile)
+                cutswrittentofile += nscenarios
+            end
 
-        if cut_output_file != nothing
-            # Write cuts to file if appropriate
-            writecuts!(m, cut_output_file, cutswrittentofile)
-            cutswrittentofile += nscenarios
+            # Calculate a new upper bound
+            notconverged = setbound!(log, m, bound_convergence)
+            !notconverged && setStatus!(solution, BOUND_TERMINATION)
+
+            if solution.iterations == maximum_iterations
+                notconverged = false
+                setStatus!(solution, ITERATION_TERMINATION)
+            end
         end
 
         # print solution to user
-        print(m, log, output)
+        print(m, log, output, ismontecarlo)
 
         push!(solution.trace, copy(log))
-        solution.iterations += 1
     end
+    info("Terminating with status $(solution.status).")
     return solution
+end
+
+"""
+    getscenarios(forwardscenarios, iteration)
+
+This function gets the number of scenarios to sample in iteration `iteration`.
+"""
+getscenarios(forwardscenarios::Int, iteration::Int) = forwardscenarios
+function getscenarios(forwardscenarios::Vector, iteration::Int)
+    if iteration < length(forwardscenarios)
+        return forwardscenarios[iteration]
+    else
+        return forwardscenarios[end]
+    end
+end
+
+function setbound!(log::SolutionLog, m::SDDPModel, bound_convergence)
+    old_bound = m.valid_bound
+    setbound!(log, m)
+    if bound_convergence.after > 0
+        if abs(old_bound - m.valid_bound) < bound_convergence.tol
+            bound_convergence.n += 1
+            if bound_convergence.n > bound_convergence.after
+                return false # converged
+            end
+        else
+            bound_convergence.n = 0
+        end
+    end
+    return true # notcongerged
+end
+
+"""
+    estimatebound!(log, SDDPmodel, convergence, iteration)
+
+Estimate the value of the policy by monte-carlo simulation and using sequential sampling.
+"""
+function estimatebound!(log::SolutionLog, m::SDDPModel, convergence, iteration)
+    notconverged = true
+    ismontecarlo = false
+    if convergence.frequency > 0 && mod(iteration, convergence.frequency) == 0
+            tic()
+            info("Running out-of-sample Monte Carlo simulation")
+            ismontecarlo = true
+            obj = copy(getobj(m))
+            if length(obj) < convergence.minsamples
+                log.simulations += convergence.minsamples - length(obj)
+                push!(obj, montecarloestimation(m, convergence.minsamples - length(obj))...)
+            end
+            ci = estimatebound(obj, convergence.confidencelevel)
+            while isconverged(m, ci, m.valid_bound)
+                if length(obj) >= convergence.maxsamples
+                    if convergence.terminate
+                        notconverged = false
+                    end
+                    break
+                end
+                push!(obj,
+                    montecarloestimation(m,
+                        min(
+                            convergence.maxsamples-length(obj),
+                            convergence.step
+                            )
+                        )...
+                    )
+                log.simulations += min(
+                    convergence.maxsamples-length(obj),
+                    convergence.step
+                    )
+                ci = estimatebound(obj, convergence.confidencelevel)
+            end
+            setconfidenceinterval!(m, ci)
+            log.ci_lower, log.ci_upper = m.confidence_interval
+            log.time_forwards += toq()
+    else
+        setconfidenceinterval!(log, m, 0.95)
+    end
+    return notconverged, ismontecarlo
 end
 
 # a wrapper for forward pass timings
@@ -182,17 +267,23 @@ end
 
 # a wrapper for cut selection timings
 function cutselection!(log::SolutionLog, m::SDDPModel, cutselection, iterations)
-    tic()
-    cutselection!(m, cutselection, iterations)
-    log.time_cutselection += toq()
+    if cutselection.frequency > 0
+        tic()
+        cutselection!(m, cutselection, iterations)
+        log.time_cutselection += toq()
+    end
     return
 end
 
 # a wrapper for estimating the confidence interval
 function setconfidenceinterval!(log, m, conflevel)
     setconfidenceinterval!(m, estimatebound(getobj(m), conflevel))
-    log.ci_lower, log.ci_upper = m.confidence_interval
+    log.ci_lower = log.ci_upper = mean(m.confidence_interval)
     return
 end
+
+isconverged(::Type{Min}, ci::NTuple{2, Float64}, bound::Float64) = ci[1] < bound
+isconverged(::Type{Max}, ci::NTuple{2, Float64}, bound::Float64) = ci[2] > bound
+isconverged{T, M, S, X, TM}(m::SDDPModel{T, M, S, X, TM}, ci, bound) = isconverged(X, ci, bound)
 
 end

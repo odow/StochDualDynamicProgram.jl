@@ -57,7 +57,13 @@ m = SDDPModel(
 end
 
 solve(m,
-    convergence=Convergence(1000, 10),
+    convergence=MonteCarloEstimator(
+        frequency  = 10,
+        minsamples = 5,
+        maxsamples = 100,
+        step       = 10,
+        terminate  = false
+    ),
     maximum_iterations=50,
     risk_measure = NestedCVar(beta=0.6, lambda=0.5)
 )

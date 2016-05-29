@@ -57,10 +57,18 @@ end
 m1 = copy(m)
 m2 = copy(m)
 
+montecarlo = MonteCarloEstimator(
+    frequency  = 10,
+    minsamples = 5,
+    maxsamples = 100,
+    step       = 10,
+    terminate  = false
+)
+
 srand(11111)
 info("Don't check for duplicate cuts")
 @time solve(m,                # Solve the model using the SDDP algorithm
-    convergence=Convergence(10000, 30),
+    convergence=montecarlo,
     maximum_iterations=30,
     cut_output_file = "news_vendor.csv"
 )
@@ -68,7 +76,7 @@ info("Don't check for duplicate cuts")
 srand(11111)
 info("Cut selection")
 @time solve(m1,                # Solve the model using the SDDP algorithm
-    convergence=Convergence(10000, 30),
+    convergence=montecarlo,
     maximum_iterations=30,
     cut_selection = LevelOne(5)
 )
@@ -76,7 +84,7 @@ info("Cut selection")
 srand(11111)
 info("Solving using varying number of simulation passes")
 @time solve(m2,                # Solve the model using the SDDP algorithm
-    convergence=Convergence(linspace(100, 10000, 10), 1),
+    convergence=montecarlo,
     maximum_iterations=50
 )
 
