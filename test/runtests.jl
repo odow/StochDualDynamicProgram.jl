@@ -83,4 +83,8 @@ facts("Newsvendor Example") do
     end
 end
 
+facts("Visualisation") do
+    include("../examples/visualisation.jl")
+end
+
 FactCheck.exitstatus()

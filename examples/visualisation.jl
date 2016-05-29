@@ -87,7 +87,6 @@ m = SDDPModel(stages=3, markov_states=2, scenarios=1, transition=Transition, val
 end
 
 @time solve(m,                # Solve the model using the SDDP algorithm
-    convergence=Convergence(1000, 10),
     maximum_iterations=20
 )
 

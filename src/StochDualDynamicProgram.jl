@@ -11,7 +11,7 @@ import Base.dot
 
 export SDDPModel,
     # macros
-    @state, @scenarioconstraint, @scenarioconstraints, @stageprofit,@visualise,
+    @state, @scenarioconstraint, @scenarioconstraints, @stageprofit, @visualise,
     # Model functions
     simulate,
     loadcuts!,
