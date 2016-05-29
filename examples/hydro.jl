@@ -115,9 +115,10 @@ info("Sanity check. Perform more iterations than needed to check bounds do not c
 
 info("Cut selection comparison.")
 @time solve(m2,
-    convergence=mcestimator,
-    maximum_iterations=20,
-    cut_selection = LevelOne(5)
+    convergence        = mcestimator,
+    maximum_iterations = 20,
+    forward_pass       = ForwardPass(1:10, importancesampling=true),
+    cut_selection      = LevelOne(5)
 )
 
 results = simulate(m,   # Simulate the policy

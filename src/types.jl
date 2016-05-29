@@ -1,9 +1,68 @@
+typealias ValTF Union{Type{Val{true}}, Type{Val{false}}}
+
 # ==============================================================================
 #   Optimisation Sense
 abstract AbstractSense
 immutable Max <: AbstractSense end
 immutable Min <: AbstractSense end
 typealias Sense Union{Type{Max}, Type{Min}}
+
+"""
+    MonteCarloEstimator
+
+Solve option to control behaviour of out-of-sample monte carlo estimates for the policy.
+
+Fields:
+
+    frequency          frequency (by iteration) /w which MonteCarlo estimate is run
+    minsamples         minimium number of samples before testing for convergence
+    maxsamples         maximum number of samples before testing for convergence
+    step               step size for simulation incrementation
+    terminate          true = terminate if confidence level contains lower bound
+    confidencelevel    size of confidence level to construct to check for convergence
+"""
+type MonteCarloEstimator
+    frequency::Int
+    minsamples::Int
+    maxsamples::Int
+    step::Int
+    terminate::Bool
+    confidencelevel::Float64
+    antithetic::ValTF
+end
+MonteCarloEstimator(;
+    frequency          = 0,
+    minsamples         = 10,
+    maxsamples         = minsamples,
+    step               = 0,
+    terminate          = false,
+    confidencelevel    = 0.95,
+    antitheticvariates = false) = MonteCarloEstimator(
+                                frequency,
+                                minsamples,
+                                maxsamples,
+                                step,
+                                terminate,
+                                confidencelevel,
+                                antitheticvariates?(Val{true}):(Val{false})
+                                )
+
+"""
+    BoundConvergence
+
+Used to control the termination of the algorithm if the bound stops changing.
+
+Fields:
+
+    after
+    tol
+"""
+type BoundConvergence
+    after::Int
+    tol::Float64
+    n::Int
+end
+BoundConvergence(;after=0, tol=1e-6) = BoundConvergence(after, tol, 0)
 
 # ==============================================================================
 #   Cuts
@@ -335,3 +394,13 @@ end
 Solution() = Solution(UNKNOWN_TERMINATION, 0, SolutionLog[])
 
 setStatus!(s::Solution, sym::Symbol) = (s.status = sym)
+
+# ==============================================================================
+#   Forward Pass
+type ForwardPass{T<:Union{Int, AbstractArray{Int, 1}}}
+    scenarios::T
+    regularisation::Regularisation
+    importancesampling::Bool
+end
+ForwardPass{T<:Union{Int, AbstractArray{Int, 1}}}(scenarios::T=1, regularisation::Regularisation=NoRegularisation(); importancesampling=false) = ForwardPass(scenarios, regularisation, importancesampling)
+ForwardPass{T<:Union{Int, AbstractArray{Int, 1}}}(regularisation::Regularisation, scenarios::T=1; importancesampling=false) = ForwardPass(scenarios, regularisation, importancesampling)

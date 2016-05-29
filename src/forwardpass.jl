@@ -3,7 +3,7 @@
 
 Perform n forward passes on the SDDPModel
 """
-function forwardpass!{T, M, S, X, TM}(m::SDDPModel{T, M, S, X, TM}, n::Int, storesamplepoints=false)
+function forwardpass!{T, M, S, X, TM}(m::SDDPModel{T, M, S, X, TM}, n::Int, cutselection::CutSelectionMethod, forwardpass::ForwardPass)
     resizeforwardstorage!(m, n)                      # resize storage for forward pass
     markov = 0                                       # initialise
     for pass = 1:n                                   # for n passes
@@ -16,19 +16,44 @@ function forwardpass!{T, M, S, X, TM}(m::SDDPModel{T, M, S, X, TM}, n::Int, stor
             savemarkov!(m, pass, t, markov)          # store markov state
             sp = subproblem(m, t, markov)            # get subproblem
             load_scenario!(m, sp)                    # realise scenario
-            forwardsolve!(sp)                        # solve
+            regularisedsolve!(X, sp, forwardpass.regularisation)
             saveobj!(m, pass, getstagevalue(sp))     # store objective
             savex!(m, sp, pass, t)                   # store state
-            if storesamplepoints                     # we want to do LevelOne cutselection later
-                addsamplepoint!(m, pass, t, markov)  # store sample points for cutselection
-            end
+            addsamplepoint!(m, cutselection,         # store sample points for
+                    pass, t, markov)                 #    cutselection
             if t < T                                 # don't do this for the last stage
-                pass_states!(m, sp, t)               # pass state values forward
-                markov = transition(m, t, markov)    # transition
+                pass_states!(m, sp, t, forwardpass.regularisation) # pass state values forward
+                markov = transition(m, t, markov, forwardpass.importancesampling)    # transition
             end
         end
     end
 end
+
+function load_scenario!{T, M, S, X, TM}(m::SDDPModel{T, M, S, X, TM}, sp::Model, importance::Bool)
+    if importance
+        load_scenario!(m, sp, rand(1:S))
+    else
+        return load_scenario!(m, sp)
+    end
+end
+
+function transition{T, M, S, X, TM}(m::SDDPModel{T, M, S, X, TM}, t, markov, importance::Bool)
+    if importance
+        return rand(1:M)
+    else
+        return transition(m, t, markov)
+    end
+end
+
+function regularisedsolve!(sense::Sense, sp::Model, regularisation::Regularisation)
+    set_regularised_objective!(regularisation, sense, sp)
+    forwardsolve!(sp)                        # solve
+    set_nonregularised_objective!(regularisation, sense, sp)
+end
+regularisedsolve!(sense::Sense, sp::Model, regularisation::NoRegularisation) = forwardsolve!(sp)
+
+addsamplepoint!(m::SDDPModel, cs::LevelOne, pass, t, markov) = addsamplepoint!(m, pass, t, markov)
+addsamplepoint!(m::SDDPModel, cs::CutSelectionMethod, pass, t, markov) = nothing
 
 function resizeforwardstorage!{T, M, S, X, TM}(m::SDDPModel{T, M, S, X, TM}, n::Int)
     resize!(m.forwardstorage.obj, n)
@@ -62,6 +87,12 @@ function load_scenario!(m::SDDPModel, sp::Model)
     return scenario
 end
 
+function load_scenario!(m::SDDPModel, sp::Model, rnd::Float64)
+    scenario = sample(m.scenario_probability, rnd)
+    load_scenario!(sp, scenario)
+    return scenario
+end
+
 function StatsBase.sample(wv::WeightVec, r::Float64)
     t = r * sum(wv)
     w = values(wv)
@@ -82,13 +113,19 @@ function load_scenario!(sp::Model, scenario::Int)
     end
 end
 
-function pass_states!{T, M, S, X, TM}(m::SDDPModel{T, M, S, X, TM}, sp::Model, stage::Int)
+function setregularisation!(::LinearRegularisation, sp::Model)
     sv = 0.
     for v in stagedata(sp).state_vars
         sv += getvalue(v)
     end
     JuMP.setRHS(stagedata(sp).regularisecons[1], sv)
     JuMP.setRHS(stagedata(sp).regularisecons[2], -sv)
+end
+setregularisation!(::Regularisation, sp::Model) = nothing
+
+function pass_states!{T, M, S, X, TM}(m::SDDPModel{T, M, S, X, TM}, sp::Model, stage::Int, regularisation::Regularisation=NoRegularisation())
+    setregularisation!(regularisation, sp)
+
     # For each of the problems in the next stage
     for next_sp in subproblems(m, stage+1)
         # Check sanity

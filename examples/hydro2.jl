@@ -102,11 +102,12 @@ end
 
 solve(m,                # Solve the model using the SDDP algorithm
     convergence=MonteCarloEstimator(
-        frequency  = 10,
-        minsamples = 5,
-        maxsamples = 100,
-        step       = 10,
-        terminate  = false
+        frequency          = 10,
+        minsamples         = 5,
+        maxsamples         = 100,
+        step               = 10,
+        terminate          = false,
+        antitheticvariates = false
     ),
     maximum_iterations=50
 )

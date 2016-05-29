@@ -294,7 +294,7 @@ setobj!(::Type{Max}, sp, aff) = @objective(sp, Max, aff)
 # Linear regularisation term
 function regularise!(regularisation::LinearRegularisation, sense::Sense, sp)
     stagedata(sp).regularisecoefficient *= regularisation.decayrate
-    return stagedata(sp).regularisecoefficient * stagedata(sp).regularisepen
+    return regularise!(sense, stagedata(sp).regularisecoefficient * stagedata(sp).regularisepen)
 end
 
 function oldvalue(v)
@@ -309,7 +309,7 @@ end
 function regularise!(regularisation::QuadraticRegularisation, sense::Sense, sp)
     stagedata(sp).regularisecoefficient *= regularisation.decayrate
     @expression(sp, regulariser, sum{(v - oldvalue(v))^2, v in stagedata(sp).state_vars})
-    return stagedata(sp).regularisecoefficient * regulariser
+    return regularise!(sense, stagedata(sp).regularisecoefficient * regulariser)
 end
 
 # Dummy regularisation
@@ -356,6 +356,8 @@ function transition{T, M, S, X, TM}(m::SDDPModel{T, M, S, X, TM}, t::Int, i::Int
     end
     return M
 end
+transition{T, S, X, TM}(m::SDDPModel{T, 1, S, X, TM}, t::Int, i::Int, r::Float64) = 1
+transition{T, S, X, TM}(m::SDDPModel{T, 1, S, X, TM}, t::Int, i::Int) = 1
 transition{T, M, S, X, TM}(m::SDDPModel{T, M, S, X, TM}, t::Int, i::Int) = transition(m, t, i, rand())
 function transitionprobability{T, M, S, X, TM}(m::SDDPModel{T, M, S, X, TM}, t::Int, i::Int, j::Int)
     if i==0

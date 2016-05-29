@@ -14,8 +14,7 @@ export SDDPModel,
     # macros
     @state, @scenarioconstraint, @scenarioconstraints, @stageprofit, @visualise,
     # Model functions
-    simulate,
-    loadcuts!,
+    simulate, loadcuts!,
     # Cut selection options
     LevelOne, Deterministic, NoSelection,
     # Parallel options
@@ -24,6 +23,8 @@ export SDDPModel,
     NestedCVar, Expectation,
     # Termination options
     MonteCarloEstimator, BoundConvergence,
+    # Forward Pass options
+    ForwardPass,
     # Regularisation options
     NoRegularisation, LinearRegularisation, QuadraticRegularisation
 
@@ -39,60 +40,6 @@ include("simulate.jl")
 include("visualiser/visualise.jl")
 
 """
-    MonteCarloEstimator
-
-Solve option to control behaviour of out-of-sample monte carlo estimates for the policy.
-
-Fields:
-
-    frequency          frequency (by iteration) /w which MonteCarlo estimate is run
-    minsamples         minimium number of samples before testing for convergence
-    maxsamples         maximum number of samples before testing for convergence
-    step               step size for simulation incrementation
-    terminate          true = terminate if confidence level contains lower bound
-    confidencelevel    size of confidence level to construct to check for convergence
-"""
-type MonteCarloEstimator
-    frequency::Int
-    minsamples::Int
-    maxsamples::Int
-    step::Int
-    terminate::Bool
-    confidencelevel::Float64
-end
-MonteCarloEstimator(;
-    frequency       = 0,
-    minsamples      = 10,
-    maxsamples      = minsamples,
-    step            = 0,
-    terminate       = false,
-    confidencelevel = 0.95) = MonteCarloEstimator(
-                                frequency,
-                                minsamples,
-                                maxsamples,
-                                step,
-                                terminate,
-                                confidencelevel
-                                )
-
-"""
-    BoundConvergence
-
-Used to control the termination of the algorithm if the bound stops changing.
-
-Fields:
-
-    after
-    tol
-"""
-type BoundConvergence
-    after::Int
-    tol::Float64
-    n::Int
-end
-BoundConvergence(;after=0, tol=1e-6) = BoundConvergence(after, tol, 0)
-
-"""
     solve(m[; kwargs...])
 
 Solve the SDDPModel
@@ -101,11 +48,10 @@ function JuMP.solve{T, M, S, X, TM}(m::SDDPModel{T, M, S, X, TM};
     maximum_iterations = 1,
     convergence        = MonteCarloEstimator(),
     bound_convergence  = BoundConvergence(),
-    forward_scenarios  = 1,
+    forward_pass       = ForwardPass(),
     risk_measure       = Expectation(),
     cut_selection      = NoSelection(),
     # parallel           = Parallel(),
-    regularisation     = NoRegularisation(),
     output             = nothing,
     cut_output_file    = nothing
     )
@@ -124,10 +70,10 @@ function JuMP.solve{T, M, S, X, TM}(m::SDDPModel{T, M, S, X, TM};
         solution.iterations += 1
 
         # number of scenarios to sample on forward pass
-        nscenarios = getscenarios(forward_scenarios, solution.iterations)
+        nscenarios = getscenarios(forward_pass.scenarios, solution.iterations)
 
         # forward pass
-        forwardpass!(log, m, nscenarios, isa(cut_selection, LevelOne))
+        forwardpass!(log, m, nscenarios, cut_selection, forward_pass)
 
         # estimate bound
         notconverged, ismontecarlo = estimatebound!(log, m, convergence, solution.iterations)
@@ -135,7 +81,7 @@ function JuMP.solve{T, M, S, X, TM}(m::SDDPModel{T, M, S, X, TM};
 
         if notconverged
             # backward pass
-            backwardpass!(log, m, nscenarios, risk_measure, regularisation)
+            backwardpass!(log, m, nscenarios, risk_measure, forward_pass.regularisation)
 
             # run cut selection
             cutselection!(log, m, cut_selection, solution.iterations)
@@ -171,7 +117,7 @@ end
 This function gets the number of scenarios to sample in iteration `iteration`.
 """
 getscenarios(forwardscenarios::Int, iteration::Int) = forwardscenarios
-function getscenarios(forwardscenarios::Vector, iteration::Int)
+function getscenarios(forwardscenarios::AbstractArray{Int,1}, iteration::Int)
     if iteration < length(forwardscenarios)
         return forwardscenarios[iteration]
     else
@@ -210,7 +156,11 @@ function estimatebound!(log::SolutionLog, m::SDDPModel, convergence, iteration)
             obj = copy(getobj(m))
             if length(obj) < convergence.minsamples
                 log.simulations += convergence.minsamples - length(obj)
-                push!(obj, montecarloestimation(m, convergence.minsamples - length(obj))...)
+                push!(obj,
+                    montecarloestimation(convergence.antithetic, m,
+                        convergence.minsamples - length(obj)
+                        )...
+                )
             end
             ci = estimatebound(obj, convergence.confidencelevel)
             while isconverged(m, ci, m.valid_bound)
@@ -221,7 +171,7 @@ function estimatebound!(log::SolutionLog, m::SDDPModel, convergence, iteration)
                     break
                 end
                 push!(obj,
-                    montecarloestimation(m,
+                    montecarloestimation(convergence.antithetic, m,
                         min(
                             convergence.maxsamples-length(obj),
                             convergence.step
@@ -244,9 +194,9 @@ function estimatebound!(log::SolutionLog, m::SDDPModel, convergence, iteration)
 end
 
 # a wrapper for forward pass timings
-function forwardpass!(log::SolutionLog, m::SDDPModel, n, storesamplepoints)
+function forwardpass!(log::SolutionLog, m::SDDPModel, n, cutselection, regularisation)
     tic()
-    forwardpass!(m, n, storesamplepoints)
+    forwardpass!(m, n, cutselection, regularisation)
     log.simulations += n
     log.time_forwards += toq()
     return

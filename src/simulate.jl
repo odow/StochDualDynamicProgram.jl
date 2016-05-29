@@ -1,4 +1,40 @@
-function montecarloestimation{T, M, S, X, TM}(m::SDDPModel{T, M, S, X, TM}, n::Int)
+function montecarloestimation{T, M, S, X, TM}(::Type{Val{true}}, m::SDDPModel{T, M, S, X, TM}, n::Int)
+    objectives = zeros(n)                                # intial storage for objective
+    markov = 0                                           # initialise
+    rscenario, rmarkov = zeros(T), zeros(T)              # initialise antithetic storage
+    for pass = 1:2:n                                     # for n/2 passes
+        @inbounds for i=1:T                              # initalise random variables
+            rscenario[i] = rand()                        #    for the scenarios
+            rmarkov[i]   = rand()                        #    and markov states
+        end
+        for antitheticpass = 0:1
+            if pass + antitheticpass > n
+                break
+            end
+            markov = m.initial_markov_state              # initial markov state
+            if m.initial_markov_state==0                 # no initial state specified
+                markov = transition(m, 1, markov,        # transition immediately
+                            rmarkov[1])                  #  with the first stored random number
+            end
+            for t=1:T                                    # for each stage
+                sp = subproblem(m, t, markov)            # get subproblem
+                load_scenario!(m, sp, rscenario[t])      # realise scenario
+                forwardsolve!(sp)                        # solve
+                objectives[pass+antitheticpass] += getstagevalue(sp)    # update objective
+                if t < T                                 # don't do this for the last stage
+                    pass_states!(m, sp, t)               # pass state values forward
+                    markov = transition(m, t, markov,    # transition
+                                    rmarkov[1+t])        #   since we already used the first
+                end
+                @inbounds rscenario[t] = 1 - rscenario[t]# get antithetic variate
+                @inbounds rmarkov[t]   = 1 - rmarkov[t]  # get antithetic variate
+            end
+        end
+    end
+    return objectives
+end
+
+function montecarloestimation{T, M, S, X, TM}(::Type{Val{false}}, m::SDDPModel{T, M, S, X, TM}, n::Int)
     objectives = zeros(n)                            # intial storage for objective
     markov = 0                                       # initialise
     for pass = 1:n                                   # for n passes
@@ -19,6 +55,7 @@ function montecarloestimation{T, M, S, X, TM}(m::SDDPModel{T, M, S, X, TM}, n::I
     end
     return objectives
 end
+
 
 function simulate{T, M, S, X, TM}(m::SDDPModel{T, M, S, X, TM}, n::Int, vars::Vector{Symbol}=Symbol[]; variancereduction=true)
     results = Dict{Symbol, Any}(:Objective=>zeros(Float64,n))
