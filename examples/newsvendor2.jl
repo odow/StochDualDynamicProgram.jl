@@ -59,40 +59,33 @@ m2 = copy(m)
 
 montecarlo = MonteCarloEstimator(
     frequency  = 10,
-    minsamples = 5,
-    maxsamples = 100,
-    step       = 10,
-    terminate  = false
+    minsamples = 100,
+    maxsamples = 1000,
+    step       = 100,
+    terminate  = true
 )
 
 srand(11111)
 info("Don't check for duplicate cuts")
 @time solve(m,                # Solve the model using the SDDP algorithm
-    convergence=montecarlo,
-    maximum_iterations=30,
-    cut_output_file = "news_vendor.csv"
+    convergence        = montecarlo,
+    maximum_iterations = 30,
+    cut_output_file    = "news_vendor.csv"
 )
 
 srand(11111)
 info("Cut selection")
 @time solve(m1,                # Solve the model using the SDDP algorithm
-    convergence=montecarlo,
-    maximum_iterations=30,
-    cut_selection = LevelOne(5)
-)
-
-srand(11111)
-info("Solving using varying number of simulation passes")
-@time solve(m2,                # Solve the model using the SDDP algorithm
-    convergence=montecarlo,
-    maximum_iterations=50
+    convergence        = montecarlo,
+    bound_convergence  = BoundConvergence(after=5, tol=1e-5),
+    maximum_iterations = 30,
+    cut_selection      = LevelOne(5)
 )
 
 results = simulate(m,   # Simulate the policy
     1000,               # number of monte carlo realisations
     [:stock, :buy, :sell]
     )
-
 
 info("Rebuilding model from cuts")
 

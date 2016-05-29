@@ -60,8 +60,8 @@ solve(m,
     convergence=MonteCarloEstimator(
         frequency  = 10,
         minsamples = 5,
-        maxsamples = 100,
-        step       = 10,
+        maxsamples = 50,
+        step       = 5,
         terminate  = false
     ),
     maximum_iterations=50,

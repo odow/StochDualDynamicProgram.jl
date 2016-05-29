@@ -6,6 +6,7 @@ importall JuMP
 using MathProgBase, Clp
 using Formatting
 using Distributions, StatsBase
+using JSON
 
 import Base.dot
 
@@ -35,6 +36,7 @@ include("backwardpass.jl")
 include("cut_selection.jl")
 include("print.jl")
 include("simulate.jl")
+include("visualiser/visualise.jl")
 
 """
     MonteCarloEstimator
@@ -102,7 +104,7 @@ function JuMP.solve{T, M, S, X, TM}(m::SDDPModel{T, M, S, X, TM};
     forward_scenarios  = 1,
     risk_measure       = Expectation(),
     cut_selection      = NoSelection(),
-    parallel           = Parallel(),
+    # parallel           = Parallel(),
     regularisation     = NoRegularisation(),
     output             = nothing,
     cut_output_file    = nothing

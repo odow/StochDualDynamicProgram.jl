@@ -1,5 +1,3 @@
-using JSON
-
 const filedir  = dirname(@__FILE__)
 const jsonfile = joinpath(filedir, "run.json")
 const htmlfile = joinpath(filedir, "Visualise.html")
@@ -53,7 +51,6 @@ macro visualise(results, kw, block)
 					f = Expr(:->, kw, Expr(:block, it.args))
 				end
             else
-				@show it, it.args
 				f = Expr(:->, kw, Expr(:block, it))
             end
 			push!(code.args, quote
