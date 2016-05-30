@@ -1,5 +1,7 @@
 using StochDualDynamicProgram, JuMP, FactCheck
 
+const EXAMPLESDIR = joinpath(dirname(dirname(@__FILE__)), "examples")
+
 facts("SDDPModel") do
     m = SDDPModel(
         stages=3, markov_states=2, transition=[0.2 0.8;0.8 0.2], value_to_go_bound=1000
@@ -59,37 +61,25 @@ facts("@state") do
 end
 
 facts("Hydro Example") do
-    context("Version One") do
-        include("../examples/hydro.jl")
-        @fact mean(results[:Objective]) --> roughly(904, 20)
-    end
+    include(joinpath(EXAMPLESDIR, "hydro.jl"))
+    @fact mean(results[:Objective]) --> roughly(904, 20)
 
-    context("Version Two") do
-        include("../examples/hydro2.jl")
-        @fact mean(results[:Objective])--> roughly(-1450, 20)
-    end
-
+    include(joinpath(EXAMPLESDIR, "hydro2.jl"))
+    @fact mean(results[:Objective])--> roughly(-1450, 20)
 end
 
 facts("Newsvendor Example") do
-
-    context("Risk Aversion") do
-        warn("Estimating the CI of bound is fraught")
-        include("../examples/newsvendor.jl")
-    end
-
-    context("Fancy improvements of simulated bound") do
-        include("../examples/newsvendor2.jl")
-    end
+    include(joinpath(EXAMPLESDIR, "newsvendor.jl"))
+    include(joinpath(EXAMPLESDIR, "newsvendor2.jl"))
 end
 
 facts("Visualisation") do
-    include("../examples/visualisation.jl")
+    include(joinpath(EXAMPLESDIR, "visualisation.jl"))
 end
 
 facts("Parallelisation") do
-    include("../examples/parallel_example.jl")
-    include("../examples/serial_comparison.jl")
+    include(joinpath(EXAMPLESDIR, "parallel_example.jl"))
+    include(joinpath(EXAMPLESDIR, "serial_comparison.jl"))
 end
 
 FactCheck.exitstatus()

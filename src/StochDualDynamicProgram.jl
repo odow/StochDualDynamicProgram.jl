@@ -26,7 +26,9 @@ export SDDPModel,
     # Forward Pass options
     ForwardPass,
     # Regularisation options
-    NoRegularisation, LinearRegularisation, QuadraticRegularisation
+    NoRegularisation, LinearRegularisation, QuadraticRegularisation,
+    # query solve attributes
+    status
 
 include("types.jl")
 include("macros.jl")

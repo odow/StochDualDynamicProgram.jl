@@ -1,3 +1,7 @@
+using StochDualDynamicProgram, JuMP
+
+srand(11111)
+
 # Demand for newspapers
 # There are two equally probable scenarios in each stage
 #   Demand[stage, scenario]
@@ -65,22 +69,19 @@ montecarlo = MonteCarloEstimator(
     terminate  = true
 )
 
-srand(11111)
-info("Don't check for duplicate cuts")
-@time solve(m,                # Solve the model using the SDDP algorithm
+@time solvestatus = solve(m,
     convergence        = montecarlo,
     maximum_iterations = 30,
     cut_output_file    = "news_vendor.csv"
 )
+@assert status(solvestatus) == :PolicyConverence
 
-srand(11111)
-info("Cut selection")
-@time solve(m1,                # Solve the model using the SDDP algorithm
-    convergence        = montecarlo,
+@time solvestatus = solve(m1,
     bound_convergence  = BoundConvergence(after=5, tol=1e-5),
     maximum_iterations = 30,
     cut_selection      = LevelOne(5)
 )
+@assert status(solvestatus) == :BoundConvergence
 
 results = simulate(m,   # Simulate the policy
     1000,               # number of monte carlo realisations
@@ -122,6 +123,8 @@ results1 = simulate(m2,   # Simulate the policy
 
 # Hopefully the mean of the simulated in memory is within $1 of the simulated
 # from cut files
+@show mean(results[:Objective])
+@show mean(results1[:Objective])
 @assert abs(mean(results[:Objective]) - mean(results1[:Objective])) < 1
 
 rm("news_vendor.csv")

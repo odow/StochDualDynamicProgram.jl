@@ -100,7 +100,7 @@ m = SDDPModel(sense=:Min, stages=3, markov_states=2, transition=Transition, valu
     @stageprofit(sp, -Price[markov_state, stage]*generation_quantity)
 end
 
-solve(m,                # Solve the model using the SDDP algorithm
+@time solvestatus = solve(m,
     convergence=MonteCarloEstimator(
         frequency          = 10,
         minsamples         = 5,
@@ -111,6 +111,7 @@ solve(m,                # Solve the model using the SDDP algorithm
     ),
     maximum_iterations=50
 )
+@assert status(solvestatus) == :MaximumIterations
 
 results = simulate(m,   # Simulate the policy
     1000,               # number of monte carlo realisations

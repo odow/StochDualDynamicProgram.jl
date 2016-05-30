@@ -9,8 +9,7 @@
 #     f(water units) = electricity units
 using StochDualDynamicProgram, JuMP
 
-# For repeatability (note: don't use the same seed on two processors!)
-srand(11111 * myid())
+srand(11111)
 
 # Names of the reservoirs
 RESERVOIRS = [:upper, :lower]
@@ -97,7 +96,7 @@ m = SDDPModel(stages=3, markov_states=2, scenarios=1, transition=Transition, val
     @stageprofit(sp, Price[stage, markov_state]*generation_quantity)
 end
 
-@time solve(m,
+@time solvestatus = solve(m,
     maximum_iterations = 50,
     convergence        = MonteCarloEstimator(
                             frequency  = 1,
@@ -108,6 +107,7 @@ end
     forward_pass       = ForwardPass(10),
     parallel           = Serial()
 )
+@assert status(solvestatus) == :MaximumIterations
 
 @time results = simulate(m,
     1000,

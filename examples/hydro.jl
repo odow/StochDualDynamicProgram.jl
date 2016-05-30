@@ -106,20 +106,20 @@ mcestimator = MonteCarloEstimator(
     step       = 10
 )
 
-info("Sanity check. Perform more iterations than needed to check bounds do not cross.")
-@time solve(m,
-    convergence=mcestimator,
-    bound_convergence = BoundConvergence(after=5, tol=1e-10),
-    maximum_iterations=50
+@time solvestatus = solve(m,
+    convergence        = mcestimator,
+    bound_convergence  = BoundConvergence(after=5, tol=1e-10),
+    maximum_iterations = 50
 )
+@assert status(solvestatus) == :BoundConvergence
 
-info("Cut selection comparison.")
-@time solve(m2,
+@time solvestatus = solve(m2,
     convergence        = mcestimator,
     maximum_iterations = 20,
     forward_pass       = ForwardPass(1:10, importancesampling=true),
     cut_selection      = LevelOne(5)
 )
+@assert status(solvestatus) == :MaximumIterations
 
 results = simulate(m,   # Simulate the policy
     1000,               # number of monte carlo realisations

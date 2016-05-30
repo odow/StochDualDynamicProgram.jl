@@ -1,6 +1,8 @@
 # This example demonstates the D3.js visualisation
 using JuMP, StochDualDynamicProgram
 
+srand(11111)
+
 # Names of the reservoirs
 RESERVOIRS = [:upper, :lower]
 
@@ -86,13 +88,14 @@ m = SDDPModel(stages=3, markov_states=2, scenarios=1, transition=Transition, val
     @stageprofit(sp, Price[stage, markov_state]*generation_quantity)
 end
 
-@time solve(m,                # Solve the model using the SDDP algorithm
+@time solvestatus = solve(m,                # Solve the model using the SDDP algorithm
     maximum_iterations=20
 )
+@assert status(solvestatus) == :MaximumIterations
 
-results = simulate(m,   # Simulate the policy
+results = simulate(m,  # Simulate the policy
     100,               # number of monte carlo realisations
-    [:reservoir]  # variables to return
+    [:reservoir]       # variables to return
     )
 
 @visualise(results, (stage, replication), begin

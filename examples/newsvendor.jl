@@ -1,5 +1,7 @@
 using StochDualDynamicProgram, JuMP
 
+srand(11111)
+
 # Demand for newspapers
 # There are two equally probable scenarios in each stage
 #   Demand[stage, scenario]
@@ -56,7 +58,7 @@ m = SDDPModel(
 
 end
 
-solve(m,
+@time solvestatus = solve(m,
     maximum_iterations = 50,
     convergence        = MonteCarloEstimator(
                                 frequency  = 10,
@@ -70,6 +72,7 @@ solve(m,
                             ),
     risk_measure       = NestedCVar(beta=0.6, lambda=0.5)
 )
+@assert status(solvestatus) == :MaximumIterations
 
 # # Historical simulation
 # results = simulate(m,   # Simulate the policy

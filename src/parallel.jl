@@ -125,7 +125,7 @@ function getlatestsamplepoints{T, M, S, X, TM}(m::SDDPModel{T, M, S, X, TM}, cut
     end
     return y
 end
-getlatestsamplepoints(m::SDDPModel, cutselection, n) = Array(Vector{Float64}, (0,0))
+getlatestsamplepoints{T, M, S, X, TM}(m::SDDPModel{T, M, S, X, TM}, cutselection::CutSelectionMethod, n) = Array(Vector{Float64}, (0,0))
 
 function reduceforwardpass!{T, M, S, X, TM}(m::SDDPModel{T, M, S, X, TM}, results::Vector{Tuple{ForwardPassData, Array{Vector{Float64}, 2}}})
     bign = sum(map(r->r[1].n, results))

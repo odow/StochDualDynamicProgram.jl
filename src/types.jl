@@ -401,6 +401,7 @@ end
 Solution() = Solution(UNKNOWN_TERMINATION, 0, SolutionLog[])
 
 setStatus!(s::Solution, sym::Symbol) = (s.status = sym)
+status(s::Solution) = s.status
 
 # ==============================================================================
 #   Forward Pass
