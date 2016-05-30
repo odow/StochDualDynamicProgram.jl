@@ -24,11 +24,20 @@ function initialise_workers!{T, M, S, X, TM}(m::SDDPModel{T, M, S, X, TM})
     return length(workers())
 end
 
-function distribute_work!(results, f, args...)
+function distribute_work!(results, f::Function, args...)
     @sync begin
         for (i, procid) in enumerate(workers())
             @async begin
                 results[i] = remotecall_fetch(f, procid, args...)
+            end
+        end
+    end
+end
+function distribute_work_void!(f::Function, args...)
+    @sync begin
+        for (i, procid) in enumerate(workers())
+            @async begin
+                remotecall_fetch(f, procid, args...)
             end
         end
     end
@@ -38,6 +47,10 @@ function updatecuts!(stagecuts)
     m.stagecuts = deepcopy(stagecuts)
     rebuild_stageproblems!(m)
 end
+
+updateforwardstorageworker!(forwardstorage) = (m.forwardstorage = deepcopy(forwardstorage))
+updateforwardstorage!(forwardstorage) = distribute_work_void!(updateforwardstorageworker!, forwardstorage)
+
 # ------------------------------------------------------------------------------
 #
 #   Simulation functionality
@@ -100,26 +113,78 @@ function workerforwardpass!(stagecuts, n::Int, cutselection::CutSelectionMethod,
     updatecuts!(stagecuts)
     force_resizeforwardstorage!(m, n) # resize storage for forward pass
     forwardpass!(m, n, cutselection, forwardpass)
-    deepcopy(m.forwardstorage)
+    deepcopy(m.forwardstorage), getlatestsamplepoints(m, cutselection, n)
 end
 
-function reduceforwardpass!(m, results::Vector{ForwardPassData})
-    bign = sum(map(r->r.n, results))
+function getlatestsamplepoints{T, M, S, X, TM}(m::SDDPModel{T, M, S, X, TM}, cutselection::LevelOne, n)
+    y = Array(Vector{Float64}, (T,M))
+    for t=1:T
+        for i=1:M
+            y[t,i] = stagecut(m, t, i).samplepoints[(end-n+1):end]
+        end
+    end
+    return y
+end
+getlatestsamplepoints(m::SDDPModel, cutselection, n) = Array(Vector{Float64}, (0,0))
+
+function reduceforwardpass!{T, M, S, X, TM}(m::SDDPModel{T, M, S, X, TM}, results::Vector{Tuple{ForwardPassData, Array{Vector{Float64}, 2}}})
+    bign = sum(map(r->r[1].n, results))
     force_resizeforwardstorage!(m, bign)
     pass = 1
     for result in results
-        for littlen = 1:result.n
-            m.forwardstorage.obj[pass] = result.obj[littlen]
-            m.forwardstorage.W[pass]   = result.W[littlen]
-            m.forwardstorage.x[pass]   = result.x[littlen]
+        for littlen = 1:result[1].n
+            m.forwardstorage.obj[pass] = result[1].obj[littlen]
+            m.forwardstorage.W[pass]   = result[1].W[littlen]
+            m.forwardstorage.x[pass]   = result[1].x[littlen]
             pass += 1
+        end
+        if size(result[2])[1] > 0
+            for t=1:T
+                for i=1:M
+                    push!(stagecut(m, t, i).samplepoints, result[2][t,i]...)
+                end
+            end
         end
     end
 end
 
 function parallelforwardpass!{T, M, S, X, TM}(m::SDDPModel{T, M, S, X, TM}, n::Int, cutselection::CutSelectionMethod, forwardpass::ForwardPass)
-    results = Array(ForwardPassData, length(workers()))
+    results = Array(Tuple{ForwardPassData, Array{Vector{Float64}, 2}}, length(workers()))
     nn = ceil(Int, n / length(workers()))
     distribute_work!(results, workerforwardpass!, m.stagecuts, nn, cutselection, forwardpass)
     reduceforwardpass!(m, results)
+end
+
+
+# ------------------------------------------------------------------------------
+#
+#  Backward Pass
+#
+function workerbackwardpass!(pass, T, riskmeasure, regularisation)
+    cuts = Array(Cut, T-1)
+    for t=(T-1):-1:1
+        setrhs!(m, pass, t)
+        solveall!(m, t+1, regularisation)
+        reweightscenarios!(m, t, getmarkov(m, pass, t), riskmeasure.beta, riskmeasure.lambda)
+        cuts[t] = addcut!(m, pass, t, getmarkov(m, pass, t))
+    end
+    return cuts
+end
+
+function reducebackwardpass!{T, M, S, X, TM}(m::SDDPModel{T, M, S, X, TM}, results)
+    for pass=1:getn(m)
+        for t=1:(T-1)
+            # add to cutselection storage
+            add_cut!(X, stagecut(m, t, getmarkov(m, pass, t)), results[pass][t])
+            # add to problem
+            addcut!(X, subproblem(m, t, getmarkov(m, pass, t)), results[pass][t])
+        end
+    end
+end
+
+function parallelbackwardpass!{T, M, S, X, TM}(m::SDDPModel{T, M, S, X, TM}, riskmeasure::RiskMeasure, regularisation::Regularisation=NoRegularisation())
+    updateforwardstorage!(m.forwardstorage)
+    # This returns a vector of vector of cuts
+    results = pmap(workerbackwardpass!, 1:getn(m), repeated(T), repeated(riskmeasure), repeated(regularisation))
+    reducebackwardpass!(m, results)
 end

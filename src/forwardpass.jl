@@ -28,6 +28,36 @@ function forwardpass!{T, M, S, X, TM}(m::SDDPModel{T, M, S, X, TM}, n::Int, cuts
     end
 end
 
+# a wrapper for forward pass timings
+function forwardpass!(log::SolutionLog, m::SDDPModel, iterations, cutselection, forward_pass, isparallel)
+    tic()
+    # number of scenarios to sample on forward pass
+    nscenarios = getscenarios(forward_pass.scenarios, iterations)
+    if isparallel
+        parallelforwardpass!(m, nscenarios, cutselection, forward_pass)
+    else
+        resizeforwardstorage!(m, nscenarios) # resize storage for forward pass
+        forwardpass!(m, nscenarios, cutselection, forward_pass)
+    end
+    log.simulations += nscenarios
+    log.time_forwards += toq()
+    return nscenarios
+end
+
+"""
+    getscenarios(forwardscenarios, iteration)
+
+This function gets the number of scenarios to sample in iteration `iteration`.
+"""
+getscenarios(forwardscenarios::Int, iteration::Int) = forwardscenarios
+function getscenarios(forwardscenarios::AbstractArray{Int,1}, iteration::Int)
+    if iteration < length(forwardscenarios)
+        return forwardscenarios[iteration]
+    else
+        return forwardscenarios[end]
+    end
+end
+
 function load_scenario!{T, M, S, X, TM}(m::SDDPModel{T, M, S, X, TM}, sp::Model, importance::Bool)
     if importance
         load_scenario!(m, sp, rand(1:S))

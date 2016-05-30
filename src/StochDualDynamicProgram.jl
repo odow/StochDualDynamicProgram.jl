@@ -79,11 +79,8 @@ function JuMP.solve{T, M, S, X, TM}(m::SDDPModel{T, M, S, X, TM};
         # Starting a new iteration
         solution.iterations += 1
 
-        # number of scenarios to sample on forward pass
-        nscenarios = getscenarios(forward_pass.scenarios, solution.iterations)
-
         # forward pass
-        forwardpass!(log, m, nscenarios, cut_selection, forward_pass, parallel.forward)
+        nscenarios = forwardpass!(log, m, solution.iterations, cut_selection, forward_pass, parallel.forward)
 
         # estimate bound
         notconverged, ismontecarlo = estimatebound!(log, m, convergence, solution.iterations, parallel.montecarlo)
@@ -91,9 +88,13 @@ function JuMP.solve{T, M, S, X, TM}(m::SDDPModel{T, M, S, X, TM};
 
         if notconverged
             # backward pass
-            backwardpass!(log, m, nscenarios, risk_measure, forward_pass.regularisation)
+            backwardpass!(log, m, nscenarios, risk_measure, forward_pass.regularisation, parallel.backward)
 
             # run cut selection
+            if parallel.backward
+                # We have probably dragged various cuts through here...
+                recalculate_dominance!(cut_selection, m)
+            end
             cutselection!(log, m, cut_selection, solution.iterations)
 
             if cut_output_file != nothing
@@ -120,143 +121,5 @@ function JuMP.solve{T, M, S, X, TM}(m::SDDPModel{T, M, S, X, TM};
     info("Terminating with status $(solution.status).")
     return solution
 end
-
-"""
-    getscenarios(forwardscenarios, iteration)
-
-This function gets the number of scenarios to sample in iteration `iteration`.
-"""
-getscenarios(forwardscenarios::Int, iteration::Int) = forwardscenarios
-function getscenarios(forwardscenarios::AbstractArray{Int,1}, iteration::Int)
-    if iteration < length(forwardscenarios)
-        return forwardscenarios[iteration]
-    else
-        return forwardscenarios[end]
-    end
-end
-
-function setbound!(log::SolutionLog, m::SDDPModel, bound_convergence)
-    old_bound = m.valid_bound
-    setbound!(log, m)
-    if bound_convergence.after > 0
-        if abs(old_bound - m.valid_bound) < bound_convergence.tol
-            bound_convergence.n += 1
-            if bound_convergence.n > bound_convergence.after
-                return false # converged
-            end
-        else
-            bound_convergence.n = 0
-        end
-    end
-    return true # notcongerged
-end
-
-"""
-    estimatebound!(log, SDDPmodel, convergence, iteration)
-
-Estimate the value of the policy by monte-carlo simulation and using sequential sampling.
-"""
-function estimatebound!(log::SolutionLog, m::SDDPModel, convergence, iteration::Int, isparallel::Bool)
-    if isparallel
-        estimatebound!(log, m, convergence, iteration, parallelmontecarloestimation)
-    else
-        estimatebound!(log, m, convergence, iteration, montecarloestimation)
-    end
-end
-
-function estimatebound!(log::SolutionLog, m::SDDPModel, convergence, iteration, montecarlofunction::Function)
-    notconverged = true
-    ismontecarlo = false
-    if convergence.frequency > 0 && mod(iteration, convergence.frequency) == 0
-            tic()
-            info("Running out-of-sample Monte Carlo simulation")
-            ismontecarlo = true
-            obj = copy(getobj(m))
-            if length(obj) < convergence.minsamples
-                log.simulations += convergence.minsamples - length(obj)
-                push!(obj,
-                    montecarlofunction(convergence.antithetic, m,
-                        convergence.minsamples - length(obj)
-                        )...
-                )
-            end
-            ci = estimatebound(obj, convergence.confidencelevel)
-            while isconverged(m, ci, m.valid_bound)
-                if length(obj) >= convergence.maxsamples
-                    if convergence.terminate
-                        notconverged = false
-                    end
-                    break
-                end
-                oldlength = length(obj)
-                push!(obj,
-                    montecarlofunction(convergence.antithetic, m,
-                        min(
-                            convergence.maxsamples-length(obj),
-                            convergence.step
-                            )
-                        )...
-                    )
-                log.simulations += length(obj) - oldlength
-                ci = estimatebound(obj, convergence.confidencelevel)
-            end
-            setconfidenceinterval!(m, ci)
-            log.ci_lower, log.ci_upper = m.confidence_interval
-            log.time_forwards += toq()
-    else
-        setconfidenceinterval!(log, m, 0.95)
-    end
-    return notconverged, ismontecarlo
-end
-
-# a wrapper for forward pass timings
-function forwardpass!(log::SolutionLog, m::SDDPModel, n, cutselection, regularisation, isparallel)
-    tic()
-    if isparallel
-        parallelforwardpass!(m, n, cutselection, regularisation)
-    else
-        resizeforwardstorage!(m, n) # resize storage for forward pass
-        forwardpass!(m, n, cutselection, regularisation)
-    end
-    log.simulations += n
-    log.time_forwards += toq()
-    return
-end
-
-# a wrapper for backward pass timings
-function backwardpass!(log::SolutionLog, m::SDDPModel, nscenarios, risk_measure, regularisation)
-    tic()
-    backwardpass!(m, risk_measure, regularisation)
-    log.cuts += nscenarios
-    log.time_backwards += toq()
-    return
-end
-
-function setbound!(log::SolutionLog, m::SDDPModel)
-    setbound!(m)
-    log.bound = m.valid_bound
-    return
-end
-
-# a wrapper for cut selection timings
-function cutselection!(log::SolutionLog, m::SDDPModel, cutselection, iterations)
-    if cutselection.frequency > 0
-        tic()
-        cutselection!(m, cutselection, iterations)
-        log.time_cutselection += toq()
-    end
-    return
-end
-
-# a wrapper for estimating the confidence interval
-function setconfidenceinterval!(log, m, conflevel)
-    setconfidenceinterval!(m, estimatebound(getobj(m), conflevel))
-    log.ci_lower = log.ci_upper = mean(m.confidence_interval)
-    return
-end
-
-isconverged(::Type{Min}, ci::NTuple{2, Float64}, bound::Float64) = ci[1] < bound
-isconverged(::Type{Max}, ci::NTuple{2, Float64}, bound::Float64) = ci[2] > bound
-isconverged{T, M, S, X, TM}(m::SDDPModel{T, M, S, X, TM}, ci, bound) = isconverged(X, ci, bound)
 
 end

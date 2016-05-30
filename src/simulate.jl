@@ -56,6 +56,79 @@ function montecarloestimation{T, M, S, X, TM}(::Type{Val{false}}, m::SDDPModel{T
     return objectives
 end
 
+function setbound!(log::SolutionLog, m::SDDPModel, bound_convergence)
+    old_bound = m.valid_bound
+    setbound!(log, m)
+    if bound_convergence.after > 0
+        if abs(old_bound - m.valid_bound) < bound_convergence.tol
+            bound_convergence.n += 1
+            if bound_convergence.n > bound_convergence.after
+                return false # converged
+            end
+        else
+            bound_convergence.n = 0
+        end
+    end
+    return true # notcongerged
+end
+
+"""
+    estimatebound!(log, SDDPmodel, convergence, iteration)
+
+Estimate the value of the policy by monte-carlo simulation and using sequential sampling.
+"""
+function estimatebound!(log::SolutionLog, m::SDDPModel, convergence, iteration::Int, isparallel::Bool)
+    if isparallel
+        estimatebound!(log, m, convergence, iteration, parallelmontecarloestimation)
+    else
+        estimatebound!(log, m, convergence, iteration, montecarloestimation)
+    end
+end
+
+function estimatebound!(log::SolutionLog, m::SDDPModel, convergence, iteration, montecarlofunction::Function)
+    notconverged = true
+    ismontecarlo = false
+    if convergence.frequency > 0 && mod(iteration, convergence.frequency) == 0
+            tic()
+            info("Running out-of-sample Monte Carlo simulation")
+            ismontecarlo = true
+            obj = copy(getobj(m))
+            if length(obj) < convergence.minsamples
+                log.simulations += convergence.minsamples - length(obj)
+                push!(obj,
+                    montecarlofunction(convergence.antithetic, m,
+                        convergence.minsamples - length(obj)
+                        )...
+                )
+            end
+            ci = estimatebound(obj, convergence.confidencelevel)
+            while isconverged(m, ci, m.valid_bound)
+                if length(obj) >= convergence.maxsamples
+                    if convergence.terminate
+                        notconverged = false
+                    end
+                    break
+                end
+                oldlength = length(obj)
+                push!(obj,
+                    montecarlofunction(convergence.antithetic, m,
+                        min(
+                            convergence.maxsamples-length(obj),
+                            convergence.step
+                            )
+                        )...
+                    )
+                log.simulations += length(obj) - oldlength
+                ci = estimatebound(obj, convergence.confidencelevel)
+            end
+            setconfidenceinterval!(m, ci)
+            log.ci_lower, log.ci_upper = m.confidence_interval
+            log.time_forwards += toq()
+    else
+        setconfidenceinterval!(log, m, 0.95)
+    end
+    return notconverged, ismontecarlo
+end
 
 function serialsimulate{T, M, S, X, TM}(m::SDDPModel{T, M, S, X, TM}, n::Int, vars::Vector{Symbol})
     results = Dict{Symbol, Any}(:Objective=>zeros(Float64,n))

@@ -442,3 +442,20 @@ function confidenceinterval(x, conf_level=0.95)
     return (lo, hi)
 end
 setconfidenceinterval!{T<:Real}(m::SDDPModel, v::Tuple{T,T}) = (m.confidence_interval = v)
+
+function setbound!(log::SolutionLog, m::SDDPModel)
+    setbound!(m)
+    log.bound = m.valid_bound
+    return
+end
+
+# a wrapper for estimating the confidence interval
+function setconfidenceinterval!(log, m, conflevel)
+    setconfidenceinterval!(m, estimatebound(getobj(m), conflevel))
+    log.ci_lower = log.ci_upper = mean(m.confidence_interval)
+    return
+end
+
+isconverged(::Type{Min}, ci::NTuple{2, Float64}, bound::Float64) = ci[1] < bound
+isconverged(::Type{Max}, ci::NTuple{2, Float64}, bound::Float64) = ci[2] > bound
+isconverged{T, M, S, X, TM}(m::SDDPModel{T, M, S, X, TM}, ci, bound) = isconverged(X, ci, bound)

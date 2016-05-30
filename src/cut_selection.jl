@@ -31,12 +31,22 @@ function cutselection!(m::SDDPModel, cutselection::CutSelectionMethod, iteration
 end
 cutselection!(m::SDDPModel, cutselection::NoSelection, iteration) = nothing
 
+# a wrapper for cut selection timings
+function cutselection!(log::SolutionLog, m::SDDPModel, cutselection, iterations)
+    if cutselection.frequency > 0
+        tic()
+        cutselection!(m, cutselection, iterations)
+        log.time_cutselection += toq()
+    end
+    return
+end
+
 # true if y0 is dominated by y1
 is_dominated(::Type{Min}, y0::Float64, y1::Float64) = y0 < y1
 is_dominated(::Type{Max}, y0::Float64, y1::Float64) = y0 > y1
 
 # add the cut 'cut' to the subproblem stagecut
-function add_cut!{N}(sense::Sense, cut::Cut{N}, stagecut::StageCuts{N})
+function add_cut!{N}(sense::Sense, stagecut::StageCuts{N}, cut::Cut{N})
     push!(stagecut.cuts, cut)
     non_domination = stagecut.n
     for i=1:stagecut.n
@@ -156,80 +166,73 @@ function loadcuts!{T, M, S, X, TM}(m::SDDPModel{T, M, S, X, TM}, filename::ASCII
             end
             cut = Cut(theta, xcoeff)
             # add to cutselection storage
-            add_cut!(X, cut, stagecut(m, t, i))
+            add_cut!(X, stagecut(m, t, i), cut)
             # add to problem
             addcut!(X, subproblem(m, t, i), cut)
         end
     end
 end
 
-# # This function recalculates dominance
-# function recalculate_dominance!{N}(sense::Sense, sc::StageCuts{N})
-#     sc.n = length(sc.samplepoints)
-#     sc.activecut = zeros(sc.n)
-#     sc.nondominated = zeros(length(sc.cuts))
-#     for (sample_idx, samplepoint) in enumerate(sc.samplepoints)
-#         best_idx = 1
-#         best_y = evaluate(sc.cuts[1], samplepoint)
-#         for cut_idx in 2:length(sc.cuts)
-#             y = evaluate(sc.cuts[cut_idx], samplepoint)
-#             if is_dominated(sense, best_y, y)
-#                 best_idx = cut_idx
-#                 best_y = y
-#             end
-#         end
-#         sc.nondominated[best_idx] += 1
-#         sc.activecut[sample_idx] = best_idx
-#     end
-# end
-#
-#
-# function rebuild_stageproblems!(::Deterministic, m::SDDPModel)
-#     deterministic_prune!(m)
-#     rebuild_stageproblems!(NoSelection(), m)
-# end
-# rebuild_stageproblems!(m::SDDPModel) = rebuild_stageproblems!(NoSelection(), m)
-#
-# # Run the exact method for cut selection
-# function deterministic_prune!{N}(sense::Sense, bound::Real, sp::Model, sc::StageCuts{N})
-#     m = Model()
-#     @variable(m, getlowerbound(stagedata(sp).state_vars[i]) <= x[i=1:N] <= getupperbound(stagedata(sp).state_vars[i]))
-#     @variable(m, y)
-#     for cut in sc.cuts
-#         if isa(sense, Max)
-#             @constraints(m, begin
-#                 y <= bound
-#                 y <= cut.intercept + sum{cut.coefficients[i] * x[i], i=1:N}
-#             end)
-#         else
-#             @constraints(m, begin
-#                 y >= bound
-#                 y >= cut.intercept + sum{cut.coefficients[i] * x[i], i=1:N}
-#             end)
-#         end
-#     end
-#     activecuts = Cut{N}[]
-#     for cut in sc.cuts
-#         if isa(sense, Max)
-#             @objective(m, Min, cut.intercept + sum{cut.coefficients[i] * x[i], i=1:N} - y)
-#         else
-#             @objective(m, Min, y - cut.intercept + sum{cut.coefficients[i] * x[i], i=1:N})
-#         end
-#         solve(m)
-#         if getobjectivevalue(m) < 0.
-#             push!(activecuts, cut)
-#         end
-#     end
-#     sc.activecut = activecuts
-#     recalculate_dominance!(sense, sc)
-# end
-#
-# # This function runs the deterministic prune on the entire SDDPModel
-# function deterministic_prune!(m::SDDPModel)
-#     for i=1:m.stages
-#         for j=1:m.markov_states
-#             deterministic_prune!(m.sense, m.value_to_go_bound, m.stage_problems[i,j], m.stagecuts[i,j])
-#         end
-#     end
-# end
-#
+# This function recalculates dominance
+function recalculate_dominance!{N}(sense::Sense, sc::StageCuts{N})
+    sc.n = length(sc.samplepoints)
+    sc.activecut = zeros(sc.n)
+    sc.nondominated = zeros(length(sc.cuts))
+    for (sample_idx, samplepoint) in enumerate(sc.samplepoints)
+        best_idx = 1
+        best_y = evaluate(sc.cuts[1], samplepoint)
+        for cut_idx in 2:length(sc.cuts)
+            y = evaluate(sc.cuts[cut_idx], samplepoint)
+            if is_dominated(sense, best_y, y)
+                best_idx = cut_idx
+                best_y = y
+            end
+        end
+        sc.nondominated[best_idx] += 1
+        sc.activecut[sample_idx] = best_idx
+    end
+end
+recalculate_dominance!(::CutSelectionMethod, m) = nothing
+function recalculate_dominance!{T, M, S, X, TM}(::LevelOne, m::SDDPModel{T, M, S, X, TM})
+    for t=1:T
+        for i=1:M
+            recalculate_dominance!(X, stagecut(m, t, i))
+        end
+    end
+end
+
+# Run the exact method for cut selection
+function rebuildcuts!{N}(::Deterministic, sense::Sense, sp::Model, sc::StageCuts{N}) #, bound::Real=-Inf)
+    m = Model()
+    @variable(m, getlowerbound(stagedata(sp).state_vars[i]) <= x[i=1:N] <= getupperbound(stagedata(sp).state_vars[i]))
+    @variable(m, y)
+    for cut in sc.cuts
+        if isa(sense, Max)
+            @constraints(m, begin
+                # y <= bound
+                y <= dot(cut, x)
+            end)
+        else
+            @constraints(m, begin
+                # y >= bound
+                y >= dot(cut, x)
+            end)
+        end
+    end
+    activecuts = Cut{N}[]
+    for cut in sc.cuts
+        if isa(sense, Max)
+            @objective(m, Min, dot(cut, x) - y)
+        else
+            @objective(m, Min, y - dot(cut, x))
+        end
+        solve(m)
+        if getobjectivevalue(m) < 0.
+            push!(activecuts, cut)
+        end
+    end
+    sc.activecut = activecuts
+    recalculate_dominance!(sense, sc)
+end
+
+Base.dot(cut::Cut, x::Vector{JuMP.Variable}) = cut.intercept + dot(cut.coefficients, x)

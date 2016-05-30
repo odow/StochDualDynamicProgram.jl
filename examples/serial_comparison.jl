@@ -105,7 +105,7 @@ end
                             maxsamples = 1000,
                             step       = 100
                         ),
-    forwardpass        = ForwardPass(10),
+    forward_pass       = ForwardPass(10),
     parallel           = Serial()
 )
 

@@ -1,12 +1,25 @@
 function backwardpass!{T, M, S, X, TM}(m::SDDPModel{T, M, S, X, TM}, riskmeasure::RiskMeasure, regularisation::Regularisation=NoRegularisation())
-    for pass = 1:getn(m)
-        for t=(T-1):-1:1
+    for t=(T-1):-1:1
+        for pass = 1:getn(m)
             setrhs!(m, pass, t)
             solveall!(m, t+1, regularisation)
             reweightscenarios!(m, t, getmarkov(m, pass, t), riskmeasure.beta, riskmeasure.lambda)
             addcut!(m, pass, t, getmarkov(m, pass, t))
         end
     end
+end
+
+# a wrapper for backward pass timings
+function backwardpass!(log::SolutionLog, m::SDDPModel, nscenarios, risk_measure, regularisation, isparallel::Bool)
+    tic()
+    if isparallel
+        parallelbackwardpass!(m, risk_measure, regularisation)
+    else
+        backwardpass!(m, risk_measure, regularisation)
+    end
+    log.cuts += nscenarios
+    log.time_backwards += toq()
+    return
 end
 
 function addcut!{T, M, S, X, TM}(m::SDDPModel{T, M, S, X, TM}, pass::Int, t::Int, i::Int)
@@ -25,9 +38,11 @@ function addcut!{T, M, S, X, TM}(m::SDDPModel{T, M, S, X, TM}, pass::Int, t::Int
         end
     end
     # add to cutselection storage
-    add_cut!(X, cut, stagecut(m, t, i))
+    add_cut!(X, stagecut(m, t, i), cut)
     # add to problem
     addcut!(X, subproblem(m, t, i), cut)
+
+    return cut
 end
 
 function addcut!(::Type{Max}, sp::Model, cut::Cut)
