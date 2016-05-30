@@ -4,7 +4,6 @@
 Perform n forward passes on the SDDPModel
 """
 function forwardpass!{T, M, S, X, TM}(m::SDDPModel{T, M, S, X, TM}, n::Int, cutselection::CutSelectionMethod, forwardpass::ForwardPass)
-    resizeforwardstorage!(m, n)                      # resize storage for forward pass
     markov = 0                                       # initialise
     for pass = 1:n                                   # for n passes
         markov = m.initial_markov_state              # initial markov state
@@ -65,6 +64,14 @@ function resizeforwardstorage!{T, M, S, X, TM}(m::SDDPModel{T, M, S, X, TM}, n::
     setn!(m, n)
 end
 
+function force_resizeforwardstorage!{T, M, S, X, TM}(m::SDDPModel{T, M, S, X, TM}, n::Int)
+    m.forwardstorage = ForwardPassData(n)
+    nx = length(stagedata(m, 1,1).state_vars)
+    for i=1:n
+        m.forwardstorage.x[i] = zeros(Float64, (nx, T))
+        m.forwardstorage.W[i] = zeros(Int, T)
+    end
+end
 
 # solve the subproblem in a forward pass
 function forwardsolve!(sp::Model)

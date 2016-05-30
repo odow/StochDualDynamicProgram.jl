@@ -83,7 +83,7 @@ function JuMP.solve{T, M, S, X, TM}(m::SDDPModel{T, M, S, X, TM};
         nscenarios = getscenarios(forward_pass.scenarios, solution.iterations)
 
         # forward pass
-        forwardpass!(log, m, nscenarios, cut_selection, forward_pass)
+        forwardpass!(log, m, nscenarios, cut_selection, forward_pass, parallel.forward)
 
         # estimate bound
         notconverged, ismontecarlo = estimatebound!(log, m, convergence, solution.iterations, parallel.montecarlo)
@@ -210,9 +210,14 @@ function estimatebound!(log::SolutionLog, m::SDDPModel, convergence, iteration, 
 end
 
 # a wrapper for forward pass timings
-function forwardpass!(log::SolutionLog, m::SDDPModel, n, cutselection, regularisation)
+function forwardpass!(log::SolutionLog, m::SDDPModel, n, cutselection, regularisation, isparallel)
     tic()
-    forwardpass!(m, n, cutselection, regularisation)
+    if isparallel
+        parallelforwardpass!(m, n, cutselection, regularisation)
+    else
+        resizeforwardstorage!(m, n) # resize storage for forward pass
+        forwardpass!(m, n, cutselection, regularisation)
+    end
     log.simulations += n
     log.time_forwards += toq()
     return

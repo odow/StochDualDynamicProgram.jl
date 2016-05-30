@@ -90,3 +90,36 @@ function parallelmontecarloestimation{T, M, S, X, TM}(antitheticvariates, m::SDD
     distribute_work!(results, workermontecarloestimation, m.stagecuts, nn, antitheticvariates)
     return vcat(results...)
 end
+
+
+# ------------------------------------------------------------------------------
+#
+#  Forward Pass
+#
+function workerforwardpass!(stagecuts, n::Int, cutselection::CutSelectionMethod, forwardpass::ForwardPass)
+    updatecuts!(stagecuts)
+    force_resizeforwardstorage!(m, n) # resize storage for forward pass
+    forwardpass!(m, n, cutselection, forwardpass)
+    deepcopy(m.forwardstorage)
+end
+
+function reduceforwardpass!(m, results::Vector{ForwardPassData})
+    bign = sum(map(r->r.n, results))
+    force_resizeforwardstorage!(m, bign)
+    pass = 1
+    for result in results
+        for littlen = 1:result.n
+            m.forwardstorage.obj[pass] = result.obj[littlen]
+            m.forwardstorage.W[pass]   = result.W[littlen]
+            m.forwardstorage.x[pass]   = result.x[littlen]
+            pass += 1
+        end
+    end
+end
+
+function parallelforwardpass!{T, M, S, X, TM}(m::SDDPModel{T, M, S, X, TM}, n::Int, cutselection::CutSelectionMethod, forwardpass::ForwardPass)
+    results = Array(ForwardPassData, length(workers()))
+    nn = ceil(Int, n / length(workers()))
+    distribute_work!(results, workerforwardpass!, m.stagecuts, nn, cutselection, forwardpass)
+    reduceforwardpass!(m, results)
+end

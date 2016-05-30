@@ -112,13 +112,14 @@ end
                             maxsamples = 1000,
                             step       = 100
                         ),
+    forwardpass        = ForwardPass(10),
     parallel           = Parallel()
 )
 
 @time results = simulate(m,
     1000,
     [:reservoir, :dispatch, :outflow, :spill],
-    parallel = true     # specify parallel simulate
+    parallel = true      # specify parallel simulate
     )
 
 println("Mean of simulation was $(mean(results[:Objective]))")

@@ -227,7 +227,14 @@ ForwardPassData() = ForwardPassData(
                     Float64[],
                     Vector{Int}[]
                     )
-
+function ForwardPassData(n::Int)
+    ForwardPassData(
+        n,
+        Array(Array{Float64, 2}, n),
+        zeros(n),
+        Array(Vector{Int}, n)
+    )
+end
 """
     SDDPModel{T, M, S, X, TM}
 
