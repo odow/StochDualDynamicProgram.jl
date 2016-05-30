@@ -57,7 +57,7 @@ function montecarloestimation{T, M, S, X, TM}(::Type{Val{false}}, m::SDDPModel{T
 end
 
 
-function simulate{T, M, S, X, TM}(m::SDDPModel{T, M, S, X, TM}, n::Int, vars::Vector{Symbol}=Symbol[]; variancereduction=true)
+function serialsimulate{T, M, S, X, TM}(m::SDDPModel{T, M, S, X, TM}, n::Int, vars::Vector{Symbol})
     results = Dict{Symbol, Any}(:Objective=>zeros(Float64,n))
     for (s, ty) in vcat(
                     collect(zip(vars, fill(Any, length(vars)))),
@@ -97,5 +97,18 @@ function store_results!(results::Dict{Symbol, Any}, vars, sp, stage, pass, marko
     results[:Future][stage][pass] = getobjectivevalue(sp) - getstagevalue(sp)
     for v in vars
         results[v][stage][pass] = getvalue(getvariable(sp, v))
+    end
+end
+
+function simulate{T, M, S, X, TM}(m::SDDPModel{T, M, S, X, TM}, n::Int, vars::Vector{Symbol}=Symbol[]; parallel=false)
+    if parallel
+        if length(workers()) < 2
+            warn("Paralleisation requested but Julia is only running with a single worker. Start julia with `julia -p N` or use the `addprocs(N)` function to load N workers. Running in serial mode.")
+            serialsimulate(m, n, vars)
+        else
+            parallelsimulate(m, n, vars)
+        end
+    else
+        serialsimulate(m, n, vars)
     end
 end

@@ -18,7 +18,7 @@ export SDDPModel,
     # Cut selection options
     LevelOne, Deterministic, NoSelection,
     # Parallel options
-    ConvergenceTest, BackwardPass, Parallel,
+    Serial, Parallel,
     # Risk averse options
     NestedCVar, Expectation,
     # Termination options
@@ -38,6 +38,7 @@ include("cut_selection.jl")
 include("print.jl")
 include("simulate.jl")
 include("visualiser/visualise.jl")
+include("parallel.jl")
 
 """
     solve(m[; kwargs...])
@@ -51,12 +52,21 @@ function JuMP.solve{T, M, S, X, TM}(m::SDDPModel{T, M, S, X, TM};
     forward_pass       = ForwardPass(),
     risk_measure       = Expectation(),
     cut_selection      = NoSelection(),
-    # parallel           = Parallel(),
+    parallel           = Serial(),
     output             = nothing,
     cut_output_file    = nothing
     )
 
     setriskmeasure!(m, risk_measure)
+
+    if isa(parallel, Parallel)
+        if length(workers()) < 2
+            warn("Paralleisation requested but Julia is only running with a single worker. Start julia with `julia -p N` or use the `addprocs(N)` function to load N workers. Running in serial mode.")
+            parallel = Serial()
+        else
+            nworkers = initialise_workers!(m)
+        end
+    end
 
     solution = Solution()
     log = SolutionLog()
@@ -76,7 +86,7 @@ function JuMP.solve{T, M, S, X, TM}(m::SDDPModel{T, M, S, X, TM};
         forwardpass!(log, m, nscenarios, cut_selection, forward_pass)
 
         # estimate bound
-        notconverged, ismontecarlo = estimatebound!(log, m, convergence, solution.iterations)
+        notconverged, ismontecarlo = estimatebound!(log, m, convergence, solution.iterations, parallel.montecarlo)
         !notconverged && setStatus!(solution, POLICY_TERMINATION)
 
         if notconverged
@@ -146,7 +156,15 @@ end
 
 Estimate the value of the policy by monte-carlo simulation and using sequential sampling.
 """
-function estimatebound!(log::SolutionLog, m::SDDPModel, convergence, iteration)
+function estimatebound!(log::SolutionLog, m::SDDPModel, convergence, iteration::Int, isparallel::Bool)
+    if isparallel
+        estimatebound!(log, m, convergence, iteration, parallelmontecarloestimation)
+    else
+        estimatebound!(log, m, convergence, iteration, montecarloestimation)
+    end
+end
+
+function estimatebound!(log::SolutionLog, m::SDDPModel, convergence, iteration, montecarlofunction::Function)
     notconverged = true
     ismontecarlo = false
     if convergence.frequency > 0 && mod(iteration, convergence.frequency) == 0
@@ -157,7 +175,7 @@ function estimatebound!(log::SolutionLog, m::SDDPModel, convergence, iteration)
             if length(obj) < convergence.minsamples
                 log.simulations += convergence.minsamples - length(obj)
                 push!(obj,
-                    montecarloestimation(convergence.antithetic, m,
+                    montecarlofunction(convergence.antithetic, m,
                         convergence.minsamples - length(obj)
                         )...
                 )
@@ -170,18 +188,16 @@ function estimatebound!(log::SolutionLog, m::SDDPModel, convergence, iteration)
                     end
                     break
                 end
+                oldlength = length(obj)
                 push!(obj,
-                    montecarloestimation(convergence.antithetic, m,
+                    montecarlofunction(convergence.antithetic, m,
                         min(
                             convergence.maxsamples-length(obj),
                             convergence.step
                             )
                         )...
                     )
-                log.simulations += min(
-                    convergence.maxsamples-length(obj),
-                    convergence.step
-                    )
+                log.simulations += length(obj) - oldlength
                 ci = estimatebound(obj, convergence.confidencelevel)
             end
             setconfidenceinterval!(m, ci)

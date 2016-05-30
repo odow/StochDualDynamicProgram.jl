@@ -87,4 +87,9 @@ facts("Visualisation") do
     include("../examples/visualisation.jl")
 end
 
+facts("Parallelisation") do
+    include("../examples/parallel_example.jl")
+    include("../examples/serial_comparison.jl")
+end
+
 FactCheck.exitstatus()

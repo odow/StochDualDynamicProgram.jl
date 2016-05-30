@@ -62,7 +62,7 @@ function getactivecut(stagecut::StageCuts, xi::Int)
     stagecut.cuts[stagecut.activecut[xi]]
 end
 
-function rebuild_stageproblems!{T, M, S, X, TM}(m::SDDPModel{T, M, S, X, TM}, cutselection::CutSelectionMethod)
+function rebuild_stageproblems!{T, M, S, X, TM}(m::SDDPModel{T, M, S, X, TM}, cutselection::CutSelectionMethod=NoSelection())
     create_subproblems!(m)
     cuts_added = 0
     total_cuts = 0

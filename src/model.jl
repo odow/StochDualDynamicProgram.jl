@@ -113,7 +113,7 @@ Keyword Arguments:
   transition                the transition matrix. Can be N*N where N is the number of scenarios, or M*N*N where M is the number of stages.
   value_to_go_bound         Initial bound on value to go
 """
-function SDDPModel(
+SDDPModel(
     build_subproblem!::Function;
     initial_markov_state = 0,
     markov_states        = 1,
@@ -124,8 +124,23 @@ function SDDPModel(
     transition           = nothing,
     solver               = ClpSolver(),
     value_to_go_bound    = NaN
-    )
+    ) = SDDPModel(build_subproblem!, initial_markov_state, markov_states,
+            scenarios, scenario_probability, sense, stages, transition,
+            solver, value_to_go_bound
+        )
 
+function SDDPModel(
+        build_subproblem!::Function,
+        initial_markov_state::Int,
+        markov_states::Int,
+        scenarios::Int,
+        scenario_probability,
+        sense::Symbol,
+        stages::Int,
+        transition,
+        solver::MathProgBase.AbstractMathProgSolver,
+        value_to_go_bound
+        )
     # Some sanity checks
     isnan(value_to_go_bound) && error("You must specify the option [value_to_go_bound] when creating an SDDPModel.")
     @assert stages >= 1

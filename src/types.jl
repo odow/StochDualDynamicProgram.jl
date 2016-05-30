@@ -346,22 +346,22 @@ end
 # ==============================================================================
 #   Parallel
 abstract AbstractParallel
-immutable Serial <: AbstractParallel end
-immutable ConvergenceTest <: AbstractParallel end
-immutable BackwardPass <: AbstractParallel
-    cuts_per_processor::Int
-    BackwardPass(n::Int) = (@assert n > 0; new(n))
+immutable Serial <: AbstractParallel
+    forward::Bool
+    backward::Bool
+    montecarlo::Bool
+    Serial() = new(false, false, false)
 end
-BackwardPass() = BackwardPass(1)
+immutable Parallel <: AbstractParallel
+    forward::Bool
+    montecarlo::Bool
+    backward::Bool
 
-type Parallel{AP1<:Union{ConvergenceTest, Serial}, AP2<:Union{BackwardPass, Serial}}
-    convergence_test::AP1
-    backward_pass::AP2
 end
-Parallel(bp::BackwardPass, fp::ConvergenceTest) = Parallel(fp, bp)
-Parallel(bp::BackwardPass) = Parallel(Serial(), bp)
-Parallel(fp::ConvergenceTest) = Parallel(fp, Serial())
-Parallel() = Parallel(Serial(), Serial())
+function Parallel(;forward=true, backward=true, montecarlo=true)
+    @assert forward || backward || montecarlo
+    Parallel(forward, backward, montecarlo)
+end
 
 # ==============================================================================
 #   Terminsation status
