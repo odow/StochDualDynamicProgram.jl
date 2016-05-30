@@ -46,6 +46,14 @@ Usage:
 
 """
 macro state(args...)
+    #
+    # macro state(sp, x, x0)
+    #     code = quote
+    #         push!(stagedata(sp).state_vars, macrocall(:variable, sp, x))
+    #     end
+    #     buildrefsets etc. ala https://github.com/mlubin/JuMPChance.jl/blob/master/src/macros.jl
+    # end
+    # 
     length(args) <= 1 &&
         error("in @state: expected model as first argument, then variable information.")
     m = esc(args[1])
