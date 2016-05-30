@@ -37,10 +37,11 @@ include("forwardpass.jl")
 include("risk_aversion.jl")
 include("backwardpass.jl")
 include("cut_selection.jl")
-include("print.jl")
 include("simulate.jl")
 include("visualiser/visualise.jl")
 include("parallel.jl")
+include("MIT_licencedcode.jl")
+include("print.jl")
 
 """
     solve(m[; kwargs...])

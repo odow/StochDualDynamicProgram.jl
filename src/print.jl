@@ -51,14 +51,6 @@ function printheader()
     printfmt("{1:19s} | {2:9s} {3:6s} | {4:6s} {5:6s} | {6:6s} {7:6s} |  Time\n", "      Expected", "  Bound", " % Gap", " Cuts ", " Time", " Sims ", " Time")
 end
 
-#----------------------------------------------------------------------
-# The following a modified version of that found at
-#
-# Humanize.jl    https://github.com/IainNZ/Humanize.jl
-# Based on jmoiron's humanize Python library (MIT licensed):
-#  https://github.com/jmoiron/humanize/
-# All original code is (c) Iain Dunning and MIT licensed.
-const gnu_suf = ["", "K", "M", "G", "T", "P", "E", "Z", "Y"]
 function humanize(value::Int)
     if value < 1000 && value > -1000
         return humanize(value, "5d")
@@ -66,22 +58,3 @@ function humanize(value::Int)
         return humanize(value, "5.1f")
     end
 end
-
-function humanize(value::Number, format="5.1f")
-    suffix  = gnu_suf
-    base    = 1000.0
-    bytes   = float(value)
-    sig=sign(value)
-    bytes   = abs(bytes)
-    format  = "%$(format)%s"
-    fmt_str = @eval (v,s)->@sprintf($format,v,s)
-    unit    = base
-    s       = suffix[1]
-    for (i,s) in enumerate(suffix)
-        unit = base ^ (i)
-        bytes < unit && break
-    end
-    return fmt_str(sig*base * bytes / unit, s)
-end
-# End excerpt
-#----------------------------------------------------------------------
