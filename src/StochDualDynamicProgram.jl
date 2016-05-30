@@ -2,7 +2,7 @@ isdefined(Base, :__precompile__) && __precompile__()
 
 module StochDualDynamicProgram
 
-importall JuMP
+using JuMP
 using MathProgBase, Clp
 using Formatting
 using Distributions, StatsBase

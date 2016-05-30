@@ -1,3 +1,39 @@
+macro newstate(sp, x, x0)
+    @assert x0.head == :kw # must be a keyword
+    symin = x0.args[1]     # name of the statein variable
+    rhs   = x0.args[2]     # values for the statein variable
+    if Base.Meta.isexpr(x, :comparison) # if its a comparison
+        if length(x.args) == 5          # double sided
+            xin = x.args[3]             # variable is in middle
+        elseif length(x.args) == 3      # single comparison
+            xin = x.args[1]             # variable is on left
+        else
+            error("Unknown format for $(x)")
+        end
+    else
+        xin = x                         # no bounds
+    end
+    quote
+        # create unbounded statein variables
+        if isa($xin, Expr)
+            $(xin).args[1] = $symin
+        end
+        statein = @variable($(esc(sp)), $(esc(xin)))
+        # create jump variables and initialise with starting solution
+        stateout = @variable($(esc(sp)), $(esc(x)), start=$(esc(rhs)))
+        # add to stage data
+        if typeof(stateout) != JuMP.Variable
+            push!(stagedata($(esc(sp))).state_vars, stateout[:]...)
+            for i=1:length(stateout[:])
+                push!(stagedata($(esc(sp))).dual_constraints, @constraint($(esc(sp)), statein[i] == getvalue(stateout[i])))
+            end
+        else # single state variable
+            push!(stagedata($(esc(sp))).state_vars, stateout)
+            push!(stagedata($(esc(sp))).dual_constraints, @constraint($(esc(sp)), statein == getvalue(stateout)))
+        end
+    end
+end
+
 # # problem: As the number of cuts gets bigger, the number of processors involves decreases
 # # since the master process takes longer to add the cuts than it takes to recompute N more
 # # This means that eventually, it farms out to 1 process at a time while it adds those cuts
