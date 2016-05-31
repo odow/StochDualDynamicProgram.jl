@@ -33,15 +33,15 @@ type MonteCarloEstimator <: PolicyEstimator
 end
 MonteCarloEstimator(;
     frequency          = 0,
-    minsamples         = 10,
-    maxsamples         = minsamples,
+    min                = 10,
+    max                = minsamples,
     step               = 0,
     terminate          = false,
     confidencelevel    = 0.95,
     antitheticvariates = false) = MonteCarloEstimator(
                                 frequency,
-                                minsamples,
-                                maxsamples,
+                                min,
+                                max,
                                 step,
                                 terminate,
                                 confidencelevel,

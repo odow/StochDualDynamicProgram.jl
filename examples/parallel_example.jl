@@ -107,16 +107,16 @@ end
 @time solvestatus = solve(m,
     maximum_iterations = 50,
     policy_estimation  = MonteCarloEstimator(
-                            frequency  = 1,
-                            minsamples = 100,
-                            maxsamples = 1000,
-                            step       = 100
+                            frequency = 1,
+                            min       = 100,
+                            max       = 1000,
+                            step      = 100
                         ),
     forward_pass       = ForwardPass(
                             scenarios = 10
                         ),
     backward_pass      = BackwardPass(
-                            multicut=true
+                            multicut = true
                         ),
     parallel           = Parallel()
 )

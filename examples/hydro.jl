@@ -101,10 +101,10 @@ end
 m2 = copy(m)
 
 mcestimator = MonteCarloEstimator(
-    frequency  = 1,
-    minsamples = 5,
-    maxsamples = 100,
-    step       = 10
+    frequency = 1,
+    min       = 5,
+    max       = 100,
+    step      = 10
 )
 
 @time solvestatus = solve(m,

@@ -25,12 +25,12 @@ Transition = Array{Float64, 2}[
 
 # Initialise SDDP Model
 m = SDDPModel(
-        stages=3,
-        markov_states=2,
-        scenarios=2,
-        transition=Transition,
-        initial_markov_state=1,
-        value_to_go_bound = 1000,
+        stages               = 3,
+        markov_states        = 2,
+        scenarios            = 2,
+        transition           = Transition,
+        initial_markov_state = 1,
+        value_to_go_bound    = 1000
     ) do sp, stage, markov_state
 
     # ====================
@@ -62,11 +62,11 @@ m1 = copy(m)
 m2 = copy(m)
 
 montecarlo = MonteCarloEstimator(
-    frequency  = 10,
-    minsamples = 100,
-    maxsamples = 1000,
-    step       = 100,
-    terminate  = true
+    frequency = 10,
+    min       = 100,
+    max       = 1000,
+    step      = 100,
+    terminate = true
 )
 
 @time solvestatus = solve(m,
@@ -79,8 +79,8 @@ montecarlo = MonteCarloEstimator(
 @time solvestatus = solve(m1,
     maximum_iterations = 30,
     bound_convergence  = BoundConvergence(
-                            after=5,
-                            tol=1e-5
+                            after = 5,
+                            tol   = 1e-5
                         ),
     cut_selection      = LevelOne(5)
 )

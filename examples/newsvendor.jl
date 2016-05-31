@@ -25,12 +25,12 @@ Transition = Array{Float64, 2}[
 
 # Initialise SDDP Model
 m = SDDPModel(
-        stages=3,
-        markov_states=2,
-        scenarios=2,
-        transition=Transition,
-        initial_markov_state=1,
-        value_to_go_bound = 1000
+        stages               = 3,
+        markov_states        = 2,
+        scenarios            = 2,
+        transition           = Transition,
+        initial_markov_state = 1,
+        value_to_go_bound    = 1000
     ) do sp, stage, markov_state
 
     # ====================
@@ -61,18 +61,18 @@ end
 @time solvestatus = solve(m,
     maximum_iterations = 50,
     policy_estimation  = MonteCarloEstimator(
-                            frequency  = 10,
-                            minsamples = 5,
-                            maxsamples = 50,
-                            step       = 5,
-                            terminate  = false
+                            frequency = 10,
+                            min       = 5,
+                            max       = 50,
+                            step      = 5,
+                            terminate = false
                         ),
     forward_pass       = ForwardPass(
                             regularisation = LinearRegularisation(1., 0.95)
                         ),
     risk_measure       = NestedCVar(
-                            beta=0.6,
-                            lambda=0.5
+                            beta   = 0.6,
+                            lambda = 0.5
                         )
 )
 @assert status(solvestatus) == :MaximumIterations

@@ -104,8 +104,8 @@ end
     maximum_iterations = 50,
     policy_estimation  = MonteCarloEstimator(
                             frequency          = 10,
-                            minsamples         = 5,
-                            maxsamples         = 100,
+                            min                = 5,
+                            max                = 100,
                             step               = 10,
                             terminate          = false,
                             antitheticvariates = false
