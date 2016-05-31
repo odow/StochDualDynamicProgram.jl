@@ -1,3 +1,12 @@
+"""
+    sendtoworkers!(;kwargs...)
+
+This function spawns keyword variables on all the workers.
+
+Usage:
+
+    sendtoworkers!(a=1)
+"""
 function sendtoworkers!(;kwargs...)
     for procid in workers()
         for (key, val) in kwargs
@@ -6,6 +15,11 @@ function sendtoworkers!(;kwargs...)
     end
 end
 
+"""
+    initialise_workers!{T, M, S, X, TM}(m::SDDPModel{T, M, S, X, TM})
+
+Copies the SDDPModel `m` to all the workers.
+"""
 function initialise_workers!{T, M, S, X, TM}(m::SDDPModel{T, M, S, X, TM})
     sendtoworkers!(
         m = SDDPModel(
@@ -24,6 +38,11 @@ function initialise_workers!{T, M, S, X, TM}(m::SDDPModel{T, M, S, X, TM})
     return length(workers())
 end
 
+"""
+    distribute_work!(results, f::Function, args...)
+
+Runs the function `f` with the arguments `args` on all workers and stores the solution in `results`.
+"""
 function distribute_work!(results, f::Function, args...)
     @sync begin
         for (i, procid) in enumerate(workers())
@@ -33,6 +52,12 @@ function distribute_work!(results, f::Function, args...)
         end
     end
 end
+
+"""
+    distribute_work_void!(f::Function, args...)
+
+Runs the function `f` with the arguments `args` on all workers.
+"""
 function distribute_work_void!(f::Function, args...)
     @sync begin
         for (i, procid) in enumerate(workers())
@@ -43,6 +68,11 @@ function distribute_work_void!(f::Function, args...)
     end
 end
 
+"""
+    updatecuts!(stagecuts)
+
+Copies the stage cuts `stagecuts` to the model `m` on all workers (assumes `initialise_workers` has been run).
+"""
 function updatecuts!(stagecuts)
     m.stagecuts = deepcopy(stagecuts)
     rebuild_stageproblems!(m)
@@ -185,8 +215,8 @@ function workerbackwardpassmulticut!(pass, T, M, riskmeasure, regularisation)
 end
 
 function reducebackwardpass!{T, M, S, X, TM}(m::SDDPModel{T, M, S, X, TM}, results)
-    for pass=1:getn(m)
-        for t=1:(T-1)
+    for t=1:(T-1)
+        for pass=1:getn(m)
             # add to cutselection storage
             add_cut!(X, stagecut(m, t, getmarkov(m, pass, t)), results[pass][t])
             # add to problem
@@ -195,8 +225,8 @@ function reducebackwardpass!{T, M, S, X, TM}(m::SDDPModel{T, M, S, X, TM}, resul
     end
 end
 function reducebackwardpassmulticut!{T, M, S, X, TM}(m::SDDPModel{T, M, S, X, TM}, results)
-    for pass=1:getn(m)
-        for t=1:(T-1)
+    for t=1:(T-1)
+        for pass=1:getn(m)
             for i=1:M
                 # add to cutselection storage
                 add_cut!(X, stagecut(m, t, i), results[pass][t, i])
@@ -217,4 +247,14 @@ function parallelbackwardpass!{T, M, S, X, TM}(m::SDDPModel{T, M, S, X, TM}, ris
         results = pmap(workerbackwardpass!, 1:getn(m), repeated(T), repeated(riskmeasure), repeated(regularisation))
         reducebackwardpass!(m, results)
     end
+end
+
+# solve all the t subproblems
+function parallelsolveall!{T, M, S, X, TM}(m::SDDPModel{T, M, S, X, TM}, t::Int, regularisation::Regularisation)
+    pmap(workersolveall!,  [(i,s) for i=1:M, s=1:S][:], repeaded(X), repeated(t), repeated(regularisation))
+end
+function workersolveall!(i, X, t, regularisation)
+    set_nonregularised_objective!(regularisation, X, subproblem(m,t,i[1]))
+    load_scenario!(subproblem(m,t,i[1]), i[2])
+    backsolve!(subproblem(m,t,i[1]), i[2])
 end
