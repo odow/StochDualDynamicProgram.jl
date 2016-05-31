@@ -130,7 +130,7 @@ function estimatebound!(log::SolutionLog, m::SDDPModel, convergence, iteration, 
     return notconverged, ismontecarlo
 end
 
-function serialsimulate{T, M, S, X, TM}(m::SDDPModel{T, M, S, X, TM}, n::Int, vars::Vector{Symbol})
+function initialiseresultsdict(n::Int, T::Int, vars::Vector{Symbol})
     results = Dict{Symbol, Any}(:Objective=>zeros(Float64,n))
     for (s, ty) in vcat(
                     collect(zip(vars, fill(Any, length(vars)))),
@@ -141,6 +141,11 @@ function serialsimulate{T, M, S, X, TM}(m::SDDPModel{T, M, S, X, TM}, n::Int, va
             results[s][t] = Array(ty, n)
         end
     end
+    return results
+end
+
+function serialsimulate{T, M, S, X, TM}(m::SDDPModel{T, M, S, X, TM}, n::Int, vars::Vector{Symbol})
+    results = initialiseresultsdict(n, T, vars)
     i = 0                                  # initialise
     for pass = 1:n                         # for n passes
         i = m.initial_markov_state         # initial markov state
@@ -184,4 +189,23 @@ function simulate{T, M, S, X, TM}(m::SDDPModel{T, M, S, X, TM}, n::Int, vars::Ve
     else
         serialsimulate(m, n, vars)
     end
+end
+
+function historicalsimulation{T, M, S, X, TM}(m::SDDPModel{T, M, S, X, TM}, vars::Vector{Symbol}=Symbol[]; markov=ones(Int, m.stages), kwargs...)
+    n, scenario, obj = 1, 0, 0.          # Initialise storage
+    results = initialiseresultsdict(n, T, vars)
+    for t=1:T                            # For all stages
+        sp = subproblem(m, t, markov[t]) # get subproblem
+        s = load_scenario!(m, sp)        # realise scenario
+        data = stagedata(sp)
+        for (key, series) in kwargs
+            @assert haskey(data.scenario_constraint_names, key)
+            cidx = data.scenario_constraint_names[key]
+            JuMP.setRHS(data.scenario_constraints[cidx][1], series[t])
+        end
+        forwardsolve!(sp)                # solve
+        store_results!(results, vars, sp, t, 1, markov[t], s)
+        t < T && pass_states!(m, sp, t)  # pass state values forward
+    end
+    results
 end

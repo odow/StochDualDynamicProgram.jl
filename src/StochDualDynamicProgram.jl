@@ -14,7 +14,7 @@ export SDDPModel,
     # macros
     @state, @scenarioconstraint, @scenarioconstraints, @stageprofit, @visualise,
     # Model functions
-    simulate, loadcuts!,
+    simulate, historicalsimulation, loadcuts!,
     # Cut selection options
     LevelOne, Deterministic, NoSelection,
     # Parallel options

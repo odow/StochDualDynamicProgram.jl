@@ -34,7 +34,7 @@ end
 MonteCarloEstimator(;
     frequency          = 0,
     min                = 10,
-    max                = minsamples,
+    max                = min,
     step               = 0,
     terminate          = false,
     confidencelevel    = 0.95,

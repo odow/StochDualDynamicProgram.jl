@@ -77,11 +77,13 @@ end
 )
 @assert status(solvestatus) == :MaximumIterations
 
-# # Historical simulation
-# results = simulate(m,   # Simulate the policy
-#     [:stock, :buy, :sell],
-#     demand=[10, 10, 10]
-#     )
+# Historical simulation
+results = historicalsimulation(m,   # Simulate the policy
+    [:stock, :buy, :sell],
+    markov = [1, 2, 1],
+    demand = [10, 10, 10]
+    )
+@assert abs(results[:Objective][1] - 85) < 1e-5
 
 # Monte-carlo simulation
 results = simulate(m,   # Simulate the policy

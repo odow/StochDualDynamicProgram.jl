@@ -220,10 +220,10 @@ First, we need to name our `@scenarioconstraint`s. i.e.
 end)
 ```
 
-Next, when calling the `simulate` function, we need to supply it the RHS values for each of the named constraints for each stage as keyword arguments. *This is different to the construction of the constraints where we could used indexed sets.* We also drop the number of simulation passes since only one historical realisation is allowed.
+Next, when calling the `historicalsimulation` function, we need to supply it the RHS values for each of the named constraints for each stage as keyword arguments. *This is different to the construction of the constraints where we could used indexed sets.* We also drop the number of simulation passes since only one historical realisation is allowed.
 
 ```julia
-results = simulate(m, [:x], con_name_1=rand(10), con_name_2=rand(10))
+results = historicalsimulation(m, [:x], markov=[1, 2, 1], con_name_1=[0.1, 0.1, 0.2], con_name_2=[1, 2, 3])
 
 # The one realisation of the x variable in stage 1
 results[:x][1] --> [1.25]
