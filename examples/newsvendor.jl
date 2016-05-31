@@ -60,17 +60,20 @@ end
 
 @time solvestatus = solve(m,
     maximum_iterations = 50,
-    convergence        = MonteCarloEstimator(
-                                frequency  = 10,
-                                minsamples = 5,
-                                maxsamples = 50,
-                                step       = 5,
-                                terminate  = false
-                            ),
+    policy_estimation  = MonteCarloEstimator(
+                            frequency  = 10,
+                            minsamples = 5,
+                            maxsamples = 50,
+                            step       = 5,
+                            terminate  = false
+                        ),
     forward_pass       = ForwardPass(
-                            LinearRegularisation(1., 0.95)
-                            ),
-    risk_measure       = NestedCVar(beta=0.6, lambda=0.5)
+                            regularisation = LinearRegularisation(1., 0.95)
+                        ),
+    risk_measure       = NestedCVar(
+                            beta=0.6,
+                            lambda=0.5
+                        )
 )
 @assert status(solvestatus) == :MaximumIterations
 

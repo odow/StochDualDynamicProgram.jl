@@ -70,15 +70,18 @@ montecarlo = MonteCarloEstimator(
 )
 
 @time solvestatus = solve(m,
-    convergence        = montecarlo,
     maximum_iterations = 30,
+    policy_estimation  = montecarlo,
     cut_output_file    = "news_vendor.csv"
 )
 @assert status(solvestatus) == :PolicyConverence
 
 @time solvestatus = solve(m1,
-    bound_convergence  = BoundConvergence(after=5, tol=1e-5),
     maximum_iterations = 30,
+    bound_convergence  = BoundConvergence(
+                            after=5,
+                            tol=1e-5
+                        ),
     cut_selection      = LevelOne(5)
 )
 @assert status(solvestatus) == :BoundConvergence
@@ -123,8 +126,6 @@ results1 = simulate(m2,   # Simulate the policy
 
 # Hopefully the mean of the simulated in memory is within $1 of the simulated
 # from cut files
-@show mean(results[:Objective])
-@show mean(results1[:Objective])
 @assert abs(mean(results[:Objective]) - mean(results1[:Objective])) < 1
 
 rm("news_vendor.csv")

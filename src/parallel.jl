@@ -171,6 +171,19 @@ function workerbackwardpass!(pass, T, riskmeasure, regularisation)
     return cuts
 end
 
+function workerbackwardpassmulticut!(pass, T, M, riskmeasure, regularisation)
+    cuts = Array(Cut, (T-1, M))
+    for t=(T-1):-1:1
+        setrhs!(m, pass, t)
+        solveall!(m, t+1, regularisation)
+        for i=1:M
+            reweightscenarios!(m, t, i, riskmeasure.beta, riskmeasure.lambda)
+            cuts[t, i] = addcut!(m, pass, t, i)
+        end
+    end
+    return cuts
+end
+
 function reducebackwardpass!{T, M, S, X, TM}(m::SDDPModel{T, M, S, X, TM}, results)
     for pass=1:getn(m)
         for t=1:(T-1)
@@ -181,10 +194,27 @@ function reducebackwardpass!{T, M, S, X, TM}(m::SDDPModel{T, M, S, X, TM}, resul
         end
     end
 end
+function reducebackwardpassmulticut!{T, M, S, X, TM}(m::SDDPModel{T, M, S, X, TM}, results)
+    for pass=1:getn(m)
+        for t=1:(T-1)
+            for i=1:M
+                # add to cutselection storage
+                add_cut!(X, stagecut(m, t, i), results[pass][t, i])
+                # add to problem
+                addcut!(X, subproblem(m, t, i), results[pass][t, i])
+            end
+        end
+    end
+end
 
-function parallelbackwardpass!{T, M, S, X, TM}(m::SDDPModel{T, M, S, X, TM}, riskmeasure::RiskMeasure, regularisation::Regularisation=NoRegularisation())
+function parallelbackwardpass!{T, M, S, X, TM}(m::SDDPModel{T, M, S, X, TM}, riskmeasure::RiskMeasure, regularisation::Regularisation, backward_pass::BackwardPass)
     updateforwardstorage!(m.forwardstorage)
     # This returns a vector of vector of cuts
-    results = pmap(workerbackwardpass!, 1:getn(m), repeated(T), repeated(riskmeasure), repeated(regularisation))
-    reducebackwardpass!(m, results)
+    if backward_pass.multicut
+        results = pmap(workerbackwardpassmulticut!, 1:getn(m), repeated(T), repeated(M), repeated(riskmeasure), repeated(regularisation))
+        reducebackwardpassmulticut!(m, results)
+    else
+        results = pmap(workerbackwardpass!, 1:getn(m), repeated(T), repeated(riskmeasure), repeated(regularisation))
+        reducebackwardpass!(m, results)
+    end
 end

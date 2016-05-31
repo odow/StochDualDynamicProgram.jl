@@ -7,6 +7,7 @@ immutable Max <: AbstractSense end
 immutable Min <: AbstractSense end
 typealias Sense Union{Type{Max}, Type{Min}}
 
+abstract PolicyEstimator
 """
     MonteCarloEstimator
 
@@ -21,7 +22,7 @@ Fields:
     terminate          true = terminate if confidence level contains lower bound
     confidencelevel    size of confidence level to construct to check for convergence
 """
-type MonteCarloEstimator
+type MonteCarloEstimator <: PolicyEstimator
     frequency::Int
     minsamples::Int
     maxsamples::Int
@@ -62,7 +63,7 @@ type BoundConvergence
     tol::Float64
     n::Int
 end
-BoundConvergence(;after=0, tol=1e-6) = BoundConvergence(after, tol, 0)
+BoundConvergence(;after=0, tol=0.) = BoundConvergence(after, tol, 0)
 
 # ==============================================================================
 #   Cuts
@@ -410,5 +411,11 @@ type ForwardPass{T<:Union{Int, AbstractArray{Int, 1}}}
     regularisation::Regularisation
     importancesampling::Bool
 end
-ForwardPass{T<:Union{Int, AbstractArray{Int, 1}}}(scenarios::T=1, regularisation::Regularisation=NoRegularisation(); importancesampling=false) = ForwardPass(scenarios, regularisation, importancesampling)
-ForwardPass{T<:Union{Int, AbstractArray{Int, 1}}}(regularisation::Regularisation, scenarios::T=1; importancesampling=false) = ForwardPass(scenarios, regularisation, importancesampling)
+ForwardPass(;scenarios=1, regularisation=NoRegularisation(), importancesampling=false) = ForwardPass(scenarios, regularisation, importancesampling)
+
+# ==============================================================================
+#   Backward Pass
+type BackwardPass
+    multicut::Bool
+end
+BackwardPass(;multicut=false) = BackwardPass(multicut)

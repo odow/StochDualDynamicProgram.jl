@@ -108,16 +108,22 @@ mcestimator = MonteCarloEstimator(
 )
 
 @time solvestatus = solve(m,
-    convergence        = mcestimator,
-    bound_convergence  = BoundConvergence(after=5, tol=1e-10),
-    maximum_iterations = 50
+    maximum_iterations = 50,
+    policy_estimation  = mcestimator,
+    bound_convergence  = BoundConvergence(
+                            after = 5,
+                            tol   = 1e-10
+                        )
 )
 @assert status(solvestatus) == :BoundConvergence
 
 @time solvestatus = solve(m2,
-    convergence        = mcestimator,
     maximum_iterations = 20,
-    forward_pass       = ForwardPass(1:10, importancesampling=true),
+    policy_estimation  = mcestimator,
+    forward_pass       = ForwardPass(
+                            scenarios          = 1:10,
+                            importancesampling = true
+                        ),
     cut_selection      = LevelOne(5)
 )
 @assert status(solvestatus) == :MaximumIterations

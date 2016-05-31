@@ -101,15 +101,15 @@ m = SDDPModel(sense=:Min, stages=3, markov_states=2, transition=Transition, valu
 end
 
 @time solvestatus = solve(m,
-    convergence=MonteCarloEstimator(
-        frequency          = 10,
-        minsamples         = 5,
-        maxsamples         = 100,
-        step               = 10,
-        terminate          = false,
-        antitheticvariates = false
-    ),
-    maximum_iterations=50
+    maximum_iterations = 50,
+    policy_estimation  = MonteCarloEstimator(
+                            frequency          = 10,
+                            minsamples         = 5,
+                            maxsamples         = 100,
+                            step               = 10,
+                            terminate          = false,
+                            antitheticvariates = false
+                        )
 )
 @assert status(solvestatus) == :MaximumIterations
 

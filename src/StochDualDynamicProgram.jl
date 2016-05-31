@@ -25,6 +25,8 @@ export SDDPModel,
     MonteCarloEstimator, BoundConvergence,
     # Forward Pass options
     ForwardPass,
+    # Backward Pass options
+    BackwardPass,
     # Regularisation options
     NoRegularisation, LinearRegularisation, QuadraticRegularisation,
     # query solve attributes
@@ -50,9 +52,10 @@ Solve the SDDPModel
 """
 function JuMP.solve{T, M, S, X, TM}(m::SDDPModel{T, M, S, X, TM};
     maximum_iterations = 1,
-    convergence        = MonteCarloEstimator(),
+    policy_estimation  = MonteCarloEstimator(),
     bound_convergence  = BoundConvergence(),
     forward_pass       = ForwardPass(),
+    backward_pass      = BackwardPass(),
     risk_measure       = Expectation(),
     cut_selection      = NoSelection(),
     parallel           = Serial(),
@@ -86,12 +89,12 @@ function JuMP.solve{T, M, S, X, TM}(m::SDDPModel{T, M, S, X, TM};
         nscenarios = forwardpass!(log, m, solution.iterations, cut_selection, forward_pass, parallel.forward)
 
         # estimate bound
-        notconverged, ismontecarlo = estimatebound!(log, m, convergence, solution.iterations, parallel.montecarlo)
+        notconverged, ismontecarlo = estimatebound!(log, m, policy_estimation, solution.iterations, parallel.montecarlo)
         !notconverged && setStatus!(solution, POLICY_TERMINATION)
 
         if notconverged
             # backward pass
-            backwardpass!(log, m, nscenarios, risk_measure, forward_pass.regularisation, parallel.backward)
+            backwardpass!(log, m, nscenarios, risk_measure, forward_pass.regularisation, parallel.backward, backward_pass)
 
             # run cut selection
             if parallel.backward

@@ -1,21 +1,28 @@
-function backwardpass!{T, M, S, X, TM}(m::SDDPModel{T, M, S, X, TM}, riskmeasure::RiskMeasure, regularisation::Regularisation=NoRegularisation())
+function backwardpass!{T, M, S, X, TM}(m::SDDPModel{T, M, S, X, TM}, riskmeasure::RiskMeasure, regularisation::Regularisation, backward_pass::BackwardPass)
     for t=(T-1):-1:1
         for pass = 1:getn(m)
             setrhs!(m, pass, t)
             solveall!(m, t+1, regularisation)
-            reweightscenarios!(m, t, getmarkov(m, pass, t), riskmeasure.beta, riskmeasure.lambda)
-            addcut!(m, pass, t, getmarkov(m, pass, t))
+            if backward_pass.multicut
+                for i=1:M
+                    reweightscenarios!(m, t, i, riskmeasure.beta, riskmeasure.lambda)
+                    addcut!(m, pass, t, i)
+                end
+            else
+                reweightscenarios!(m, t, getmarkov(m, pass, t), riskmeasure.beta, riskmeasure.lambda)
+                addcut!(m, pass, t, getmarkov(m, pass, t))
+            end
         end
     end
 end
 
 # a wrapper for backward pass timings
-function backwardpass!(log::SolutionLog, m::SDDPModel, nscenarios, risk_measure, regularisation, isparallel::Bool)
+function backwardpass!(log::SolutionLog, m::SDDPModel, nscenarios, risk_measure, regularisation, isparallel::Bool, backward_pass::BackwardPass)
     tic()
     if isparallel
-        parallelbackwardpass!(m, risk_measure, regularisation)
+        parallelbackwardpass!(m, risk_measure, regularisation, backward_pass)
     else
-        backwardpass!(m, risk_measure, regularisation)
+        backwardpass!(m, risk_measure, regularisation, backward_pass)
     end
     log.cuts += nscenarios
     log.time_backwards += toq()

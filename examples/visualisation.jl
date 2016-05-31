@@ -88,8 +88,8 @@ m = SDDPModel(stages=3, markov_states=2, scenarios=1, transition=Transition, val
     @stageprofit(sp, Price[stage, markov_state]*generation_quantity)
 end
 
-@time solvestatus = solve(m,                # Solve the model using the SDDP algorithm
-    maximum_iterations=20
+@time solvestatus = solve(m,
+    maximum_iterations = 20
 )
 @assert status(solvestatus) == :MaximumIterations
 

@@ -58,9 +58,11 @@ function solve_newsvendor(Demand, beta_quant=0.5, lambda=1.)
     end
 
     solve(m,                # Solve the model using the SDDP algorithm
-        convergence=Convergence(1000, 50),
-        maximum_iterations=500,
-        risk_measure = NestedCVar(beta_quant, lambda)
+        maximum_iterations = 50,
+        risk_measure       = NestedCVar(
+                                beta   = beta_quant,
+                                lambda = lambda
+                            )
     )
 
     results = simulate(m,   # Simulate the policy

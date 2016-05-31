@@ -39,9 +39,9 @@ The following arguments are optional:
 - `sense`: must be either `:Max` or `:Min`. Defaults to `:Max`.
 - `markov_states`: the number of markov states. Defaults to `1`.
 - `scenarios`: the number of scenarios in each markov state. Defaults to `1`.
+- `scenario_probability`: support vector for the scenarios. Defaults to uniform distribution.
 - `transition`: Transition probabilities for markov chain. Either a square matrix of size `markov_states` or a vector of such matrices with length `stages`. Defaults to uniform transition probability.
 - `initial_markov_state`: index of the initial markov state. If not given assumed to transition uniformly at beginning of first stage.
-- `cuts_filename`: if specified, the cuts will be written to the file.
 - `solver`: MathProgBase compliant solver that returns duals from a linear program
 
 ### Describing the Stage Problems
@@ -110,10 +110,59 @@ end)
 ```
 
 
+### Load previously generated cuts
+You can load cuts from a previous solve using `loadcuts!(m::SDDPModel, filename::ASCIIString)`.
+
 ### Solve
 
-#### Load previously generated cuts
-If `cuts_filename` was specified in the model definition, you can load cuts via `loadcuts!(m)`, otherwise you can load cuts using `loadcuts!(m::SDDPModel, filename::ASCIIString)`.
+The `solve(m::SDDPModel [; kwargs...])` function solves the SDDP model `m`. There are the following keyword parameters:
+- `maximum_iterations::Int` default = `1`
+  - The maximum number of iterations to complete before termination
+- `policy_estimation::PolicyEstimator` default = `MonteCarloEstimator()`
+  - See section Policy Estimation below
+- `bound_convergence::BoundConvergence` default = `BoundConvergence()`
+  - See section Bound Convergence below
+- `forward_pass::ForwardPass` default = `ForwardPass()`
+  - See section Forward Pass Options below.
+- `backward_pass::BackwardPass` default = `BackwardPass()`
+  - See section Backward Pass Options below.
+- `risk_measure::RiskMeasure` default = `Expectation()`
+  - See section Risk Measures below.
+- `cut_selection::CutSelectionMethod` default = `NoSelection()`
+  - See section Cut Selection below.
+- `parallel::Parallel` default = `Serial()`
+  - See section Parallelisation below.
+- `output::ASCIIString` default = `nothing`
+  - Prints the log trace to the file specified by `output`.
+- `cut_output_file::ASCIIString` default = `nothing`
+  - Save the cuts generated to the file specified by `cut_output_file`. These can be loaded later using `loadcuts!`.
+
+#### Policy Estimation
+We can control the policy estimator with the `MonteCarloEstimator([;frequency=0, minsamples=10, maxsamples=minsamples, step=0, terminate=false, confidencelevel=0.95, antitheticvariates=false])` constructor. The options are:
+- `frequency::Int`: the policy estimator is run every `frequency` iterations. If `frequency < 1` then the estimator will never run.
+- `min::Int`: minium number of monte-carlo simulations to conduct when estimating bound using sequential sampling.
+- `max::In`: maximum number of monte-carlo simulations to conduct when estimating bound using sequential sampling.
+- `step::Int`: step size for sequential sampling
+- `terminate::Bool`: algorithm terminates if confidence interval from policy estimation after `max` simulations contains the lower (if minimising) bound.
+- `confidencelevel::Float64`: confidence level for the confidence interval construction.
+- `antitheticvariates::Bool`: sample using antithetic variates technique for variance minimisation.
+
+#### Bound Convergence
+One termination criteria for the SDDP algorithm is to terminate after the lower (if minimising) bound fails to improve by a certain tolerance after a set number of iterations. This behaviour can be controlled with the `BoundConvergence([;after=0, tol=0.])` constructor. If `after < 1` then the algorithm will not terminate due to bound convergence. Otherwise, the algorithm will terminate after `after` iterations where the bound improves by less than `tol`.
+
+#### Forward Pass Options
+You can specify forward pass options with the constructor `ForwardPass([;scenarios=1, regularisation=NoRegularisation(), importancesampling=false])`.
+- `scenarios` is the number of scenarios to sample in one iteration of the forward pass. It can either by an interger, or a range/vector of integers specifying the number of samples by iteration. If there are more iterations than elements in `scenarios`, future iterations will use the last element in the list.
+  - examples: `scenarios = 1:10` or `scenarios = [1, 1, 10]`.
+- `regularisation` specifies the regularisation to be used on the forward pass. Valid options are
+  - `NoRegularisation()`: No regularisation is conducted.
+  - `LinearRegularisation([inital=1[, decay_rate=0.95]])`: The objective is penalised by the sum of the absolute values of the difference between the state variables and their value on the previous forward pass.
+  - `QuadraticRegularisation([inital=1[, decay_rate=0.95]])`: The objective is penalised by the sum of squares of the difference between the state variables and their value on the previous forward pass.
+  Both the `Linear` and `Quadratic` regularisation penalties are multiplied by the coefficient `initial x decay_rate ^ k` where `k` is the iteration number.
+- `importancesampling=true` samples the forward pass with uniform probability instead of those given by the tranistion matrix and scenario support vector.
+
+#### Backward Pass Options
+You can specify backward pass options with the constructor `BackwardPass([;multicut=false])`. If `multicut` is `true` then a cut will be added to every markov state at every state for every forward trajectory.
 
 #### Risk Measures
 You can choose the risk measure to be applied to the model. It currently accepts
@@ -129,42 +178,17 @@ You can choose the cut selection method to be apply to the model. It currently a
   - No cut selection is applied
 - `LevelOne(frequency::Int)`
   - This heuristic removes those cuts that are level one dominated (de Matos, Philpott, Finardi (2015). Improving the Peformance of Stochastic Dual Dynamic Programming. Journal of Computational and Applied Mathematics 290: 196-208).
-  - The heuristic is run each time `frequency` cuts have been added to the model.
+  - The algorithm is run every `frequency` iterations.
 - `Deterministic(frequency::Int)`: solves an LP for each constraint to determine whether cut is currently defining at any point in state space.
-  - The heuristic is run each time `frequency` cuts have been added to the model.
+  - The algorithm is run every `frequency` iterations.
 
 Note: Tuning the `frequency` parameter is a trade off between the model creation time, and the model solution time. If the model takes a short time to solve relative to the creation time, a low value for `frequency` may hurt performance. However, if the model takes a long time to solve relative to the creation time, aggressive cut selection (i.e.  `frequency` is small) may help performance.
 
 #### Parallelisation
-You can change the parallelisation options by constructing a `Parallel()` type and passing it one or both of the following in any order. The default is to run the pass in serial mode on a single processor.
-- `ConvergenceTest()`
-  - Convergence test (simulation) passes are conducted independently on all available processors. This option scales well with the number of processors due to the independent nature of estimating the objective of the policy.
-- `BackwardPass(n::Int)`
- - `n` backwards (cutting) passes are computed independently on all available processors before the cuts are shared and syncronised across all processors.
- - Tuning this parameter is a trade off between the parallel overhead (copying the model and cuts between processors) and the extra cuts discovered by solving in parallel. For small models, it is likely that low values of `n` may reduce performance due to this additional overhead. In addition, since cuts are discovered independently, cuts generated on one processor will not benefit from the cuts generated on other processors until they are combined.
-
-#### The actual solve
-The `solve(m::SDDPModel [; kwargs...])` function solves the SDDP model `m`. There are the following keyword parameters:
-- `maximum_iterations::Int` default = `1`
-  - The maximum number of iterations (cutting passes, convergence testing) to complete before termination
-- `convergence::Convergence([;simulations=1, frequency=1, terminate=false, quantile=0.95, variancereduction=true])`
-  - `simulations::Int` default = `1`
-    - The number of realisations to conduct when testing for convergence
-  - `frequency::Int` default = `1`
-    - Simulate the expected cost of the policy (using n=`simulations`) every `frequency` iterations and output to user
-  - `terminate::Bool` default = `false`
-    - If a convergence test is conducted with the bounds found to have converged, and `terminate=true`, method will terminate. Otherwise the method will terminate at `maximum_iterations`.
-      - We choose to default this to false since if there is high variance in objective, the method may terminate earlier than desired.
-  - `quantile::Float64` default = `0.95`
-    - Level of confidence interval to construct when testing for convergence
-  - `variancereduction::Bool` default = `true`
-    - Use antithetic variates when simulating the policy to reduce the variance in the estimate
-- `risk_measure::RiskMeasure` default = `Expectation()`
-  - See section Risk Measures above.
-- `cut_selection::CutSelectionMethod` default = `NoSelection()`
-  - See section Cut Selection above.
-- `parallel::Parallel` default = `Parallel()`
-  - See section Parallelisation above.
+You can change the parallelisation options with the `Parallel([;forward=true, backward=true, montecarlo=true])` constructor. The default, `Serial()`, is to run the pass in serial mode on a single processor.
+- `montecarlo::Bool = true`: Convergence test (simulation) passes are conducted independently on all available processors. This option scales well with the number of processors due to the independent nature of estimating the objective of the policy.
+- `forwardpass::Bool = true`: Forward pass scenarios are computed independently in parallel (when more than one scenario is sampled per iteration).
+- `backwardpass::Bool = true`: Cuts are computed independently for each trajectory sampled on the forward pass.
 
 ### Simulate Policy
 The `simulate(m::SDDPModel, n::Int, variables::Vector{Symbol}; parallel::Bool=false)` function simulates `n` realisations of the policy given by a converged SDDP model `m`. It returns a dictionary with an entry for each variable given in `variables`. Each dictionary entry is a vector corresponding to the stages in the model. Each item in the vector is a vector of the `n` values that the variable took in the `n` realisations. If `parallel=true` the the `n` realisations are distributed across all available processors and computed independently.

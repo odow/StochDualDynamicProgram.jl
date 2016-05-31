@@ -106,13 +106,18 @@ end
 
 @time solvestatus = solve(m,
     maximum_iterations = 50,
-    convergence        = MonteCarloEstimator(
+    policy_estimation  = MonteCarloEstimator(
                             frequency  = 1,
                             minsamples = 100,
                             maxsamples = 1000,
                             step       = 100
                         ),
-    forward_pass       = ForwardPass(10),
+    forward_pass       = ForwardPass(
+                            scenarios = 10
+                        ),
+    backward_pass      = BackwardPass(
+                            multicut=true
+                        ),
     parallel           = Parallel()
 )
 @assert status(solvestatus) == :MaximumIterations
