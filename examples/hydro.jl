@@ -113,7 +113,8 @@ mcestimator = MonteCarloEstimator(
     bound_convergence  = BoundConvergence(
                             after = 5,
                             tol   = 1e-10
-                        )
+                        ),
+    print_level        = 2
 )
 @assert status(solvestatus) == :BoundConvergence
 
@@ -124,7 +125,8 @@ mcestimator = MonteCarloEstimator(
                             scenarios          = 1:10,
                             importancesampling = true
                         ),
-    cut_selection      = LevelOne(5)
+    cut_selection      = LevelOne(5),
+    print_level        = 1
 )
 @assert status(solvestatus) == :MaximumIterations
 

@@ -109,7 +109,8 @@ end
                             step               = 10,
                             terminate          = false,
                             antitheticvariates = false
-                        )
+                        ),
+    print_level        = 0
 )
 @assert status(solvestatus) == :MaximumIterations
 

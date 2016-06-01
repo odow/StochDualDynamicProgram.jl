@@ -77,20 +77,20 @@ end
 
 Estimate the value of the policy by monte-carlo simulation and using sequential sampling.
 """
-function estimatebound!(log::SolutionLog, m::SDDPModel, convergence, iteration::Int, isparallel::Bool)
+function estimatebound!(log::SolutionLog, m::SDDPModel, convergence, iteration::Int, isparallel::Bool, print_level)
     if isparallel
-        estimatebound!(log, m, convergence, iteration, parallelmontecarloestimation)
+        estimatebound!(log, m, convergence, iteration, parallelmontecarloestimation, print_level)
     else
-        estimatebound!(log, m, convergence, iteration, montecarloestimation)
+        estimatebound!(log, m, convergence, iteration, montecarloestimation, print_level)
     end
 end
 
-function estimatebound!(log::SolutionLog, m::SDDPModel, convergence, iteration, montecarlofunction::Function)
+function estimatebound!(log::SolutionLog, m::SDDPModel, convergence, iteration, montecarlofunction::Function, print_level)
     notconverged = true
     ismontecarlo = false
     if convergence.frequency > 0 && mod(iteration, convergence.frequency) == 0
             tic()
-            info("Running out-of-sample Monte Carlo simulation")
+            print_level >= PRINTINFO && info("Running out-of-sample Monte Carlo simulation")
             ismontecarlo = true
             obj = copy(getobj(m))
             if length(obj) < convergence.minsamples

@@ -45,6 +45,12 @@ include("parallel.jl")
 include("MIT_licencedcode.jl")
 include("print.jl")
 
+const PRINTALL   = 4
+const PRINTINFO  = 3
+const PRINTTRACE = 2
+const PRINTTERM  = 1
+const PRINTNONE  = 0
+
 """
     solve(m[; kwargs...])
 
@@ -60,7 +66,8 @@ function JuMP.solve{T, M, S, X, TM}(m::SDDPModel{T, M, S, X, TM};
     cut_selection      = NoSelection(),
     parallel           = Serial(),
     output             = nothing,
-    cut_output_file    = nothing
+    cut_output_file    = nothing,
+    print_level        = PRINTALL
     )
 
     setriskmeasure!(m, risk_measure)
@@ -77,7 +84,7 @@ function JuMP.solve{T, M, S, X, TM}(m::SDDPModel{T, M, S, X, TM};
     solution = Solution()
     log = SolutionLog()
 
-    printheader()
+    print_level >= PRINTTRACE && printheader()
 
     cutswrittentofile = 0
     notconverged = true
@@ -89,7 +96,7 @@ function JuMP.solve{T, M, S, X, TM}(m::SDDPModel{T, M, S, X, TM};
         nscenarios = forwardpass!(log, m, solution.iterations, cut_selection, forward_pass, parallel.forward)
 
         # estimate bound
-        notconverged, ismontecarlo = estimatebound!(log, m, policy_estimation, solution.iterations, parallel.montecarlo)
+        notconverged, ismontecarlo = estimatebound!(log, m, policy_estimation, solution.iterations, parallel.montecarlo, print_level)
         !notconverged && setStatus!(solution, POLICY_TERMINATION)
 
         if notconverged
@@ -101,7 +108,7 @@ function JuMP.solve{T, M, S, X, TM}(m::SDDPModel{T, M, S, X, TM};
                 # We have probably dragged various cuts through here...
                 recalculate_dominance!(cut_selection, m)
             end
-            cutselection!(log, m, cut_selection, solution.iterations)
+            cutselection!(log, m, cut_selection, solution.iterations, print_level)
 
             if cut_output_file != nothing
                 # Write cuts to file if appropriate
@@ -120,11 +127,11 @@ function JuMP.solve{T, M, S, X, TM}(m::SDDPModel{T, M, S, X, TM};
         end
 
         # print solution to user
-        print(m, log, output, ismontecarlo)
+        print_level >= PRINTTRACE && print(m, log, output, ismontecarlo)
 
         push!(solution.trace, copy(log))
     end
-    info("Terminating with status $(solution.status).")
+    print_level >= PRINTTERM && info("Terminating with status $(solution.status).")
     return solution
 end
 

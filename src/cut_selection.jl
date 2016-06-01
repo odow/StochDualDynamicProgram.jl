@@ -23,19 +23,19 @@ end
 
 If `iteration` mod the CutSelectionMethod.frequency is zero, then the subproblems are rebuilt using the CutSelectionMethod.
 """
-function cutselection!(m::SDDPModel, cutselection::CutSelectionMethod, iteration)
+function cutselection!(m::SDDPModel, cutselection::CutSelectionMethod, iteration, print_level)
     if mod(iteration, cutselection.frequency) == 0
-        info("Running cut selection")
+        print_level >= PRINTINFO && info("Running cut selection")
         rebuild_stageproblems!(m, cutselection)
     end
 end
 cutselection!(m::SDDPModel, cutselection::NoSelection, iteration) = nothing
 
 # a wrapper for cut selection timings
-function cutselection!(log::SolutionLog, m::SDDPModel, cutselection, iterations)
+function cutselection!(log::SolutionLog, m::SDDPModel, cutselection, iterations, print_level)
     if cutselection.frequency > 0
         tic()
-        cutselection!(m, cutselection, iterations)
+        cutselection!(m, cutselection, iterations, print_level)
         log.time_cutselection += toq()
     end
     return

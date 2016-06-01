@@ -136,9 +136,14 @@ The `solve(m::SDDPModel [; kwargs...])` function solves the SDDP model `m`. Ther
   - Prints the log trace to the file specified by `output`.
 - `cut_output_file::ASCIIString` default = `nothing`
   - Save the cuts generated to the file specified by `cut_output_file`. These can be loaded later using `loadcuts!`.
+- `print_level::Int`: control the level of printing logged to the screen. Default = `3`.
+  - `0`: Nothing logged to screen
+  - `1`: Final termination message logged to screen
+  - `2`: Solution trace logged to screen
+  - `3`: Info messages logged to screen
 
 #### Policy Estimation
-We can control the policy estimator with the `MonteCarloEstimator([;frequency=0, minsamples=10, maxsamples=minsamples, step=0, terminate=false, confidencelevel=0.95, antitheticvariates=false])` constructor. The options are:
+We can control the policy estimator with the `MonteCarloEstimator([;frequency=0, min=10, max=min, step=0, terminate=false, confidencelevel=0.95, antitheticvariates=false])` constructor. The options are:
 - `frequency::Int`: the policy estimator is run every `frequency` iterations. If `frequency < 1` then the estimator will never run.
 - `min::Int`: minium number of monte-carlo simulations to conduct when estimating bound using sequential sampling.
 - `max::In`: maximum number of monte-carlo simulations to conduct when estimating bound using sequential sampling.
