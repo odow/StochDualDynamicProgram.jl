@@ -82,4 +82,8 @@ facts("Parallelisation") do
     include(joinpath(EXAMPLESDIR, "serial_comparison.jl"))
 end
 
+facts("Complete Example") do
+    include(joinpath(EXAMPLESDIR, "complete_example.jl"))
+end
+
 FactCheck.exitstatus()

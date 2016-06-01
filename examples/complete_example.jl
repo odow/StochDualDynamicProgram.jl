@@ -53,11 +53,26 @@ addprocs(3)
         :lower => 200
         )
 
+    # rainfal inflow
+    rainfall = [
+        10 20 30;
+        20 30 40;
+         0  5 10;
+         0  5 10;
+        10 15 20
+    ]
+
     n = length(A)
 end
 
 # Initialise SDDP Model
-m = SDDPModel(stages=3, markov_states=2, scenarios=1, transition=Transition, value_to_go_bound=1500) do sp, stage, markov_state
+m = SDDPModel(
+        stages            = 3,
+        scenarios         = 5,
+        markov_states     = 2,
+        transition        = Transition,
+        value_to_go_bound = 1500
+    ) do sp, stage, markov_state
     # ------------------------------------------------------------------
     #   SDDP State Variables
     # Level of upper reservoir
@@ -65,6 +80,9 @@ m = SDDPModel(stages=3, markov_states=2, scenarios=1, transition=Transition, val
     # ------------------------------------------------------------------
     #   Additional variables
     @variables(sp, begin
+        # Rainfall inflow into upper reservoir
+        inflow >= 0
+
         # Quantity to flow through turbine of reservoir r
         outflow[r=RESERVOIRS] >= 0
 
@@ -81,7 +99,7 @@ m = SDDPModel(stages=3, markov_states=2, scenarios=1, transition=Transition, val
     @constraints(sp, begin
         # ------------------------------------------------------------------
         # Conservation constraints
-        reservoir[:upper] == reservoir0[:upper] - (outflow[:upper] + spill[:upper])
+        reservoir[:upper] == reservoir0[:upper] - (outflow[:upper] + spill[:upper]) + inflow
 
         reservoir[:lower] == reservoir0[:lower] +
             (outflow[:upper] + spill[:upper]) -
@@ -98,6 +116,9 @@ m = SDDPModel(stages=3, markov_states=2, scenarios=1, transition=Transition, val
         # Dispatch combination of levels
         dispatched[reservoir=RESERVOIRS], sum{dispatch[reservoir, level], level=1:n} <= 1
     end)
+
+    # Random rainfall
+    @scenarioconstraint(sp, scenario=1:5, inflow <= rainfall[scenario, stage])
 
     # ------------------------------------------------------------------
     #   Objective Function
@@ -119,6 +140,11 @@ end
                             multicut = true
                         ),
     parallel           = Parallel(),
+    risk_measure       = NestedCVar(
+                            beta   = 0.5,
+                            lambda = 0.75
+                        ),
+    cut_selection      = LevelOne(5),
     print_level        = 2
 )
 @assert status(solvestatus) == :MaximumIterations

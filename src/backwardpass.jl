@@ -62,12 +62,15 @@ function addcut!(::Type{Min}, sp::Model, cut::Cut)
 end
 
 # set the rhs of the t+1 subproblems using value from forward pass
+function setrhs!(m::SDDPModel, pass, t, i)
+    sp = subproblem(m, t+1,i)
+    for j in 1:length(stagedata(sp).dual_constraints)
+        JuMP.setRHS(stagedata(sp).dual_constraints[j], getx(m, pass, t, j))
+    end
+end
 function setrhs!{T, M, S, X, TM}(m::SDDPModel{T, M, S, X, TM}, pass::Int, t::Int)
     for i=1:M
-        sp = subproblem(m, t+1,i)
-        for j in 1:length(stagedata(sp).dual_constraints)
-            JuMP.setRHS(stagedata(sp).dual_constraints[j], getx(m, pass, t, j))
-        end
+        setrhs!(m, pass, t, i)
     end
 end
 

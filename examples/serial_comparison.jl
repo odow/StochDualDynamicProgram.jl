@@ -110,7 +110,8 @@ end
     backward_pass      = BackwardPass(
                             multicut = true
                         ),
-    parallel           = Serial()
+    parallel           = Serial(),
+    print_level        = 2
 )
 @assert status(solvestatus) == :MaximumIterations
 

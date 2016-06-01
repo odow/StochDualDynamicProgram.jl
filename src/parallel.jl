@@ -35,8 +35,10 @@ function initialise_workers!{T, M, S, X, TM}(m::SDDPModel{T, M, S, X, TM})
             m.valuetogobound
         )
     )
+    distribute_work_void!(initialisecutstorage!)
     return length(workers())
 end
+initialisecutstorage!() = initialise_cutstorage!(m)
 
 """
     distribute_work!(results, f::Function, args...)
@@ -147,17 +149,17 @@ function workerforwardpass!(stagecuts, n::Int, cutselection::CutSelectionMethod,
 end
 
 function getlatestsamplepoints{T, M, S, X, TM}(m::SDDPModel{T, M, S, X, TM}, cutselection::LevelOne, n)
-    y = Array(Vector{Float64}, (T,M))
+    y = Array(Vector{NTuple}, (T,M))
     for t=1:T
         for i=1:M
-            y[t,i] = stagecut(m, t, i).samplepoints[(end-n+1):end]
+            y[t,i] = stagecut(m, t, i).samplepoints[max(1, end-n+1):end]
         end
     end
     return y
 end
-getlatestsamplepoints{T, M, S, X, TM}(m::SDDPModel{T, M, S, X, TM}, cutselection::CutSelectionMethod, n) = Array(Vector{Float64}, (0,0))
+getlatestsamplepoints{T, M, S, X, TM}(m::SDDPModel{T, M, S, X, TM}, cutselection::CutSelectionMethod, n) = Array(Vector{NTuple}, (0,0))
 
-function reduceforwardpass!{T, M, S, X, TM}(m::SDDPModel{T, M, S, X, TM}, results::Vector{Tuple{ForwardPassData, Array{Vector{Float64}, 2}}})
+function reduceforwardpass!{T, M, S, X, TM}(m::SDDPModel{T, M, S, X, TM}, results::Vector{Tuple{ForwardPassData, Array{Vector{NTuple}, 2}}})
     bign = sum(map(r->r[1].n, results))
     force_resizeforwardstorage!(m, bign)
     pass = 1
@@ -171,7 +173,9 @@ function reduceforwardpass!{T, M, S, X, TM}(m::SDDPModel{T, M, S, X, TM}, result
         if size(result[2])[1] > 0
             for t=1:T
                 for i=1:M
-                    push!(stagecut(m, t, i).samplepoints, result[2][t,i]...)
+                    for res in result[2][t,i]
+                        push!(stagecut(m, t, i).samplepoints, res)
+                    end
                 end
             end
         end
@@ -179,7 +183,7 @@ function reduceforwardpass!{T, M, S, X, TM}(m::SDDPModel{T, M, S, X, TM}, result
 end
 
 function parallelforwardpass!{T, M, S, X, TM}(m::SDDPModel{T, M, S, X, TM}, n::Int, cutselection::CutSelectionMethod, forwardpass::ForwardPass)
-    results = Array(Tuple{ForwardPassData, Array{Vector{Float64}, 2}}, length(workers()))
+    results = Array(Tuple{ForwardPassData, Array{Vector{NTuple}, 2}}, length(workers()))
     nn = ceil(Int, n / length(workers()))
     distribute_work!(results, workerforwardpass!, m.stagecuts, nn, cutselection, forwardpass)
     reduceforwardpass!(m, results)
@@ -189,14 +193,27 @@ end
 # ------------------------------------------------------------------------------
 #
 #  Backward Pass
-#
+#   solve trajectories
+function reweightandgetcut!(m, t, i, pass, beta, lambda)
+    reweightscenarios!(m, t,i, beta, lambda)
+    addcut!(m, pass, t, i)
+end
+
+function setandsolve!(m, t, pass, regularisation)
+    setrhs!(m, pass, t)
+    solveall!(m, t+1, regularisation)
+end
+
+function addcuts!(X, m, t, i, result)
+    add_cut!(X, stagecut(m, t, i), result)  # add to cutselection storage
+    addcut!(X, subproblem(m, t, i), result) # add to problem
+end
+
 function workerbackwardpass!(pass, T, riskmeasure, regularisation)
     cuts = Array(Cut, T-1)
     for t=(T-1):-1:1
-        setrhs!(m, pass, t)
-        solveall!(m, t+1, regularisation)
-        reweightscenarios!(m, t, getmarkov(m, pass, t), riskmeasure.beta, riskmeasure.lambda)
-        cuts[t] = addcut!(m, pass, t, getmarkov(m, pass, t))
+        setandsolve!(m, t, pass, regularisation)
+        cuts[t] = reweightandgetcut!(m, t,  getmarkov(m, pass, t), pass, riskmeasure.beta, riskmeasure.lambda)
     end
     return cuts
 end
@@ -204,11 +221,9 @@ end
 function workerbackwardpassmulticut!(pass, T, M, riskmeasure, regularisation)
     cuts = Array(Cut, (T-1, M))
     for t=(T-1):-1:1
-        setrhs!(m, pass, t)
-        solveall!(m, t+1, regularisation)
+        setandsolve!(m, t, pass, regularisation)
         for i=1:M
-            reweightscenarios!(m, t, i, riskmeasure.beta, riskmeasure.lambda)
-            cuts[t, i] = addcut!(m, pass, t, i)
+            cuts[t, i] = reweightandgetcut!(m, t, i, pass, riskmeasure.beta, riskmeasure.lambda)
         end
     end
     return cuts
@@ -217,21 +232,16 @@ end
 function reducebackwardpass!{T, M, S, X, TM}(m::SDDPModel{T, M, S, X, TM}, results)
     for t=1:(T-1)
         for pass=1:getn(m)
-            # add to cutselection storage
-            add_cut!(X, stagecut(m, t, getmarkov(m, pass, t)), results[pass][t])
-            # add to problem
-            addcut!(X, subproblem(m, t, getmarkov(m, pass, t)), results[pass][t])
+            addcuts!(X, m, t, getmarkov(m, pass, t), results[pass][t])
         end
     end
 end
+
 function reducebackwardpassmulticut!{T, M, S, X, TM}(m::SDDPModel{T, M, S, X, TM}, results)
     for t=1:(T-1)
         for pass=1:getn(m)
             for i=1:M
-                # add to cutselection storage
-                add_cut!(X, stagecut(m, t, i), results[pass][t, i])
-                # add to problem
-                addcut!(X, subproblem(m, t, i), results[pass][t, i])
+                addcuts!(X, m, t, i, results[pass][t, i])
             end
         end
     end
@@ -258,3 +268,67 @@ function workersolveall!(i, X, t, regularisation)
     load_scenario!(subproblem(m,t,i[1]), i[2])
     backsolve!(subproblem(m,t,i[1]), i[2])
 end
+
+#  Backward Pass Version 2.
+#   solve subproblems
+# function bestparallelbackwardpass!{T, M, S, X, TM}(m::SDDPModel{T, M, S, X, TM}, riskmeasure::RiskMeasure, regularisation::Regularisation, backward_pass::BackwardPass)
+#     updateforwardstorage!(m.forwardstorage)
+#     set_nonregularised_objective!(regularisation, X, subproblem(m, t, i))
+#     distribute_work_void(set_nonregularised_objective_all!, regularisation, X, T, M)
+#
+#     for t=(T-1):-1:1
+#         cuts = solvestage!(t, N, M, S, X, riskmeasure)
+#         for pass=1:getn(m)
+#             addcuts!(X, m, t, i, cut)
+#             distribute_work_void(addremotecut!, X, t, getmarkov(m, t, pass), cuts[pass])
+#         end
+#     end
+# end
+# function set_nonregularised_objective_all!(m, regularisation, X, T, M)
+#     for t=1:T
+#         for i=1:M
+#             set_nonregularised_objective!(regularisation, X, subproblem(m, t, i))
+#         end
+#     end
+# end
+# set_nonregularised_objective_all!(regularisation, X, T, M) = set_nonregularised_objective_all!(m, regularisation, X, T, M)
+#
+# addremotecut!(X, t, i, cut) = addcuts!(X, m, t, i, cut)
+#
+# function solvestage!(t, N, M, S, X, riskmeasure)
+#     pmap(parallelpass!, repeated(t), 1:N, repeated((M, S, riskmeasure)))
+# end
+# function parallelpass!(t, p, MSR)
+#     # solve all the sub problems in stage t, pass, p
+#
+#     stagecuts = pmap(parallelmarkov!, repeated(t), repeated(p), 1:MSR[1], repeated(MSR[2]))::Vector{Vector{Cut}}
+#     # stagecuts is a vector of cut vectors. stagecuts[markov][scenario] = cut
+#     reducecutvectors(vcat(stagecuts...), MSR[3])
+# end
+#
+# function reducecutvectors{N}(x::Vector{Cut{N}}, riskmeasure::RiskMeasure)#, prob::Vector{Float64}, beta, lambda)
+#     intercept = 0.
+#     coeffs = zeros(N)
+#     for cut in x
+#         intercept += cut.intercept
+#         coeffs += cut.coefficients
+#     end
+#     Cut(intercept / length(X), coeffs ./ length(x))
+# end
+#
+# function parallelmarkov!(t, p, i, S)
+#     # solve all the scenario problems in stage t, for pass p, markov state i
+#     #   returns a vector of cuts (length = S)
+#     pmap(solvescenario!, repeated(t), repeated(p), repeated(i), 1:S)::Vector{Cut}
+# end
+#
+# function solvescenario!(t, pass, i, s)
+#     setrhs!(m, pass, t, i)
+#     load_scenario!(subproblem(m,t,i), s)
+#     backsolve!(subproblem(m,t,i), s)
+#     sd       = stagedata(m, t, i)
+#     thetahat = sd.objective_values[s]
+#     pihat    = [d[s] for d in sd.dual_values]
+#     xbar     = getx(m, t, pass)
+#     return Cut(thetahat - dot(xbar, pihat), pihat)
+# end

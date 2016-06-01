@@ -62,7 +62,8 @@ function solve_newsvendor(Demand, beta_quant=0.5, lambda=1.)
         risk_measure       = NestedCVar(
                                 beta   = beta_quant,
                                 lambda = lambda
-                            )
+                            ),
+        print_level        = 2
     )
 
     results = simulate(m,   # Simulate the policy
