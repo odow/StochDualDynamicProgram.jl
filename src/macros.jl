@@ -19,8 +19,7 @@ Usage:
 macro state(sp, x, x0)
     sp = esc(sp)                        # escape the model
     @assert x0.head == :kw              # must be a keyword
-    symin = x0.args[1]                  # name of the statein variable
-    rhs   = x0.args[2]                  # values for the statein variable
+    symin, rhs = x0.args                # name of the statein variable
     if Base.Meta.isexpr(x, :comparison) # if its a comparison
         if length(x.args) == 5          # double sided
             xin = copy(x.args[3])       # variable is in middle
@@ -32,41 +31,33 @@ macro state(sp, x, x0)
     else
         xin = copy(x)                   # no bounds
     end
-    if isa(xin, Expr)
-        xin.args[1] = symin
-    else
-        xin = symin
+    if isa(xin, Expr)                   # x has indices
+        xin.args[1] = symin             # so just change the name
+    else                                # its just a symbol
+        xin = symin                     # so change the symbol
     end
-    code = quote end
-    # create jump variables and initialise with starting solution
-    push!(code.args, Expr(:(=), :stateout, Expr(:macrocall, symbol("@variable"), sp, esc(x), Expr(:kw, :start, esc(rhs)))))
-    # create unbounded statein variables
-    push!(code.args, Expr(:(=), :statein,  Expr(:macrocall, symbol("@variable"), sp, esc(xin))))
-    push!(code.args, quote
-        adddummyconstraints($sp, statein, stateout)
+    quote
+        stateout = $(Expr(:macrocall, symbol("@variable"), sp, esc(x), Expr(:kw, :start, esc(rhs))))
+        statein  = $(Expr(:macrocall, symbol("@variable"), sp, esc(xin)))
+        registerstatevariable!($sp, statein, stateout)
         stateout, statein
-    end)
-    return code
+    end
 end
 
-function adddummyconstraints(sp::Model, xin::JuMP.Variable, xout::JuMP.Variable)
+function registerstatevariable!(sp::Model, xin::JuMP.Variable, xout::JuMP.Variable)
     push!(stagedata(sp).state_vars, xout)
-    push!(stagedata(sp).dual_constraints,
-        @constraint(sp, xin == getvalue(xout))
-    )
+    push!(stagedata(sp).dual_constraints, @constraint(sp, xin == getvalue(xout)))
 end
-function adddummyconstraints(sp::Model, xin::Array{JuMP.Variable}, xout::Array{JuMP.Variable})
+function registerstatevariable!(sp::Model, xin::Array{JuMP.Variable}, xout::Array{JuMP.Variable})
     @assert length(xin[:]) == length(xout[:])
     for i=1:length(xin[:])
-        push!(stagedata(sp).state_vars, xout[i])
-        push!(stagedata(sp).dual_constraints, @constraint(sp, xin[i] == getvalue(xout)[i]))
+        registerstatevariable!(sp, xin[i], xout[i])
     end
 end
-function adddummyconstraints(sp::Model, xin::JuMP.JuMPArray, xout::JuMP.JuMPArray)
+function registerstatevariable!(sp::Model, xin::JuMP.JuMPArray, xout::JuMP.JuMPArray)
     @assert length(keys(xin)) == length(keys(xout))
     for key in keys(xin)
-        push!(stagedata(sp).state_vars, xout[key...])
-        push!(stagedata(sp).dual_constraints, @constraint(sp, xin[key...] == getvalue(xout[key...])))
+        registerstatevariable!(sp, xin[key...], xout[key...])
     end
 end
 
@@ -88,43 +79,50 @@ Usage:
     @scenarioconstraint(sp, i=1:2, x + y <= 3 * rand(2)[i] )
     @scenarioconstraint(sp, mysc1, i=1:2, x + y <= 3 * rand(2)[i] )
 """
-macro scenarioconstraint(m, args...)
-    if length(args) == 3
-        name = args[1]
-        kw = args[2]
-        c = args[3]
-    elseif length(args) == 2
-        name = :nothing
-        kw = args[1]
-        c = args[2]
-    else
+macro scenarioconstraint(sp, args...)
+    sp = esc(sp)                                # escape the model
+    if length(args) == 3                        # the named version
+        name, kw, c = args                      # unpack the arguments
+    elseif length(args) == 2                    # no name given
+        name = :nothing                         # blank name
+        kw, c = args                            # unpack the arguments
+    else                                        # need 2 or 3 arguemnts
         error("Wrong number of arguments in @scenariocostraint")
     end
-
-    m = esc(m)
-    v = esc(kw.args[2])
-
-    @assert length(c.args) == 3
-    if c.args[2] == :(<=) || c.args[2] == :(==)
-        ex = :($(c.args[1]) - $(c.args[3]))
-    elseif c.args[2] == :(>=)
-        ex = :($(c.args[3]) - $(c.args[1]))
-    else
-        error("Error in @scenarioconstraint with $c")
-    end
+    @assert kw.head == :kw                      # check its a keyword
+    scenariovalues = esc(kw.args[2])            # get the vector of values
+    @assert c.head == :comparison               # check c is a comparison constraint
+    @assert length(c.args) == 3                 # check that it has (LHS, (comparison), RHS)
+    @assert c.args[2]  in [:(<=), :(==), :(>=)] # check valid constraint type
+    constrexpr = :($(c.args[1]) - $(c.args[3])) # LHS - RHS
     quote
-        rhs = Float64[]
-        for val in $v
-            $(esc(kw.args[1])) = val
-            push!(rhs, -@expression($m, $(esc(gensym())), $(esc(ex))).constant)
+        rhs = Float64[]                         # intialise RHS vector
+        for scenariovalue in $scenariovalues    # for each scenario
+            $(esc(kw.args[1])) = scenariovalue  # set the scenariovalue
+            push!(rhs,                          # add to the rhs vector
+                -$(Expr(                        # negate to shift from LHS to RHS
+                    :macrocall, symbol("@expression"),
+                    sp,                         # model is first argument
+                    esc(gensym()),              # generate a random symbol
+                    esc(constrexpr)             # the constrexpr
+                )).constant                     # want the constant term
+            )
          end
 
-        $(esc(kw.args[1])) = $v[1]
-        con = @constraint($m, $(esc(c)))
-        push!(stagedata($m).scenario_constraints, (con, rhs))
-        if $(Expr(:quote, name)) != :nothing
-            stagedata($m).scenario_constraint_names[$(Expr(:quote, name))] = length(stagedata($m).scenario_constraints)
-        end
+        $(esc(kw.args[1])) = $scenariovalues[1] # initialise with first scenario
+        con = $(Expr(                           # add the constraint
+                :macrocall, symbol("@constraint"),
+                sp,                             # the subproblem
+                esc(c)                          # the constraint expression
+                ))
+        registerscenarioconstraint!($sp, con, rhs, $(Expr(:quote, name)))
+    end
+end
+
+function registerscenarioconstraint!(sp::Model, con, rhs, name)
+    push!(stagedata(sp).scenario_constraints, (con, rhs))
+    if name != :nothing
+        stagedata(sp).scenario_constraint_names[name] = length(stagedata(sp).scenario_constraints)
     end
 end
 
@@ -147,20 +145,20 @@ macro scenarioconstraints(m, kw, c)
     @assert c.head == :block || error("Invalid syntax for @scenarioconstraints")
     code = quote end
     for it in c.args
-        if isexpr(it, :line)
+        if Base.Meta.isexpr(it, :line)
             # do nothing
         else
             if it.head == :comparison
-                push!(code.args, quote
-                    @scenarioconstraint($(esc(m)), $(esc(kw)), $(esc(it)))
-                end)
+                push!(code.args,
+                    Expr(:macrocall, symbol("@scenarioconstraint"), esc(m), esc(kw), esc(it))
+                )
             elseif it.head == :tuple
                 if length(it.args) != 2
                     error("Unknown arguments in @scenarioconstraint")
                 end
-                push!(code.args, quote
-                    @scenarioconstraint($(esc(m)), $(esc(it.args[1])), $(esc(kw)), $(esc(it.args[2])))
-                end)
+                push!(code.args,
+                    Expr(:macrocall, symbol("@scenarioconstraint"), esc(m), esc(it.args[1]), esc(kw), esc(it.args[2]))
+                )
             else
                 error("Unknown arguments in @scenarioconstraints")
             end

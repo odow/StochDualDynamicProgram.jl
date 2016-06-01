@@ -46,7 +46,10 @@ m = SDDPModel(
 
     # ====================
     #   Scenarios
-    @scenarioconstraint(sp, demand, D=Demand[stage,:], sell <= D)
+    @scenarioconstraints(sp, D=Demand[stage,:], begin
+        maxdemand, sell <= D
+        mindemand, sell >= 0.5D
+    end)
 
     # ====================
     #   Objective
@@ -81,7 +84,7 @@ end
 results = historicalsimulation(m,   # Simulate the policy
     [:stock, :buy, :sell],
     markov = [1, 2, 1],
-    demand = [10, 10, 10]
+    maxdemand = [10, 10, 10]
     )
 @assert abs(results[:Objective][1] - 85) < 1e-5
 
