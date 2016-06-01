@@ -1,5 +1,13 @@
-# This example demonstates the D3.js visualisation
-using JuMP, StochDualDynamicProgram
+# Solve the classic hydro scheduling problem under price uncertainty.
+#
+# There are two reservoirs (upper and lower). In each time period, a reservoir can
+#     release water through its turbine, spill water over the edge of the dam
+#     (and therefore not through the turbine) and purchase water to top up the
+#     s torage level.
+#
+# Each turbine has an identical piecewise linear response function.
+#     f(water units) = electricity units
+using StochDualDynamicProgram, JuMP
 
 srand(11111)
 
@@ -89,20 +97,27 @@ m = SDDPModel(stages=3, markov_states=2, scenarios=1, transition=Transition, val
 end
 
 @time solvestatus = solve(m,
-    maximum_iterations = 20
+    maximum_iterations = 50,
+    policy_estimation  = MonteCarloEstimator(
+                            frequency = 1,
+                            min       = 100,
+                            max       = 1000,
+                            step      = 100
+                        ),
+    forward_pass       = ForwardPass(
+                            scenarios = 10
+                        ),
+    backward_pass      = BackwardPass(
+                            multicut = true
+                        ),
+    parallel           = Serial()
 )
 @assert status(solvestatus) == :MaximumIterations
 
-results = simulate(m,  # Simulate the policy
-    100,               # number of monte carlo realisations
-    [:reservoir]       # variables to return
+@time results = simulate(m,
+    1000,
+    [:reservoir, :dispatch, :outflow, :spill],
+    parallel = false     # specify parallel simulate
     )
 
-@visualise(results, (stage, replication), begin
-	results[:Current][stage][replication],              (title="Accumulated Profit", ylabel="Accumulated Profit (\$)", cumulative=true)
-	results[:Current][stage][replication],              (title="Weekly Income",      ylabel="Week Profit (\$)")
-	results[:reservoir][stage][replication][:upper],    (title="Upper Reservoir",    ylabel="Level")
-	results[:reservoir][stage][replication][:lower],    (title="Lower Reservoir")
-	Price[stage, results[:Markov][stage][replication]], (ylabel="Price")
-    results[:Future][stage][replication]
-end)
+println("Mean of simulation was $(mean(results[:Objective]))")

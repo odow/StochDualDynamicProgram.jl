@@ -1,8 +1,8 @@
 julia 0.4
-JuMP 0.13-
+JuMP 0.13
 Clp
-Formatting
 Distributions
+Formatting
+JSON
 StatsBase
 FactCheck
-JSON

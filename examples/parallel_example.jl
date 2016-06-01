@@ -7,47 +7,54 @@
 #
 # Each turbine has an identical piecewise linear response function.
 #     f(water units) = electricity units
-using StochDualDynamicProgram, JuMP
 
-# For repeatability
-srand(11111)
+# Add three processors
+addprocs(3)
 
-# Names of the reservoirs
-RESERVOIRS = [:upper, :lower]
+# We need to load out data everywhere
+@everywhere begin
+    using StochDualDynamicProgram, JuMP
 
-# Knots of the turbine response function
-A = [(50, 55), (60, 65), (70, 70)]
+    # For repeatability (note: don't use the same seed on two processors!)
+    srand(11111 * myid())
 
-# Prices[stage, markov state]
-Price = [
-    1 2;
-    2 1;
-    3 4
-]
+    # Names of the reservoirs
+    RESERVOIRS = [:upper, :lower]
 
-# Transition matrix
-Transition = [
-    0.6 0.4;
-    0.3 0.7
-]
+    # Knots of the turbine response function
+    A = [(50, 55), (60, 65), (70, 70)]
 
-# Price of purchasing and spilling water
-#   ($/Unit)
-M = 1000
+    # Prices[stage, markov state]
+    Price = [
+        1 2;
+        2 1;
+        3 4
+    ]
 
-# Maximum level
-reservoir_max = Dict{Symbol, Float64}(
-    :upper => 200,
-    :lower => 200
-    )
+    # Transition matrix
+    Transition = [
+        0.6 0.4;
+        0.3 0.7
+    ]
 
-# Initial fill
-reservoir_initial = Dict{Symbol, Float64}(
-    :upper => 200,
-    :lower => 200
-    )
+    # Price of purchasing and spilling water
+    #   ($/Unit)
+    M = 1000
 
-n = length(A)
+    # Maximum level
+    reservoir_max = Dict{Symbol, Float64}(
+        :upper => 200,
+        :lower => 200
+        )
+
+    # Initial fill
+    reservoir_initial = Dict{Symbol, Float64}(
+        :upper => 200,
+        :lower => 200
+        )
+
+    n = length(A)
+end
 
 # Initialise SDDP Model
 m = SDDPModel(stages=3, markov_states=2, scenarios=1, transition=Transition, value_to_go_bound=1500) do sp, stage, markov_state
@@ -55,7 +62,6 @@ m = SDDPModel(stages=3, markov_states=2, scenarios=1, transition=Transition, val
     #   SDDP State Variables
     # Level of upper reservoir
     @state(sp, 0 <= reservoir[r=RESERVOIRS] <= reservoir_max[r], reservoir0=reservoir_initial[r])
-
     # ------------------------------------------------------------------
     #   Additional variables
     @variables(sp, begin
@@ -69,7 +75,7 @@ m = SDDPModel(stages=3, markov_states=2, scenarios=1, transition=Transition, val
         generation_quantity >= 0
 
         # Proportion of levels to dispatch on
-        0 <= dispatch[r=RESERVOIRS, level=1:n] <= 1
+        0 <= dispatch[reservoir=RESERVOIRS, level=1:n] <= 1
     end)
 
     @constraints(sp, begin
@@ -82,15 +88,15 @@ m = SDDPModel(stages=3, markov_states=2, scenarios=1, transition=Transition, val
             (outflow[:lower] + spill[:lower])
 
         # Total quantity generated
-        generation_quantity == sum{A[level][2] * dispatch[r,level], r=RESERVOIRS, level=1:n}
+        generation_quantity == sum{A[level][2] * dispatch[reservoir,level], reservoir=RESERVOIRS, level=1:n}
 
         # ------------------------------------------------------------------
         # Reservoir constraints
         # Flow out
-        flowout[r=RESERVOIRS], outflow[r] == sum{A[level][1] * dispatch[r, level], level=1:n}
+        flowout[reservoir=RESERVOIRS], outflow[reservoir] == sum{A[level][1] * dispatch[reservoir, level], level=1:n}
 
         # Dispatch combination of levels
-        dispatched[r=RESERVOIRS], sum{dispatch[r, level], level=1:n} <= 1
+        dispatched[reservoir=RESERVOIRS], sum{dispatch[reservoir, level], level=1:n} <= 1
     end)
 
     # ------------------------------------------------------------------
@@ -98,42 +104,28 @@ m = SDDPModel(stages=3, markov_states=2, scenarios=1, transition=Transition, val
     @stageprofit(sp, Price[stage, markov_state]*generation_quantity)
 end
 
-m2 = copy(m)
-
-mcestimator = MonteCarloEstimator(
-    frequency = 1,
-    min       = 5,
-    max       = 100,
-    step      = 10
-)
-
 @time solvestatus = solve(m,
     maximum_iterations = 50,
-    policy_estimation  = mcestimator,
-    bound_convergence  = BoundConvergence(
-                            after = 5,
-                            tol   = 1e-10
+    policy_estimation  = MonteCarloEstimator(
+                            frequency = 1,
+                            min       = 100,
+                            max       = 1000,
+                            step      = 100
                         ),
-    print_level        = 2
-)
-@assert status(solvestatus) == :BoundConvergence
-
-@time solvestatus = solve(m2,
-    maximum_iterations = 20,
-    policy_estimation  = mcestimator,
     forward_pass       = ForwardPass(
-                            scenarios          = 1:10,
-                            importancesampling = true
+                            scenarios = 10
                         ),
-    cut_selection      = LevelOne(5),
-    print_level        = 1
+    backward_pass      = BackwardPass(
+                            multicut = true
+                        ),
+    parallel           = Parallel()
 )
 @assert status(solvestatus) == :MaximumIterations
 
-results = simulate(m,   # Simulate the policy
-    1000,               # number of monte carlo realisations
-    [:reservoir,        # variables to return
-    :dispatch,
-    :outflow,
-    :spill]
+@time results = simulate(m,
+    1000,
+    [:reservoir, :dispatch, :outflow, :spill],
+    parallel = true      # specify parallel simulate
     )
+
+println("Mean of simulation was $(mean(results[:Objective]))")

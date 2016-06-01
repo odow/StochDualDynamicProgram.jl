@@ -2,319 +2,137 @@ isdefined(Base, :__precompile__) && __precompile__()
 
 module StochDualDynamicProgram
 
-importall JuMP
+using JuMP
 using MathProgBase, Clp
 using Formatting
 using Distributions, StatsBase
+using JSON
+
+import Base.dot
 
 export SDDPModel,
-    @state, @scenarioconstraint, @scenarioconstraints, @stageprofit,
-    @visualise,
-    simulate, loadcuts!,
+    # macros
+    @state, @scenarioconstraint, @scenarioconstraints, @stageprofit, @visualise,
+    # Model functions
+    simulate, historicalsimulation, loadcuts!,
+    # Cut selection options
     LevelOne, Deterministic, NoSelection,
-    ConvergenceTest, BackwardPass, Parallel,
-    NestedCVar,
-    Convergence,
-    NoRegularisation, LinearRegularisation, QuadraticRegularisation
+    # Parallel options
+    Serial, Parallel,
+    # Risk averse options
+    NestedCVar, Expectation,
+    # Termination options
+    MonteCarloEstimator, BoundConvergence,
+    # Forward Pass options
+    ForwardPass,
+    # Backward Pass options
+    BackwardPass,
+    # Regularisation options
+    NoRegularisation, LinearRegularisation, QuadraticRegularisation,
+    # query solve attributes
+    status
 
-const CONVERGENCE_TERMINATION = :Convergenced
-const ITERATION_TERMINATION = :MaximumIterations
-const UNKNOWN_TERMINATION = :Unknown
-
-abstract RiskMeasure
-immutable NestedCVar <: RiskMeasure
-    beta::Float64
-    lambda::Float64
-    NestedCVar{T<:Real, S<:Real}(beta::T, lambda::S) = (@assert beta >= 0. && beta <= 1. && lambda >= 0. && lambda <= 1.; new(beta, lambda))
-end
-NestedCVar(;beta=1., lambda=1.) = NestedCVar(beta, lambda)
-Expectation() = NestedCVar(1., 1.)
-
-type Convergence
-    n
-    frequency::Int
-    terminate::Bool
-    quantile::Float64
-    variancereduction::Bool
-    function Convergence(simulations, frequency::Int, terminate::Bool=false, quantile::Float64=0.95, variancereduction::Bool=true)
-        @assert quantile >= 0 && quantile <= 1.
-        new(simulations, frequency, terminate, quantile, variancereduction)
-    end
-end
-Convergence(;simulations=1, frequency=1, terminate=false, quantile=0.95, variancereduction=true) = Convergence(simulations, frequency, terminate, quantile, variancereduction)
-
-abstract Regularisation
-type NoRegularisation <: Regularisation
-    initial::Float64
-    decayrate::Float64
-    NoRegularisation() = new(0., 0.)
-end
-type LinearRegularisation <: Regularisation
-    initial::Float64
-    decayrate::Float64
-    LinearRegularisation(initial=1., decayrate=0.95) = new(initial, decayrate)
-end
-type QuadraticRegularisation <: Regularisation
-    initial::Float64
-    decayrate::Float64
-    QuadraticRegularisation(initial=1., decayrate=0.95) = new(initial, decayrate)
-    # QuadraticRegularisation(initial=1., decayrate=0.95) = (error("QuadraticRegularisation not really implemented yet. Something weird happens"); new(initial, decayrate))
-end
-
+include("types.jl")
 include("macros.jl")
+include("model.jl")
+include("forwardpass.jl")
+include("risk_aversion.jl")
+include("backwardpass.jl")
 include("cut_selection.jl")
-include("SDDPModel.jl")
-include("cut_selection_sddp.jl")
-include("SDDPalgorithm.jl")
-include("parallel.jl")
+include("simulate.jl")
 include("visualiser/visualise.jl")
+include("parallel.jl")
+include("MIT_licencedcode.jl")
+include("print.jl")
 
-type SolutionLog
-    ci_lower::Float64
-    ci_upper::Float64
-    bound::Float64
-    cuts::Int
-    time_backwards::Float64
-    simulations::Int
-    time_forwards::Float64
-    time_cutselection::Float64
-end
-function textify(s::SolutionLog)
-    string(s.ci_lower, ",", s.ci_upper, ",", s.bound, ",", s.cuts, ",", s.time_backwards, ",", s.simulations, ",", s.time_forwards, ",", s.time_cutselection, "\n")
-end
-
-type Solution
-    status::Symbol
-    trace::Vector{SolutionLog}
-end
-Solution() = Solution(UNKNOWN_TERMINATION, SolutionLog[])
-setStatus!(s::Solution, sym::Symbol) = (s.status = sym)
-
-function log!(s::Solution, ci_lower::Float64, ci_upper::Float64, bound::Float64, cuts::Int, time_backwards::Float64, simulations::Int, time_forwards::Float64, time_cutselection::Float64)
-    push!(s.trace, SolutionLog(ci_lower, ci_upper, bound, cuts, time_backwards, simulations, time_forwards, time_cutselection))
-end
-
-function getTrace(sol::Solution, sym::Symbol)
-    if !(sym in fieldnames(sol))
-        error("[sym] in getTrace(sol::Solution, sym::Symbol) must be one of $(fieldnames(sol))")
-    end
-    return [s.(sym) for s in sol.trace]
-end
+const PRINTALL   = 4
+const PRINTINFO  = 3
+const PRINTTRACE = 2
+const PRINTTERM  = 1
+const PRINTNONE  = 0
 
 """
-Solve the model using the SDDP algorithm.
+    solve(m[; kwargs...])
+
+Solve the SDDPModel
 """
-function JuMP.solve(m::SDDPModel; maximum_iterations=1, convergence=Convergence(1, 1, false, 0.95), risk_measure=Expectation(), cut_selection=NoSelection(), parallel=Parallel(), simulation_passes=-1, log_frequency=-1, regularisation=NoRegularisation(), output=nothing)
+function JuMP.solve{T, M, S, X, TM}(m::SDDPModel{T, M, S, X, TM};
+    maximum_iterations = 1,
+    policy_estimation  = MonteCarloEstimator(),
+    bound_convergence  = BoundConvergence(),
+    forward_pass       = ForwardPass(),
+    backward_pass      = BackwardPass(),
+    risk_measure       = Expectation(),
+    cut_selection      = NoSelection(),
+    parallel           = Serial(),
+    output             = nothing,
+    cut_output_file    = nothing,
+    print_level        = PRINTALL
+    )
 
-    if simulation_passes != -1 || log_frequency != -1
-        warn("The options [log_frequency] and [simulation_passes] are deprecated. Use [convergence=Convergence(simulation_passes, frequency::Int, terminate::Bool)] instead.")
-        log_frequency != -1 && (convergence.frequency = log_frequency)
-        simulation_passes != -1 && (convergence.n = simulation_passes)
+    setriskmeasure!(m, risk_measure)
+
+    if isa(parallel, Parallel)
+        if length(workers()) < 2
+            warn("Paralleisation requested but Julia is only running with a single worker. Start julia with `julia -p N` or use the `addprocs(N)` function to load N workers. Running in serial mode.")
+            parallel = Serial()
+        else
+            nworkers = initialise_workers!(m)
+        end
     end
-
-    @assert maximum_iterations >= 0
-
-    if !isa(parallel, Parallel{Serial, Serial}) && length(workers()) < 2
-        warn("Paralleisation requested but Julia is only running with a single processor. Start julia with `julia -p N` or use the `addprocs(N)` function to load N workers. Running in serial mode.")
-        parallel = Parallel()
-    end
-
-    for sp in m.stage_problems
-        stagedata(sp).regularisecoefficient = regularisation.initial
-    end
-
-    # Initial output for user
-    print_stats_header()
 
     solution = Solution()
+    log = SolutionLog()
 
-    m.QUANTILE = convergence.quantile
+    print_level >= PRINTTRACE && printheader()
 
-    # try
-    solve!(m, solution, convergence, maximum_iterations, risk_measure, cut_selection, parallel, regularisation, output)
-    # catch InterruptException
-        # warn("Terminating early")
-    # end
-    solution
-end
+    cutswrittentofile = 0
+    notconverged = true
+    while notconverged
+        # Starting a new iteration
+        solution.iterations += 1
 
-terminate(converged::Bool, do_test::Bool) = converged & do_test
-terminate(converged::Bool, do_test::Bool, simulation_passes::Range) = converged
-terminate(converged::Bool, do_test::Bool, simulation_passes) = terminate(converged, do_test)
+        # forward pass
+        nscenarios = forwardpass!(log, m, solution.iterations, cut_selection, forward_pass, parallel.forward)
 
-convergence_pass!(ty::Serial, m::SDDPModel, convergence, cut_selection::CutSelectionMethod) = convergence_pass!(m, convergence)
-convergence_pass!(ty::ConvergenceTest, m::SDDPModel, convergence, cut_selection::CutSelectionMethod) = parallel_convergence_pass!(m, convergence, cut_selection)
+        # estimate bound
+        notconverged, ismontecarlo = estimatebound!(log, m, policy_estimation, solution.iterations, parallel.montecarlo, print_level)
+        !notconverged && setStatus!(solution, POLICY_TERMINATION)
 
-backward_pass!(ty::BackwardPass, m::SDDPModel, method::CutSelectionMethod, regularisation::Regularisation) = parallel_backward_pass!(m, ty.cuts_per_processor, method)
-backward_pass!(ty::Serial, m::SDDPModel, method::CutSelectionMethod, regularisation::Regularisation) = backward_pass!(m, method.frequency > 0, method, regularisation)
+        if notconverged
+            # backward pass
+            backwardpass!(log, m, nscenarios, risk_measure, forward_pass.regularisation, parallel.backward, backward_pass)
 
-function solve!(m::SDDPModel, solution::Solution, convergence::Convergence, maximum_iterations::Int, risk_measure::RiskMeasure, cut_selection::CutSelectionMethod, parallel::Parallel, regularisation::Regularisation, output::Union{Void, ASCIIString})
+            # run cut selection
+            if parallel.backward
+                # We have probably dragged various cuts through here...
+                recalculate_dominance!(cut_selection, m)
+            end
+            cutselection!(log, m, cut_selection, solution.iterations, print_level)
 
-    # Intialise model on worker processors
-    if !isa(parallel, Parallel{Serial, Serial})
-        nworkers = initialise_workers!(m)
-    end
-
-    # Initialise cut selection storage since we need it to communicate between processors
-    initialise_cut_selection!(m)
-
-    # Set risk aversion parameters
-    m.beta_quantile, m.risk_lambda = risk_measure.beta, risk_measure.lambda
-
-    iterations=0
-    nsimulations = 0
-    last_convergence_test, last_cutselection = 0, 0
-    time_backwards, time_forwards, time_cutselection = 0., 0., 0.
-    npass = isa(parallel.backward_pass, BackwardPass)?(parallel.backward_pass.cuts_per_processor * nworkers):1
-
-    while iterations < maximum_iterations
-
-        # Update iteration counters
-        iterations += npass
-        last_convergence_test += npass
-        last_cutselection += npass
-
-        # Cutting passes
-        tic()
-        backward_pass!(parallel.backward_pass, m, cut_selection, regularisation)
-        time_backwards += toq()
-
-        # Rebuild models if using Cut Selection
-        if cut_selection.frequency > 0 && last_cutselection >= cut_selection.frequency
-            tic()
-            rebuild_stageproblems!(cut_selection, m)
-            time_cutselection += toq()
-        end
-
-        # Test convergence if appropriate
-        if convergence.frequency > 0 && last_convergence_test >= convergence.frequency
-            last_convergence_test = 0
-            tic()
-            (is_converged, n) = convergence_pass!(parallel.convergence_test, m, convergence, cut_selection)
-            nsimulations += Int(n)
-            time_forwards += toq()
-
-            # Output to user
-            log!(solution, m.confidence_interval[1], m.confidence_interval[2], m.valid_bound, iterations, time_backwards, nsimulations, time_forwards, time_cutselection)
-            print_stats(m, iterations, time_backwards, nsimulations, time_forwards, time_cutselection)
-            if output != nothing
-                open(output, "a") do outputfile
-                    write(outputfile, textify(solution.trace[end]))
-                end
+            if cut_output_file != nothing
+                # Write cuts to file if appropriate
+                writecuts!(m, cut_output_file, cutswrittentofile)
+                cutswrittentofile += nscenarios
             end
 
-            # Terminate if converged and appropriate
-            if terminate(is_converged, convergence.terminate, convergence.n)
-                # We have terminated due to convergence test
-                setStatus!(solution, CONVERGENCE_TERMINATION)
-                return
+            # Calculate a new upper bound
+            notconverged = setbound!(log, m, bound_convergence)
+            !notconverged && setStatus!(solution, BOUND_TERMINATION)
+
+            if solution.iterations == maximum_iterations
+                notconverged = false
+                setStatus!(solution, ITERATION_TERMINATION)
             end
         end
+
+        # print solution to user
+        print_level >= PRINTTRACE && print(m, log, output, ismontecarlo)
+
+        push!(solution.trace, copy(log))
     end
-    # We have terminated due to iteration limit
-    setStatus!(solution, ITERATION_TERMINATION)
-end
-
-function print_stats(m::SDDPModel, iterations, back_time, simulations, forward_time, cut_time)
-    printfmt("{1:>9s} {2:>9s} | {3:>9s} {4:>6.2f} | {5:6s} {6:6s} | {7:6s} {8:6s} | {9:5s}\n",
-        humanize(m.confidence_interval[1], "7.3f"), humanize(m.confidence_interval[2], "7.3f"), humanize(m.valid_bound, "7.3f"), 100*rtol(m), humanize(iterations), humanize(back_time), humanize(simulations), humanize(forward_time), humanize(cut_time, "6.2f"))
-end
-
-function print_stats_header()
-    printfmt("{1:38s} | {2:13s} | {3:13s} |   Cut\n", "                  Objective", "  Backward", "   Forward")
-    printfmt("{1:19s} | {2:9s} {3:6s} | {4:6s} {5:6s} | {6:6s} {7:6s} |  Time\n", "      Expected", "  Bound", " % Gap", " Iters", " Time", " Iters", " Time")
-end
-
-#----------------------------------------------------------------------
-# The following a modified version of that found at
-#
-# Humanize.jl    https://github.com/IainNZ/Humanize.jl
-# Based on jmoiron's humanize Python library (MIT licensed):
-#  https://github.com/jmoiron/humanize/
-# All original code is (c) Iain Dunning and MIT licensed.
-const gnu_suf = ["", "K", "M", "G", "T", "P", "E", "Z", "Y"]
-function humanize(value::Int)
-    if value < 1000 && value > -1000
-        return humanize(value, "5d")
-    else
-        return humanize(value, "5.1f")
-    end
-end
-
-function humanize(value::Number, format="5.1f")
-    suffix  = gnu_suf
-    base    = 1000.0
-    bytes   = float(value)
-    sig=sign(value)
-    bytes   = abs(bytes)
-    format  = "%$(format)%s"
-    fmt_str = @eval (v,s)->@sprintf($format,v,s)
-    unit    = base
-    s       = suffix[1]
-    for (i,s) in enumerate(suffix)
-        unit = base ^ (i)
-        bytes < unit && break
-    end
-    return fmt_str(sig*base * bytes / unit, s)
-end
-# End excerpt
-#----------------------------------------------------------------------
-
-function simulate(m::SDDPModel, n::Int, vars::Vector{Symbol}=[]; parallel=false)
-    if parallel && length(workers()) < 2
-        warn("Paralleisation requested but Julia is only running with a single processor. Start julia with `julia -p N` or use the `addprocs(N)` function to load N workers. Running in serial mode.")
-        parallel = false
-    end
-    if parallel
-        results = parallel_simulate(m, n, vars)
-    else
-        results = serial_simulate(m, n, vars)
-    end
-    results
-end
-
-function simulate(m::SDDPModel, vars::Vector{Symbol}=Symbol[]; markov=ones(Int, m.stages), kwargs...)
-    n=1
-    results = Dict{Symbol, Any}(:Objective=>zeros(Float64,n))
-    for (s, t) in vcat(collect(zip(vars, fill(Any, length(vars)))), [(:Scenario, Int), (:Markov, Int), (:Future, Float64), (:Current, Float64)])
-        results[s] = Array(Vector{t}, m.stages)
-        for i=1:m.stages
-            results[s][i] = Array(t, n)
-        end
-    end
-
-    scenario = 0
-
-    # Initialise the objective storage
-    obj = 0.
-
-    # For all stages
-    for stage=1:m.stages
-        # realise on scenario
-        sp = m.stage_problems[stage, markov[stage]]
-        scenario = load_scenario!(m, sp)
-        data = stagedata(sp)
-        for (key, series) in kwargs
-            @assert haskey(data.scenario_constraint_names, key)
-            cidx = data.scenario_constraint_names[key]
-            JuMP.setRHS(data.scenario_constraints[cidx][1], series[stage])
-        end
-
-        # solve
-        solve!(sp)
-
-        # Add objective (stage profit only)
-        obj += get_true_value(sp)
-
-        # Save results if necesary
-        store_results!(results, vars, sp, stage, 1, markov[stage], scenario)
-        # pass forward if necessary
-        if stage < m.stages
-            pass_states_forward!(m, stage, markov[stage])
-        end
-    end
-
-    results
+    print_level >= PRINTTERM && info("Terminating with status $(solution.status).")
+    return solution
 end
 
 end

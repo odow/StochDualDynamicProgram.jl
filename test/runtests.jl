@@ -1,31 +1,31 @@
 using StochDualDynamicProgram, JuMP, FactCheck
 
+const EXAMPLESDIR = joinpath(dirname(dirname(@__FILE__)), "examples")
+
 facts("SDDPModel") do
     m = SDDPModel(
-        stages=3,
-        markov_states=2,
-        transition=[0.2 0.8;0.8 0.2]
-    )
+        stages=3, markov_states=2, transition=[0.2 0.8;0.8 0.2], value_to_go_bound=1000
+        ) do sp, stage, markov
+        nothing
+    end
     @fact size(m.stage_problems) --> (3,2)
-    @fact StochDualDynamicProgram.get_transition(m, 1, 1, 1) --> 0.2
+    @fact StochDualDynamicProgram.transitionprobability(m, 1, 1, 1) --> 0.2
 
     sp = StochDualDynamicProgram.StageProblem()
-    @fact StochDualDynamicProgram.is_sp(sp) --> true
-    @fact StochDualDynamicProgram.is_sp(m) --> false
+    @fact StochDualDynamicProgram.issubproblem(sp) --> true
+    @fact StochDualDynamicProgram.issubproblem(m) --> false
 
     @fact_throws SDDPModel(sense=:bogus)
 
-    m = SDDPModel(markov_states=2)
-    @fact StochDualDynamicProgram.get_transition(m, 1, 1, 1) --> 0.5
-    # m2 = copy(m)
-    # m.sense = Val{:Min}
-    # @fact m2.sense --> Val{:Max}
+    m = SDDPModel(markov_states=2, value_to_go_bound=1) do sp, stage, markov
+        nothing
+    end
+    @fact StochDualDynamicProgram.transitionprobability(m, 1, 1, 1) --> 0.5
 end
 
 facts("@state") do
     m = StochDualDynamicProgram.StageProblem()
     @state(m, 0 <= x <= 3, x0=2.5)
-    # @fact getvariable(m, :x) --> stagedata(m).state_vars[1]
     @fact m.colLower --> roughly([0, -Inf], 1e-4)
     @fact m.colUpper --> roughly([3, Inf], 1e-4)
     @fact length(StochDualDynamicProgram.stagedata(m).dual_constraints) --> 1
@@ -34,7 +34,6 @@ facts("@state") do
 
     m = StochDualDynamicProgram.StageProblem()
     @state(m, y <= 1, y0=1.0)
-    # @fact getvariable(m, :y) --> stagedata(m).state_vars[1]
     @fact m.colLower --> roughly([-Inf, -Inf], 1e-4)
     @fact m.colUpper --> roughly([1, Inf], 1e-4)
     @fact length(StochDualDynamicProgram.stagedata(m).dual_constraints) --> 1
@@ -43,7 +42,6 @@ facts("@state") do
 
     m = StochDualDynamicProgram.StageProblem()
     @state(m, z, z0=1.0)
-    # @fact getvariable(m, :z) --> stagedata(m).state_vars[1]
     @fact m.colLower --> roughly([-Inf, -Inf], 1e-4)
     @fact m.colUpper --> roughly([Inf, Inf], 1e-4)
     @fact length(StochDualDynamicProgram.stagedata(m).dual_constraints) --> 1
@@ -54,7 +52,6 @@ facts("@state") do
     T = [:a, :b]
     rhs = Dict{Symbol, Float64}(:a=>1., :b=>2.)
     @state(m, x[t=T] >= 0., x0=rhs[t])
-    # @fact getvariable(m, :x) --> stagedata(m).state_vars[1]
     @fact m.colLower --> roughly([0., 0., -Inf, -Inf], 1e-4)
     @fact m.colUpper --> roughly([Inf, Inf, Inf, Inf], 1e-4)
     @fact length(StochDualDynamicProgram.stagedata(m).dual_constraints) --> 2
@@ -63,52 +60,26 @@ facts("@state") do
 
 end
 
-# facts("@defValueToGo") do
-#     m = StochDualDynamicProgram.StageProblem()
-#     @defValueToGo(m, theta)
-#     @fact typeof(StochDualDynamicProgram.stagedata(m).theta) --> Variable
-#     @fact m.colLower --> roughly([-Inf], 1e-4)
-#     @fact m.colUpper --> roughly([Inf], 1e-4)
-#
-#     m = StochDualDynamicProgram.StageProblem()
-#     @defValueToGo(m, theta <= 10)
-#     @fact typeof(StochDualDynamicProgram.stagedata(m).theta) --> Variable
-#     @fact m.colLower --> roughly([-Inf], 1e-4)
-#     @fact m.colUpper --> roughly([10], 1e-4)
-#
-#     m = StochDualDynamicProgram.StageProblem()
-#     @defValueToGo(m, 0 <= theta <= 10)
-#     @fact typeof(StochDualDynamicProgram.stagedata(m).theta) --> Variable
-#     @fact m.colLower --> roughly([0], 1e-4)
-#     @fact m.colUpper --> roughly([10], 1e-4)
-# end
-
 facts("Hydro Example") do
-    include("../examples/hydro.jl")
+    include(joinpath(EXAMPLESDIR, "hydro.jl"))
+    @fact mean(results[:Objective]) --> roughly(904, 20)
 
-    context("Version One") do
-        results = solve_hydro()
-        @fact mean(results[:Objective]) --> roughly(904, 20)
-    end
-
-    context("Version Two") do
-        results = solve_hydro2()
-        @fact mean(results[:Objective])--> roughly(-1450, 20)
-    end
-
+    include(joinpath(EXAMPLESDIR, "hydro2.jl"))
+    @fact mean(results[:Objective])--> roughly(-1450, 20)
 end
 
 facts("Newsvendor Example") do
-    include("../examples/newsvendor.jl")
-    warn("Estimating the CI of bound is fraught")
-    results = solve_newsvendor()
-    # @fact mean(results[:Objective]) --> roughly(95., 0.5)
-
-    context("Fancy improvements of simulated bound") do
-        results = solve_newsvendor2()
-    end
+    include(joinpath(EXAMPLESDIR, "newsvendor.jl"))
+    include(joinpath(EXAMPLESDIR, "newsvendor2.jl"))
 end
 
+facts("Visualisation") do
+    include(joinpath(EXAMPLESDIR, "visualisation.jl"))
+end
 
+facts("Parallelisation") do
+    include(joinpath(EXAMPLESDIR, "parallel_example.jl"))
+    include(joinpath(EXAMPLESDIR, "serial_comparison.jl"))
+end
 
 FactCheck.exitstatus()
