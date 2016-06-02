@@ -19,30 +19,29 @@ Inputs:
     beta    the CVaR β quantile
     lambda  the λ weight on expectation
 """
-function reweightscenarios!{T, M, S, X, TM}(m::SDDPModel{T, M, S, X, TM}, t::Int, i::Int, beta::Float64, lambda::Float64)
+function reweightscenarios!{T, M, S, X, TM}(m::SDDPModel{T, M, S, X, TM}, obj::Vector, t::Int, i::Int, beta::Float64, lambda::Float64)
     if abs(lambda - 1) > 1e-5     # We are risk averse
-        P = zeros(S*M)            # Initialise storage
-        idx=1
-        for j=1:M
-            for s=1:S
-                P[idx] = transitionprobability(m, t, i, j)*m.scenario_probability[s]
-                idx+=1
+        for s=1:S
+            for j=1:M
+                stagedata(m, t, i).weightings_matrix[j,s] = transitionprobability(m, t, i, j)*m.scenario_probability[s]
             end
         end
         # Reweighted probabilities
-        nestedcvar!(P,
-            vcat([stagedata(sp).objective_values for sp in m.stage_problems[t+1, :]]...),
-            beta, lambda, X)
-        idx=1
-        for j=1:M
-            for s=1:S
-                stagedata(m, t, i).weightings_matrix[j, s] = P[idx]
-                idx+=1
-            end
-        end
+        nestedcvar!(stagedata(m, t, i).weightings_matrix, obj, beta, lambda, X)
         @assert abs(sum(stagedata(m, t, i).weightings_matrix) - 1) < 1e-5 # Check sanity
     end
     return
+end
+function reweightscenarios!{T, M, S, X, TM}(m::SDDPModel{T, M, S, X, TM}, t, i, beta, lambda)
+    obj = zeros(M*S)
+    idx = 1
+    for s=1:S
+        for j=1:M
+            obj[idx] = stagedata(m, t+1, j).objective_values[s]
+            idx += 1
+        end
+    end
+    reweightscenarios!(m, obj, t, i, beta, lambda)
 end
 
 """
@@ -56,7 +55,7 @@ Inputs:
     ß      CVar beta quantile
     ismax  (true/false) problem is maximisation
 """
-function nestedcvar!{T}(p::Vector{T}, x::Vector{T},  beta::Float64, lambda::Float64, ismax::Bool)
+function nestedcvar!{T}(p::Array{T}, x::Vector{T},  beta::Float64, lambda::Float64, ismax::Bool)
     @assert length(p) == length(x)                  # sanity
     q = 0.                                          # Quantile collected so far
     for i in sortperm(x, rev=!ismax)                # For each scenario in order
@@ -69,5 +68,5 @@ function nestedcvar!{T}(p::Vector{T}, x::Vector{T},  beta::Float64, lambda::Floa
         q += riskaverse * beta                      # Update total quantile collected
     end
 end
-nestedcvar!{T}(p::Vector{T},  x::Vector{T}, beta::Float64, lambda::Float64, ::Type{Max}) = nestedcvar!(p,x,beta,lambda,true)
-nestedcvar!{T}(p::Vector{T},  x::Vector{T}, beta::Float64, lambda::Float64, ::Type{Min}) = nestedcvar!(p,x,beta,lambda,false)
+nestedcvar!{T}(p::Array{T},  x::Vector{T}, beta::Float64, lambda::Float64, ::Type{Max}) = nestedcvar!(p,x,beta,lambda,true)
+nestedcvar!{T}(p::Array{T},  x::Vector{T}, beta::Float64, lambda::Float64, ::Type{Min}) = nestedcvar!(p,x,beta,lambda,false)

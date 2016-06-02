@@ -297,33 +297,26 @@ set_nonregularised_objective_all!(regularisation, X, T, M) = set_nonregularised_
 addremotecut!(X, t, i, cut) = addcuts!(X, m, t, i, cut)
 
 function solvestage!{T, M, S, X, TM}(m::SDDPModel{T, M, S, X, TM}, t, N, riskmeasure)
-    # println("solving stage on processor $(myid())")
     tuples = [(pass, i, s) for i=1:M, s=1:S, pass=1:N]
     cuts = pmap(solvescenario!, repeated(t), tuples[:])
     cutsout = Array(Cut, N)
     x = 1:Int(M*S)
     for pass=1:N
-        cutsout[pass] = reducecutvectors(m, cuts[(pass-1)*length(x) + x], riskmeasure, getmarkov(m, pass, t), t)
+        cutsout[pass] = reducecutvectors(m, cuts[(pass-1)*length(x) + x], riskmeasure, pass, t)
     end
     return cutsout
 end
 
-function reducecutvectors{T, M, S, X, TM}(m::SDDPModel{T, M, S, X, TM}, x::Vector, riskmeasure::RiskMeasure, i, t)
-    intercept = 0.
-    coeffs = zeros(length(x[1].coefficients))
-    idx=1
-    for j=1:M
-        for s=1:S
-            stagedata(m, t, i).weightings_matrix[idx] = transitionprobability(m, t, i, j)*m.scenario_probability[s]
-            idx+=1
-        end
-    end
-    nestedcvar!(stagedata(m, t, i).weightings_matrix[:], Float64[c.intercept for c in x], riskmeasure.beta, riskmeasure.lambda, isa(X, Type{Max}))
+function reducecutvectors{T, M, S, X, TM}(m::SDDPModel{T, M, S, X, TM}, x::Vector, riskmeasure::RiskMeasure, pass, t)
+    cutout = Cut(0., zeros(length(x[1].coefficients)))
+    i = getmarkov(m, pass, t)
+    reweightscenarios!(m, Float64[c.intercept for c in x], t, i, riskmeasure.beta, riskmeasure.lambda)
     for cutidx in 1:length(x)
-        intercept += x[cutidx].intercept * stagedata(m, t, i).weightings_matrix[cutidx]
-        coeffs += x[cutidx].coefficients * stagedata(m, t, i).weightings_matrix[cutidx]
+        prob = stagedata(m, t, i).weightings_matrix[cutidx]
+        cutout.intercept    += (x[cutidx].intercept - dot(x[cutidx].coefficients, getx(m, pass, t))) * prob
+        cutout.coefficients += x[cutidx].coefficients * prob
     end
-    Cut(intercept / length(x), coeffs ./ length(x))
+    return cutout
 end
 
 function solvescenario!(t, tuparg)
@@ -332,9 +325,6 @@ function solvescenario!(t, tuparg)
     load_scenario!(subproblem(m,t+1,i), s)
     backsolve!(subproblem(m,t+1,i), s)
     sd       = stagedata(m, t+1, i)
-    thetahat = sd.objective_values[s]
-    pihat    = [d[s] for d in sd.dual_values]
-    xbar     = getx(m, pass, t)
     # println("(t, pass, i, s) = ($t, $pass, $i, $s): $thetahat")
-    return Cut(thetahat - dot(xbar, pihat), pihat)
+    return Cut(sd.objective_values[s], [d[s] for d in sd.dual_values])
 end
