@@ -20,7 +20,8 @@ end
 function backwardpass!(log::SolutionLog, m::SDDPModel, nscenarios, risk_measure, regularisation, isparallel::Bool, backward_pass::BackwardPass)
     tic()
     if isparallel
-        parallelbackwardpass!(m, risk_measure, regularisation, backward_pass)
+        # parallelbackwardpass!(m, risk_measure, regularisation, backward_pass)
+        bestparallelbackwardpass!(m, risk_measure, regularisation, backward_pass)
     else
         backwardpass!(m, risk_measure, regularisation, backward_pass)
     end

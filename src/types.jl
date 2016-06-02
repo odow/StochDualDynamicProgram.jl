@@ -113,10 +113,11 @@ type StageCuts{N}
     cuts::Vector{Cut{N}}                      # list of cuts in stage problem.
     nondominated::Vector{Int}                 # number of points cut is nondominated at length(nondomindated) == length(cuts)
     activecut::Vector{Int}                    # index of cut that is active at point x(i) length(active_cut) == n
+    writtentofile::Int
 end
 function StageCuts(sp::Model, bound)
     N = length(stagedata(sp).state_vars)
-    StageCuts(0, NTuple{N, Float64}[], Cut{N}[Cut(bound, zeros(N))], Int[0], Int[])
+    StageCuts(0, NTuple{N, Float64}[], Cut{N}[Cut(bound, zeros(N))], Int[0], Int[], 0)
 end
 
 """
