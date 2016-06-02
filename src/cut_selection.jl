@@ -15,7 +15,7 @@ Base.isequal{N}(c1::Cut{N}, c2::Cut{N}) = c1.intercept == c2.intercept && c1.coe
 Base.copy{N}(c::Cut{N}) = Cut{N}(c.intercept, copy(c.coefficients))
 
 function Base.copy{N}(s::StageCuts{N})
-    StageCuts(s.n, deepcopy(s.samplepoints), deepcopy(c.cuts), copy(s.nondominated), copy(s.activecut))
+    StageCuts(s.n, deepcopy(s.samplepoints), deepcopy(c.cuts), copy(s.nondominated), copy(s.activecut), s.writtentofile)
 end
 
 """
@@ -127,18 +127,19 @@ function rebuildcuts!(::LevelOne, sense, sp, stagecut)
     cuts_added
 end
 
-function writecuts!{T, M, S, X, TM}(m::SDDPModel{T, M, S, X, TM}, cut_output_file::ASCIIString, cutswrittentofile::Int)
+function writecuts!{T, M, S, X, TM}(m::SDDPModel{T, M, S, X, TM}, cut_output_file::ASCIIString)
     open(cut_output_file, "a") do f
         for t=1:(T-1)
             for i=1:M
                 sc = stagecut(m, t, i)
-                for cut in sc.cuts[(cutswrittentofile+1):end]
+                for cut in sc.cuts[(sc.writtentofile+1):end]
                     write(f, "$t, $i, $(cut.intercept)")
                     for coef in cut.coefficients
                         write(f, ", $(coef)")
                     end
                     write(f, "\n")
                 end
+                sc.writtentofile = length(sc.cuts)
             end
         end
     end

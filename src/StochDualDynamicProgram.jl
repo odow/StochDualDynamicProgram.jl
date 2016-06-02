@@ -86,7 +86,6 @@ function JuMP.solve{T, M, S, X, TM}(m::SDDPModel{T, M, S, X, TM};
 
     print_level >= PRINTTRACE && printheader()
 
-    cutswrittentofile = 0
     notconverged = true
     while notconverged
         # Starting a new iteration
@@ -112,8 +111,7 @@ function JuMP.solve{T, M, S, X, TM}(m::SDDPModel{T, M, S, X, TM};
 
             if cut_output_file != nothing
                 # Write cuts to file if appropriate
-                writecuts!(m, cut_output_file, cutswrittentofile)
-                cutswrittentofile += nscenarios
+                writecuts!(m, cut_output_file)
             end
 
             # Calculate a new upper bound
