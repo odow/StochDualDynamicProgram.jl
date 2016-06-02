@@ -269,66 +269,72 @@ function workersolveall!(i, X, t, regularisation)
     backsolve!(subproblem(m,t,i[1]), i[2])
 end
 
+# ------------------------------------------------------------------------------
+#
 #  Backward Pass Version 2.
 #   solve subproblems
-# function bestparallelbackwardpass!{T, M, S, X, TM}(m::SDDPModel{T, M, S, X, TM}, riskmeasure::RiskMeasure, regularisation::Regularisation, backward_pass::BackwardPass)
-#     updateforwardstorage!(m.forwardstorage)
-#     set_nonregularised_objective!(regularisation, X, subproblem(m, t, i))
-#     distribute_work_void(set_nonregularised_objective_all!, regularisation, X, T, M)
-#
-#     for t=(T-1):-1:1
-#         cuts = solvestage!(t, N, M, S, X, riskmeasure)
-#         for pass=1:getn(m)
-#             addcuts!(X, m, t, i, cut)
-#             distribute_work_void(addremotecut!, X, t, getmarkov(m, t, pass), cuts[pass])
-#         end
-#     end
-# end
-# function set_nonregularised_objective_all!(m, regularisation, X, T, M)
-#     for t=1:T
-#         for i=1:M
-#             set_nonregularised_objective!(regularisation, X, subproblem(m, t, i))
-#         end
-#     end
-# end
-# set_nonregularised_objective_all!(regularisation, X, T, M) = set_nonregularised_objective_all!(m, regularisation, X, T, M)
-#
-# addremotecut!(X, t, i, cut) = addcuts!(X, m, t, i, cut)
-#
-# function solvestage!(t, N, M, S, X, riskmeasure)
-#     pmap(parallelpass!, repeated(t), 1:N, repeated((M, S, riskmeasure)))
-# end
-# function parallelpass!(t, p, MSR)
-#     # solve all the sub problems in stage t, pass, p
-#
-#     stagecuts = pmap(parallelmarkov!, repeated(t), repeated(p), 1:MSR[1], repeated(MSR[2]))::Vector{Vector{Cut}}
-#     # stagecuts is a vector of cut vectors. stagecuts[markov][scenario] = cut
-#     reducecutvectors(vcat(stagecuts...), MSR[3])
-# end
-#
-# function reducecutvectors{N}(x::Vector{Cut{N}}, riskmeasure::RiskMeasure)#, prob::Vector{Float64}, beta, lambda)
-#     intercept = 0.
-#     coeffs = zeros(N)
-#     for cut in x
-#         intercept += cut.intercept
-#         coeffs += cut.coefficients
-#     end
-#     Cut(intercept / length(X), coeffs ./ length(x))
-# end
-#
-# function parallelmarkov!(t, p, i, S)
-#     # solve all the scenario problems in stage t, for pass p, markov state i
-#     #   returns a vector of cuts (length = S)
-#     pmap(solvescenario!, repeated(t), repeated(p), repeated(i), 1:S)::Vector{Cut}
-# end
-#
-# function solvescenario!(t, pass, i, s)
-#     setrhs!(m, pass, t, i)
-#     load_scenario!(subproblem(m,t,i), s)
-#     backsolve!(subproblem(m,t,i), s)
-#     sd       = stagedata(m, t, i)
-#     thetahat = sd.objective_values[s]
-#     pihat    = [d[s] for d in sd.dual_values]
-#     xbar     = getx(m, t, pass)
-#     return Cut(thetahat - dot(xbar, pihat), pihat)
-# end
+function bestparallelbackwardpass!{T, M, S, X, TM}(m::SDDPModel{T, M, S, X, TM}, riskmeasure::RiskMeasure, regularisation::Regularisation, backward_pass::BackwardPass)
+    updateforwardstorage!(m.forwardstorage)
+    set_nonregularised_objective_all!(m, regularisation, X, T, M)
+    distribute_work_void!(set_nonregularised_objective_all!, regularisation, X, T, M)
+    for t=(T-1):-1:1
+        cuts = solvestage!(m, t, getn(m), riskmeasure)
+        for pass=1:getn(m)
+            addcuts!(X, m, t, getmarkov(m, pass, t), cuts[pass])
+            distribute_work_void!(addremotecut!, X, t, getmarkov(m, pass, t), cuts[pass])
+        end
+    end
+end
+function set_nonregularised_objective_all!(m, regularisation, X, T, M)
+    for t=1:T
+        for i=1:M
+            set_nonregularised_objective!(regularisation, X, subproblem(m, t, i))
+        end
+    end
+end
+set_nonregularised_objective_all!(regularisation, X, T, M) = set_nonregularised_objective_all!(m, regularisation, X, T, M)
+
+addremotecut!(X, t, i, cut) = addcuts!(X, m, t, i, cut)
+
+function solvestage!{T, M, S, X, TM}(m::SDDPModel{T, M, S, X, TM}, t, N, riskmeasure)
+    # println("solving stage on processor $(myid())")
+    tuples = [(pass, i, s) for i=1:M, s=1:S, pass=1:N]
+    cuts = pmap(solvescenario!, repeated(t), tuples[:])
+    cutsout = Array(Cut, N)
+    x = 1:Int(M*S)
+    for pass=1:N
+        cutsout[pass] = reducecutvectors(m, cuts[(pass-1)*length(x) + x], riskmeasure, getmarkov(m, pass, t), t)
+    end
+    return cutsout
+end
+
+function reducecutvectors{T, M, S, X, TM}(m::SDDPModel{T, M, S, X, TM}, x::Vector, riskmeasure::RiskMeasure, i, t)
+    intercept = 0.
+    coeffs = zeros(length(x[1].coefficients))
+    idx=1
+    for j=1:M
+        for s=1:S
+            stagedata(m, t, i).weightings_matrix[idx] = transitionprobability(m, t, i, j)*m.scenario_probability[s]
+            idx+=1
+        end
+    end
+    nestedcvar!(stagedata(m, t, i).weightings_matrix[:], Float64[c.intercept for c in x], riskmeasure.beta, riskmeasure.lambda, isa(X, Type{Max}))
+    for cutidx in 1:length(x)
+        intercept += x[cutidx].intercept * stagedata(m, t, i).weightings_matrix[cutidx]
+        coeffs += x[cutidx].coefficients * stagedata(m, t, i).weightings_matrix[cutidx]
+    end
+    Cut(intercept / length(x), coeffs ./ length(x))
+end
+
+function solvescenario!(t, tuparg)
+    pass, i, s = tuparg
+    setrhs!(m, pass, t, i)
+    load_scenario!(subproblem(m,t+1,i), s)
+    backsolve!(subproblem(m,t+1,i), s)
+    sd       = stagedata(m, t+1, i)
+    thetahat = sd.objective_values[s]
+    pihat    = [d[s] for d in sd.dual_values]
+    xbar     = getx(m, pass, t)
+    # println("(t, pass, i, s) = ($t, $pass, $i, $s): $thetahat")
+    return Cut(thetahat - dot(xbar, pihat), pihat)
+end
