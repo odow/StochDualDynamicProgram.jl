@@ -30,5 +30,5 @@ function humanize(value::Number, format="5.1f")
         bytes < unit && break
     end
     # O.D. add sign
-    return fmt_str(sign(value)*base * bytes / unit, s)
+    return fmt_str(sign(value)*base * bytes / unit, s)::ASCIIString
 end

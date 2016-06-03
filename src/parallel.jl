@@ -334,5 +334,5 @@ function solvescenario!(t, tuparg)
     backsolve!(subproblem(m,t+1,i), s)
     sd       = stagedata(m, t+1, i)
     # println("(t, pass, i, s) = ($t, $pass, $i, $s): $thetahat")
-    return Cut(sd.objective_values[s], [d[s] for d in sd.dual_values])
+    return Cut{length(sd.dual_values)}(sd.objective_values[s], [d[s] for d in sd.dual_values])
 end
