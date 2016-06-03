@@ -223,7 +223,7 @@ function is_valid_transition_matrix(T::Array{Float64, 2}, n::Int)
     end
     @assert size(T)[1] == n
     for i=1:n
-        if abs(sum(T[i,:]) - 1.) > 1e-10
+        if abs(sum(T[i,:]) - 1.) > 1e-8
             return false
         end
     end

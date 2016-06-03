@@ -109,10 +109,12 @@ function forwardsolve!(sp::Model)
     status = solve(sp)
     # Catch case where we aren't optimal
     if status != :Optimal
+        warn("SDDP subproblem not optimal (stats=$(status)). Assuming numerical infeasibility so rebuilding model from stored cuts.")
         sp.internalModelLoaded = false
         status = solve(sp)
         if status != :Optimal
-            error("SDDP Subproblems must be feasible. Current status: $(status). I tried rebuilding from the JuMP model but it didn't work...")
+            JuMP.writeMPS(sp, "subproblem_proc$(myid())_time$(string(now())).mps")
+            error("SDDP Subproblems must be feasible. Current status: $(status). I tried rebuilding from the JuMP model but it didn't work so I wrote you an MPS file.")
         end
     end
 end
