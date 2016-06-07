@@ -4,7 +4,6 @@ module StochDualDynamicProgram
 
 using JuMP
 using MathProgBase, Clp
-using Formatting
 using Distributions, StatsBase
 using JSON
 

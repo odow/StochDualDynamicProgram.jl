@@ -12,22 +12,22 @@
 # THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 # O.D. 2016 renamed
-const suffix = ["", "K", "M", "G", "T", "P", "E", "Z", "Y"]
+const suffix = [" ", "K", "M", "G", "T", "P", "E", "Z", "Y"]
 # O.D. fix base
 const base   = 1000.0
 
-humanize51f(v,s) = @sprintf("%5.1f%s", v, s)
-humanize62f(v,s) = @sprintf("%6.2f%s", v, s)
-humanize73f(v,s) = @sprintf("%7.3f%s", v, s)
-humanize5d(v,s)  = @sprintf("%5d%s", v, s)
+humanize51f(v,s) = @sprintf("% 5.1f%s", v, s)
+humanize52f(v,s) = @sprintf("% 5.2f%s", v, s)
+humanize83f(v,s) = @sprintf("% 8.3f%s", v, s)
+humanize5d(v,s)  = @sprintf("% 5d%s", v, s)
 
 function humanize(value::Number, fmt_str::ASCIIString="5.1f")
     if fmt_str == "5.1f"
         return humanize(value, humanize51f)
-    elseif fmt_str == "6.2f"
-        return humanize(value, humanize62f)
-    elseif fmt_str == "7.3f"
-        return humanize(value, humanize73f)
+    elseif fmt_str == "5.2f"
+        return humanize(value, humanize52f)
+    elseif fmt_str == "8.3f"
+        return humanize(value, humanize83f)
     elseif fmt_str == "5d"
         return humanize(value, humanize5d)
     end

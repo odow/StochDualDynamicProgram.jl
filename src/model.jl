@@ -265,8 +265,8 @@ function create_subproblems!{T, M, S, X, TM}(m::SDDPModel{T, M, S, X, TM})
                 error("Invalid number of arguments")
             end
             # Initialise storage for scenario duals now we know the number of state variables
-            for i in 1:length(stagedata(sp).state_vars)
-                push!(stagedata(sp).dual_values, zeros(S))
+            for i in 1:S
+                push!(stagedata(sp).dual_values, zeros(length(stagedata(sp).state_vars)))
             end
 
             # Initialise regularisation variables

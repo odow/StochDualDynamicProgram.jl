@@ -40,8 +40,8 @@ function addcut!{T, M, S, X, TM}(m::SDDPModel{T, M, S, X, TM}, pass::Int, t::Int
             sd = stagedata(m, t+1, j)
             cut.intercept += sd1.weightings_matrix[j,s] * sd.objective_values[s]
             for v = 1:length(xbar)
-                cut.intercept -= sd1.weightings_matrix[j,s] * sd.dual_values[v][s] * xbar[v]
-                cut.coefficients[v] += sd1.weightings_matrix[j,s] * sd.dual_values[v][s]
+                cut.intercept -= sd1.weightings_matrix[j,s] * sd.dual_values[s][v] * xbar[v]
+                cut.coefficients[v] += sd1.weightings_matrix[j,s] * sd.dual_values[s][v]
             end
         end
     end
@@ -79,10 +79,13 @@ end
 function solveall!{T, M, S, X, TM}(m::SDDPModel{T, M, S, X, TM}, t::Int, regularisation::Regularisation)
     for i in 1:M
         set_nonregularised_objective!(regularisation, X, subproblem(m,t,i))
-        for s=1:S
-            load_scenario!(subproblem(m,t,i), s)
-            backsolve!(subproblem(m,t,i), s)
-        end
+        solvescenarios!(m, t, i)
+    end
+end
+function solvescenarios!{T, M, S, X, TM}(m::SDDPModel{T, M, S, X, TM}, t, i)
+    for s=1:S
+        load_scenario!(subproblem(m,t,i), s)
+        backsolve!(subproblem(m,t,i), s)
     end
 end
 
@@ -102,6 +105,6 @@ function backsolve!(sp::Model, scenario::Int)
     stagedata(sp).objective_values[scenario] = getobjectivevalue(sp)
     # store the dual value for each of the state variables
     for i in 1:length(stagedata(sp).state_vars)
-        stagedata(sp).dual_values[i][scenario] = getdual(stagedata(sp).dual_constraints[i])
+        stagedata(sp).dual_values[scenario][i] = getdual(stagedata(sp).dual_constraints[i])
     end
 end

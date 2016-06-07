@@ -70,7 +70,10 @@ end
 
 facts("Newsvendor Example") do
     include(joinpath(EXAMPLESDIR, "newsvendor.jl"))
+    @fact mean(results[:Objective]) --> roughly(97.5, 1)
+
     include(joinpath(EXAMPLESDIR, "newsvendor2.jl"))
+    @fact mean(results[:Objective]) --> roughly(99.36, 1)
 end
 
 facts("Visualisation") do
@@ -79,11 +82,15 @@ end
 
 facts("Parallelisation") do
     include(joinpath(EXAMPLESDIR, "parallel_example.jl"))
+    @fact mean(results[:Objective]) --> roughly(906.35, 5)
+
     include(joinpath(EXAMPLESDIR, "serial_comparison.jl"))
+    @fact mean(results[:Objective]) --> roughly(906.35, 5)
 end
 
 facts("Complete Example") do
     include(joinpath(EXAMPLESDIR, "complete_example.jl"))
+    @fact mean(results[:Objective]) --> roughly(910, 5)
 end
 
 FactCheck.exitstatus()
