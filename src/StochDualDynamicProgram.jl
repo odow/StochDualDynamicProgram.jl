@@ -43,6 +43,7 @@ include("visualiser/visualise.jl")
 include("parallel.jl")
 include("MIT_licencedcode.jl")
 include("print.jl")
+include("expectedvalueproblem.jl")
 
 const PRINTALL   = 4
 const PRINTINFO  = 3
@@ -84,6 +85,14 @@ function JuMP.solve{T, M, S, X, TM}(m::SDDPModel{T, M, S, X, TM};
     log = SolutionLog()
 
     print_level >= PRINTTRACE && printheader()
+
+    for ii = 1:0
+        resizeforwardstorage!(m, 1)
+        expectedforwardpass!(m, 1, cut_selection, forward_pass)
+        expectedbackwardpass!(m, risk_measure, forward_pass.regularisation, backward_pass)
+        notconverged = setbound!(log, m, bound_convergence)
+        print(m, log, output, false)
+    end
 
     notconverged = true
     while notconverged
