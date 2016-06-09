@@ -22,7 +22,7 @@ function forwardpass!{T, M, S, X, TM}(m::SDDPModel{T, M, S, X, TM}, n::Int, cuts
                     pass, t, markov)                 #    cutselection
             if t < T                                 # don't do this for the last stage
                 pass_states!(m, sp, t, forwardpass.regularisation) # pass state values forward
-                markov = transition(m, t, markov, forwardpass.importancesampling)    # transition
+                markov = transition(m, t, markov, forwardpass.uniformsampling)    # transition
             end
         end
     end

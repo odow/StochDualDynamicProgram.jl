@@ -62,21 +62,21 @@ m = SDDPModel(
 end
 
 @time solvestatus = solve(m,
-    maximum_iterations = 50,
-    policy_estimation  = MonteCarloEstimator(
-                            frequency = 10,
-                            min       = 5,
-                            max       = 50,
-                            step      = 5,
-                            terminate = false
-                        ),
-    forward_pass       = ForwardPass(
-                            regularisation = LinearRegularisation(1., 0.95)
-                        ),
-    risk_measure       = NestedCVar(
-                            beta   = 0.6,
-                            lambda = 0.5
-                        )
+    maximum_iterations      = 50,
+    policy_estimation       = MonteCarloEstimator(
+                                 frequency = 10,
+                                 min       = 5,
+                                 max       = 50,
+                                 step      = 5,
+                                 terminate = false
+                             ),
+    forward_pass            = ForwardPass(
+                                 regularisation = LinearRegularisation(1., 0.95)
+                             ),
+    risk_measure            = NestedCVar(
+                                 beta   = 0.6,
+                                 lambda = 0.5
+                             )
 )
 @assert status(solvestatus) == :MaximumIterations
 

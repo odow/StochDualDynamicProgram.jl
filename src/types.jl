@@ -410,9 +410,9 @@ status(s::Solution) = s.status
 type ForwardPass{T<:Union{Int, AbstractArray{Int, 1}}}
     scenarios::T
     regularisation::Regularisation
-    importancesampling::Bool
+    uniformsampling::Bool
 end
-ForwardPass(;scenarios=1, regularisation=NoRegularisation(), importancesampling=false) = ForwardPass(scenarios, regularisation, importancesampling)
+ForwardPass(;scenarios=1, regularisation=NoRegularisation(), uniformsampling=false) = ForwardPass(scenarios, regularisation, uniformsampling)
 
 # ==============================================================================
 #   Backward Pass

@@ -43,6 +43,7 @@ include("visualiser/visualise.jl")
 include("parallel.jl")
 include("MIT_licencedcode.jl")
 include("print.jl")
+include("expectedvalueproblem.jl")
 
 const PRINTALL   = 4
 const PRINTINFO  = 3
@@ -56,17 +57,18 @@ const PRINTNONE  = 0
 Solve the SDDPModel
 """
 function JuMP.solve{T, M, S, X, TM}(m::SDDPModel{T, M, S, X, TM};
-    maximum_iterations = 1,
-    policy_estimation  = MonteCarloEstimator(),
-    bound_convergence  = BoundConvergence(),
-    forward_pass       = ForwardPass(),
-    backward_pass      = BackwardPass(),
-    risk_measure       = Expectation(),
-    cut_selection      = NoSelection(),
-    parallel           = Serial(),
-    output             = nothing,
-    cut_output_file    = nothing,
-    print_level        = PRINTALL
+    maximum_iterations      = 1,
+    expectedvalueiterations = 0,
+    policy_estimation       = MonteCarloEstimator(),
+    bound_convergence       = BoundConvergence(),
+    forward_pass            = ForwardPass(),
+    backward_pass           = BackwardPass(),
+    risk_measure            = Expectation(),
+    cut_selection           = NoSelection(),
+    parallel                = Serial(),
+    output                  = nothing,
+    cut_output_file         = nothing,
+    print_level             = PRINTALL
     )
 
     setriskmeasure!(m, risk_measure)
@@ -84,6 +86,27 @@ function JuMP.solve{T, M, S, X, TM}(m::SDDPModel{T, M, S, X, TM};
     log = SolutionLog()
 
     print_level >= PRINTTRACE && printheader()
+
+    resizeforwardstorage!(m, 1)
+    if expectedvalueiterations > 0
+        print_level >= PRINTINFO && info("Running Expected Value Iterations")
+        if risk_measure.lambda < (1-1e-5)
+            warn("Cannot run expected value problems iterations with risk aversion")
+        else
+            for evit = 1:expectedvalueiterations
+                solution.iterations += 1
+                expectedforwardpass!(log, m, 1, cut_selection, forward_pass)
+                setconfidenceinterval!(log, m, 0.95)
+                expectedbackwardpass!(log, m, risk_measure, forward_pass.regularisation, backward_pass)
+                notconverged = setbound!(log, m, bound_convergence)
+
+                # print solution to user
+                print_level >= PRINTTRACE && print(m, log, output, false)
+                push!(solution.trace, copy(log))
+            end
+        end
+        print_level >= PRINTINFO && info("Proceeding to normal iterations.")
+    end
 
     notconverged = true
     while notconverged

@@ -118,6 +118,8 @@ You can load cuts from a previous solve using `loadcuts!(m::SDDPModel, filename:
 The `solve(m::SDDPModel [; kwargs...])` function solves the SDDP model `m`. There are the following keyword parameters:
 - `maximum_iterations::Int` default = `1`
   - The maximum number of iterations to complete before termination
+- `expectedvalueiterations::Int` default = `1`
+  - The number of Expected Value iterations to conduct at the start of the algorithm.
 - `policy_estimation::PolicyEstimator` default = `MonteCarloEstimator()`
   - See section Policy Estimation below
 - `bound_convergence::BoundConvergence` default = `BoundConvergence()`
@@ -156,7 +158,7 @@ We can control the policy estimator with the `MonteCarloEstimator([;frequency=0,
 One termination criteria for the SDDP algorithm is to terminate after the lower (if minimising) bound fails to improve by a certain tolerance after a set number of iterations. This behaviour can be controlled with the `BoundConvergence([;after=0, tol=0.])` constructor. If `after < 1` then the algorithm will not terminate due to bound convergence. Otherwise, the algorithm will terminate after `after` iterations where the bound improves by less than `tol`.
 
 #### Forward Pass Options
-You can specify forward pass options with the constructor `ForwardPass([;scenarios=1, regularisation=NoRegularisation(), importancesampling=false])`.
+You can specify forward pass options with the constructor `ForwardPass([;scenarios=1, regularisation=NoRegularisation(), uniformsampling=false])`.
 - `scenarios` is the number of scenarios to sample in one iteration of the forward pass. It can either by an interger, or a range/vector of integers specifying the number of samples by iteration. If there are more iterations than elements in `scenarios`, future iterations will use the last element in the list.
   - examples: `scenarios = 1:10` or `scenarios = [1, 1, 10]`.
 - `regularisation` specifies the regularisation to be used on the forward pass. Valid options are
@@ -164,7 +166,7 @@ You can specify forward pass options with the constructor `ForwardPass([;scenari
   - `LinearRegularisation([inital=1[, decay_rate=0.95]])`: The objective is penalised by the sum of the absolute values of the difference between the state variables and their value on the previous forward pass.
   - `QuadraticRegularisation([inital=1[, decay_rate=0.95]])`: The objective is penalised by the sum of squares of the difference between the state variables and their value on the previous forward pass.
   Both the `Linear` and `Quadratic` regularisation penalties are multiplied by the coefficient `initial x decay_rate ^ k` where `k` is the iteration number.
-- `importancesampling=true` samples the forward pass with uniform probability instead of those given by the tranistion matrix and scenario support vector.
+- `uniformsampling=true` samples the forward pass with uniform probability instead of those given by the tranistion matrix and scenario support vector.
 
 #### Backward Pass Options
 You can specify backward pass options with the constructor `BackwardPass([;multicut=false])`. If `multicut` is `true` then a cut will be added to every markov state at every state for every forward trajectory.

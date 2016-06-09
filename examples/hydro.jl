@@ -122,8 +122,8 @@ mcestimator = MonteCarloEstimator(
     maximum_iterations = 20,
     policy_estimation  = mcestimator,
     forward_pass       = ForwardPass(
-                            scenarios          = 1:10,
-                            importancesampling = true
+                            scenarios       = 1:10,
+                            uniformsampling = true
                         ),
     cut_selection      = LevelOne(5),
     print_level        = 1
