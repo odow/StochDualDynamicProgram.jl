@@ -113,7 +113,7 @@ function forwardsolve!(sp::Model)
         sp.internalModelLoaded = false
         status = solve(sp)
         if status != :Optimal
-            JuMP.writeMPS(sp, "subproblem_proc$(myid())_time$(string(now())).mps")
+            JuMP.writeMPS(sp, "subproblem_proc$(myid())_$(randstring(8)).mps")
             error("SDDP Subproblems must be feasible. Current status: $(status). I tried rebuilding from the JuMP model but it didn't work so I wrote you an MPS file.")
         end
     end
