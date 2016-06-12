@@ -103,6 +103,6 @@ results = simulate(m,  # Simulate the policy
 	results[:Current][stage][replication],              (title="Weekly Income",      ylabel="Week Profit (\$)")
 	results[:reservoir][stage][replication][:upper],    (title="Upper Reservoir",    ylabel="Level")
 	results[:reservoir][stage][replication][:lower],    (title="Lower Reservoir")
-	Price[stage, results[:Markov][stage][replication]], (ylabel="Price")
+	Price[stage, results[:Markov][stage][replication]], (ylabel="Price", interpolate="step-after")
     results[:Future][stage][replication]
 end)

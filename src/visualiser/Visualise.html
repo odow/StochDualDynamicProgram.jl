@@ -94,7 +94,6 @@ body {
 
   // d3 line function
   var line = d3.svg.line()
-  .interpolate("basis")
   .x(function(d,i) { return x(i+1) })
   .y(function(d,i) { return y(d) });
 
@@ -134,6 +133,7 @@ body {
       y.domain(domain);
       x.domain([1, nstages]);
 
+      line.interpolate(plotdata.interpolate);
       // add the x axis
       svg.append("g").attr("class", "x axis")
       .attr("transform", "translate(0," + height + ")").call(xAxis);

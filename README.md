@@ -237,17 +237,26 @@ results[:x][1] --> [1.25]
 ```
 
 #### Visualisation
-It is possible to create an interactive visualisation of the simulated policy with the `@visualise` macro.
+It is possible to create an interactive visualisation of the simulated policy with the `@visualise` macro. The following keywords should be wrapped with parentheses.
+ - `"cumulative"  = false` Plot the cumulation of the variable over stages
+ - `"title"       = ""` Plot title
+ - `"xlabel"      = "Stages"` Label for x axis
+ - `"ylabel"      = ""` Label for y axis
+ - `"interpolate" = "linear"` D3.js interpolation method to use. See https://github.com/d3/d3/wiki/SVG-Shapes#line_interpolate for more
 
 ```julia
 @visualise(results, (stage, replication), begin
-	results[:Current][stage][replication], "Accumulated Profit (\$)", (cumulative=true)
 
-	results[:Current][stage][replication], "Week Profit (\$)"
+results[:Current][stage][replication],              (title="Accumulated Profit", ylabel="Accumulated Profit (\$)", cumulative=true)
 
-	results[:reservoir][stage][replication][:upper], "Upper Reservoir"
-	results[:reservoir][stage][replication][:lower], "Lower Reservoir"
+results[:Current][stage][replication],              (title="Weekly Income",      ylabel="Week Profit (\$)")
 
-	Price[stage, results[:Markov][stage][replication]], "Price"
+results[:reservoir][stage][replication][:upper],    (title="Upper Reservoir",    ylabel="Level")
+
+results[:reservoir][stage][replication][:lower],    (title="Lower Reservoir")
+
+Price[stage, results[:Markov][stage][replication]], (ylabel="Price", interpolate="step-after")
+
+results[:Future][stage][replication]
 end)
 ```
