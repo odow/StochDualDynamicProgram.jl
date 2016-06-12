@@ -91,16 +91,7 @@ end
 
 # Solve the subproblem sp in the backward pass storing the objective and dual coefficients
 function backsolve!(sp::Model, scenario::Int)
-    @assert issubproblem(sp)
-    status = solve(sp)
-    # Catch case where we aren't optimal
-    if status != :Optimal
-        sp.internalModelLoaded = false
-        status = solve(sp)
-        if status != :Optimal
-            error("SDDP Subproblems must be feasible. Current status: $(status). I tried rebuilding from the JuMP model but it didn't work...")
-        end
-    end
+    solve!(sp)
     # store the objective value
     stagedata(sp).objective_values[scenario] = getobjectivevalue(sp)
     # store the dual value for each of the state variables

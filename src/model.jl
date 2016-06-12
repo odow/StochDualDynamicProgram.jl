@@ -459,3 +459,18 @@ end
 isconverged(::Type{Min}, ci::NTuple{2, Float64}, bound::Float64) = ci[1] < bound
 isconverged(::Type{Max}, ci::NTuple{2, Float64}, bound::Float64) = ci[2] > bound
 isconverged{T, M, S, X, TM}(m::SDDPModel{T, M, S, X, TM}, ci, bound) = isconverged(X, ci, bound)
+
+function solve!(sp::Model)
+    @assert issubproblem(sp)
+    status = solve(sp)
+    # Catch case where we aren't optimal
+    if status != :Optimal
+        warn("SDDP subproblem not optimal (stats=$(status)). Assuming numerical infeasibility so rebuilding model from stored cuts.")
+        sp.internalModelLoaded = false
+        status = solve(sp)
+        if status != :Optimal
+            JuMP.writeMPS(sp, "subproblem_proc$(myid())_$(randstring(8)).mps")
+            error("SDDP Subproblems must be feasible. Current status: $(status). I tried rebuilding from the JuMP model but it didn't work so I wrote you an MPS file.")
+        end
+    end
+end
