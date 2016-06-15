@@ -62,10 +62,14 @@ macro visualise(results, kw, block)
 	runcmd = `$(ENV["COMSPEC"]) /c start $tmphtmlfile`
 	visualisehtml = readall(htmlfile)
 	push!(code.args, quote
-		open($tmphtmlfile, "w") do f
-			write(f, replace($visualisehtml, "<!--DATA-->", json(visualiseout)))
+		if OS_NAME == :Windows
+			open($tmphtmlfile, "w") do f
+				write(f, replace($visualisehtml, "<!--DATA-->", json(visualiseout)))
+			end
+			run($runcmd)
+		else
+			replace($visualisehtml, "<!--DATA-->", json(visualiseout))
 		end
-		run($runcmd)
 	end)
     return code
 end
