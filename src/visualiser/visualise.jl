@@ -60,7 +60,11 @@ macro visualise(results, kw, block)
         end
     end
 	tmphtmlfile = replace(tempname(), ".tmp", ".html")
-	runcmd = `$(ENV["COMSPEC"]) /c start $tmphtmlfile`
+	if OS_NAME == :Windows
+		runcmd = `$(ENV["COMSPEC"]) /c start $tmphtmlfile`
+	else
+		runcmd = ``
+	end
 	visualisehtml = readall(htmlfile)
 	push!(code.args, quote
 		if OS_NAME == :Windows
