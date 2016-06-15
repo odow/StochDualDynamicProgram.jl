@@ -13,9 +13,6 @@ function getTrace(sol::Solution, sym::Symbol)
     return [s.(sym) for s in sol.trace]
 end
 
-const str_montecarlo = "{1:>9s} {2:>9s} | {3:>9s} {4:>6.2f} | {5:6s} {6:6s} | {7:6s} {8:6s} | {9:5s}\n"
-const str_forwardonly = "     {1:>9s}      | {3:>9s}        | {5:6s} {6:6s} | {7:6s} {8:6s} | {9:5s}\n"
-
 function Base.print(m::SDDPModel, l::SolutionLog, filename::ASCIIString, ismontecarlo::Bool)
     open(filename, "a") do f
         write(f, textify(l))
@@ -23,10 +20,29 @@ function Base.print(m::SDDPModel, l::SolutionLog, filename::ASCIIString, ismonte
     print(m, l, ismontecarlo)
 end
 Base.print(m::SDDPModel, l::SolutionLog, filename::Void, ismontecarlo) = print(m, l, ismontecarlo)
+
 function Base.print(m::SDDPModel, l::SolutionLog, ismontecarlo::Bool=false)
-    printfmt(ismontecarlo?str_montecarlo:str_forwardonly,
-        humanize(l.ci_lower, "7.3f"), humanize(l.ci_upper, "7.3f"), humanize(l.bound, "7.3f"), 100*rtol(m), humanize(l.cuts), humanize(l.time_backwards), humanize(l.simulations), humanize(l.time_forwards), humanize(l.time_cutselection, "6.2f"))
+    if ismontecarlo
+        println(
+            displaystring(l,
+                string(humanize(l.ci_lower, "8.3f"), " ", humanize(l.ci_upper, "8.3f")),
+                humanize(100*rtol(m), "5.1f")
+                )
+            )
+    else
+        println(displaystring(l))
+    end
 end
+displaystring(
+    l,
+    bound_str=string("     ", humanize(l.ci_upper, "8.3f"), "     "),
+    gap_str="      ") = string(
+        bound_str, " | ",
+        humanize(l.bound, "8.3f"), " ", gap_str,  " | ",
+        humanize(l.cuts), " ", humanize(l.time_backwards),  " | ",
+        humanize(l.simulations), " ", humanize(l.time_forwards),  " | ",
+        humanize(l.time_cutselection, "5.1f")
+)
 
 getCloseCIBound(::Type{Min}, m::SDDPModel) = m.confidence_interval[1]
 getCloseCIBound(::Type{Max}, m::SDDPModel) = m.confidence_interval[2]
@@ -47,8 +63,10 @@ function rtol(m)
 end
 
 function printheader()
-    printfmt("{1:38s} | {2:13s} | {3:13s} |   Cut\n", "                  Objective", "  Backward", "   Forward")
-    printfmt("{1:19s} | {2:9s} {3:6s} | {4:6s} {5:6s} | {6:6s} {7:6s} |  Time\n", "      Expected", "  Bound", " % Gap", " Cuts ", " Time", " Sims ", " Time")
+    println("               Objective               |   Backward    |    Forward    |   Cut")
+    println("      Expected      |   Bound   % Gap  |  Cuts   Time  |  Sims   Time  |  Time")
+    # printfmt("{1:38s} | {2:13s} | {3:13s} |   Cut\n", "                  Objective", "  Backward", "   Forward")
+    # printfmt("{1:19s} | {2:9s} {3:6s} | {4:6s} {5:6s} | {6:6s} {7:6s} |  Time\n", "      Expected", "  Bound", " % Gap", " Cuts ", " Time", " Sims ", " Time")
 end
 
 function humanize(value::Int)

@@ -108,7 +108,7 @@ end
                             scenarios = 10
                         ),
     backward_pass      = BackwardPass(
-                            multicut = true
+                            multicut = false
                         ),
     parallel           = Serial(),
     print_level        = 2

@@ -223,7 +223,7 @@ function is_valid_transition_matrix(T::Array{Float64, 2}, n::Int)
     end
     @assert size(T)[1] == n
     for i=1:n
-        if abs(sum(T[i,:]) - 1.) > 1e-10
+        if abs(sum(T[i,:]) - 1.) > 1e-8
             return false
         end
     end
@@ -265,8 +265,8 @@ function create_subproblems!{T, M, S, X, TM}(m::SDDPModel{T, M, S, X, TM})
                 error("Invalid number of arguments")
             end
             # Initialise storage for scenario duals now we know the number of state variables
-            for i in 1:length(stagedata(sp).state_vars)
-                push!(stagedata(sp).dual_values, zeros(S))
+            for i in 1:S
+                push!(stagedata(sp).dual_values, zeros(length(stagedata(sp).state_vars)))
             end
 
             # Initialise regularisation variables
@@ -459,3 +459,18 @@ end
 isconverged(::Type{Min}, ci::NTuple{2, Float64}, bound::Float64) = ci[1] < bound
 isconverged(::Type{Max}, ci::NTuple{2, Float64}, bound::Float64) = ci[2] > bound
 isconverged{T, M, S, X, TM}(m::SDDPModel{T, M, S, X, TM}, ci, bound) = isconverged(X, ci, bound)
+
+function solve!(sp::Model)
+    @assert issubproblem(sp)
+    status = solve(sp)
+    # Catch case where we aren't optimal
+    if status != :Optimal
+        warn("SDDP subproblem not optimal (stats=$(status)). Assuming numerical infeasibility so rebuilding model from stored cuts.")
+        sp.internalModelLoaded = false
+        status = solve(sp)
+        if status != :Optimal
+            JuMP.writeMPS(sp, "subproblem_proc$(myid())_$(randstring(8)).mps")
+            error("SDDP Subproblems must be feasible. Current status: $(status). I tried rebuilding from the JuMP model but it didn't work so I wrote you an MPS file.")
+        end
+    end
+end

@@ -70,9 +70,10 @@ montecarlo = MonteCarloEstimator(
 )
 
 @time solvestatus = solve(m,
-    maximum_iterations = 30,
-    policy_estimation  = montecarlo,
-    cut_output_file    = "news_vendor.csv"
+    maximum_iterations      = 30,
+    expectedvalueiterations = 10,
+    policy_estimation       = montecarlo,
+    cut_output_file         = "news_vendor.csv"
 )
 @assert status(solvestatus) == :PolicyConverence
 

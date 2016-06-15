@@ -12,17 +12,34 @@
 # THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 # O.D. 2016 renamed
-const suffix = ["", "K", "M", "G", "T", "P", "E", "Z", "Y"]
+const suffix = [" ", "K", "M", "G", "T", "P", "E", "Z", "Y"]
 # O.D. fix base
 const base   = 1000.0
 
+humanize51f(v,s) = @sprintf("% 5.1f%s", v, s)
+humanize52f(v,s) = @sprintf("% 5.2f%s", v, s)
+humanize83f(v,s) = @sprintf("% 8.3f%s", v, s)
+humanize5d(v,s)  = @sprintf("% 5d%s", v, s)
+
+function humanize(value::Number, fmt_str::ASCIIString="5.1f")
+    if fmt_str == "5.1f"
+        return humanize(value, humanize51f)
+    elseif fmt_str == "5.2f"
+        return humanize(value, humanize52f)
+    elseif fmt_str == "8.3f"
+        return humanize(value, humanize83f)
+    elseif fmt_str == "5d"
+        return humanize(value, humanize5d)
+    end
+    error("Format string $fmt_str not intialised.")
+end
 # O.D. 2016 remaned. drop style optoin
-function humanize(value::Number, format="5.1f")
+function humanize(value::Number, fmt_str::Function)
     # O.D. fix suffix
     # O.D. fix base
     bytes   = abs(float(value)) # O.D. abs value
-    format  = "%$(format)%s"    # O.D. add % char to beginning
-    fmt_str = @eval (v,s)->@sprintf($format,v,s)
+    # format  = "%$(format)%s"    # O.D. add % char to beginning
+    # fmt_str = @eval (v,s)->@sprintf($format,v,s)
     unit    = base
     s       = suffix[1]
     for (i,s) in enumerate(suffix)
@@ -30,5 +47,5 @@ function humanize(value::Number, format="5.1f")
         bytes < unit && break
     end
     # O.D. add sign
-    return fmt_str(sign(value)*base * bytes / unit, s)
+    return fmt_str(sign(value)*base * bytes / unit, s)::ASCIIString
 end

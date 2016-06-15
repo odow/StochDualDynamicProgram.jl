@@ -8,8 +8,8 @@
 # Each turbine has an identical piecewise linear response function.
 #     f(water units) = electricity units
 
-# Add three processors
-addprocs(3)
+# Add processors
+addprocs(4 - nprocs())
 
 # We need to load out data everywhere
 @everywhere begin
@@ -116,7 +116,7 @@ end
                             scenarios = 10
                         ),
     backward_pass      = BackwardPass(
-                            multicut = true
+                            multicut = false
                         ),
     parallel           = Parallel(),
     print_level        = 2

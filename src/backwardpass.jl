@@ -20,7 +20,8 @@ end
 function backwardpass!(log::SolutionLog, m::SDDPModel, nscenarios, risk_measure, regularisation, isparallel::Bool, backward_pass::BackwardPass)
     tic()
     if isparallel
-        parallelbackwardpass!(m, risk_measure, regularisation, backward_pass)
+        # parallelbackwardpass!(m, risk_measure, regularisation, backward_pass)
+        bestparallelbackwardpass!(m, risk_measure, regularisation, backward_pass)
     else
         backwardpass!(m, risk_measure, regularisation, backward_pass)
     end
@@ -39,8 +40,8 @@ function addcut!{T, M, S, X, TM}(m::SDDPModel{T, M, S, X, TM}, pass::Int, t::Int
             sd = stagedata(m, t+1, j)
             cut.intercept += sd1.weightings_matrix[j,s] * sd.objective_values[s]
             for v = 1:length(xbar)
-                cut.intercept -= sd1.weightings_matrix[j,s] * sd.dual_values[v][s] * xbar[v]
-                cut.coefficients[v] += sd1.weightings_matrix[j,s] * sd.dual_values[v][s]
+                cut.intercept -= sd1.weightings_matrix[j,s] * sd.dual_values[s][v] * xbar[v]
+                cut.coefficients[v] += sd1.weightings_matrix[j,s] * sd.dual_values[s][v]
             end
         end
     end
@@ -63,9 +64,9 @@ end
 
 # set the rhs of the t+1 subproblems using value from forward pass
 function setrhs!(m::SDDPModel, pass, t, i)
-    sp = subproblem(m, t+1,i)
-    for j in 1:length(stagedata(sp).dual_constraints)
-        JuMP.setRHS(stagedata(sp).dual_constraints[j], getx(m, pass, t, j))
+    sd = stagedata(m, t+1, i)
+    for j in 1:length(sd.dual_constraints)
+        JuMP.setRHS(sd.dual_constraints[j], getx(m, pass, t, j))
     end
 end
 function setrhs!{T, M, S, X, TM}(m::SDDPModel{T, M, S, X, TM}, pass::Int, t::Int)
@@ -78,29 +79,23 @@ end
 function solveall!{T, M, S, X, TM}(m::SDDPModel{T, M, S, X, TM}, t::Int, regularisation::Regularisation)
     for i in 1:M
         set_nonregularised_objective!(regularisation, X, subproblem(m,t,i))
-        for s=1:S
-            load_scenario!(subproblem(m,t,i), s)
-            backsolve!(subproblem(m,t,i), s)
-        end
+        solvescenarios!(m, t, i)
+    end
+end
+function solvescenarios!{T, M, S, X, TM}(m::SDDPModel{T, M, S, X, TM}, t, i)
+    for s=1:S
+        load_scenario!(subproblem(m,t,i), s)
+        backsolve!(subproblem(m,t,i), s)
     end
 end
 
 # Solve the subproblem sp in the backward pass storing the objective and dual coefficients
 function backsolve!(sp::Model, scenario::Int)
-    @assert issubproblem(sp)
-    status = solve(sp)
-    # Catch case where we aren't optimal
-    if status != :Optimal
-        sp.internalModelLoaded = false
-        status = solve(sp)
-        if status != :Optimal
-            error("SDDP Subproblems must be feasible. Current status: $(status). I tried rebuilding from the JuMP model but it didn't work...")
-        end
-    end
+    solve!(sp)
     # store the objective value
     stagedata(sp).objective_values[scenario] = getobjectivevalue(sp)
     # store the dual value for each of the state variables
     for i in 1:length(stagedata(sp).state_vars)
-        stagedata(sp).dual_values[i][scenario] = getdual(stagedata(sp).dual_constraints[i])
+        stagedata(sp).dual_values[scenario][i] = getdual(stagedata(sp).dual_constraints[i])
     end
 end

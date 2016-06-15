@@ -25,10 +25,11 @@ macro visualise(results, kw, block)
             # do nothing
         else
 			output = Dict{ASCIIString, Any}(
-			"cumulative" => false,
-			"title" => "",
-			"ylabel" => "",
-			"xlabel" => "Stages"
+			    "cumulative"  => false,
+			    "title"       => "",
+			    "ylabel"      => "",
+			    "xlabel"      => "Stages",
+			    "interpolate"  => "linear"
 			)
             if it.head == :tuple
                 if length(it.args) > 2

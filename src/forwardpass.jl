@@ -22,7 +22,7 @@ function forwardpass!{T, M, S, X, TM}(m::SDDPModel{T, M, S, X, TM}, n::Int, cuts
                     pass, t, markov)                 #    cutselection
             if t < T                                 # don't do this for the last stage
                 pass_states!(m, sp, t, forwardpass.regularisation) # pass state values forward
-                markov = transition(m, t, markov, forwardpass.importancesampling)    # transition
+                markov = transition(m, t, markov, forwardpass.uniformsampling)    # transition
             end
         end
     end
@@ -105,16 +105,7 @@ end
 
 # solve the subproblem in a forward pass
 function forwardsolve!(sp::Model)
-    @assert issubproblem(sp)
-    status = solve(sp)
-    # Catch case where we aren't optimal
-    if status != :Optimal
-        sp.internalModelLoaded = false
-        status = solve(sp)
-        if status != :Optimal
-            error("SDDP Subproblems must be feasible. Current status: $(status). I tried rebuilding from the JuMP model but it didn't work...")
-        end
-    end
+    solve!(sp)
 end
 
 # load a random scenario
