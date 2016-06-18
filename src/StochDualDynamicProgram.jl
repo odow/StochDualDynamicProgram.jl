@@ -29,7 +29,9 @@ export SDDPModel,
     # Regularisation options
     NoRegularisation, LinearRegularisation, QuadraticRegularisation,
     # query solve attributes
-    status
+    status,
+    # non convex helpers
+    SOSII!
 
 include("types.jl")
 include("macros.jl")
@@ -44,6 +46,7 @@ include("parallel.jl")
 include("MIT_licencedcode.jl")
 include("print.jl")
 include("expectedvalueproblem.jl")
+include("nonconvex.jl")
 
 const PRINTALL   = 4
 const PRINTINFO  = 3

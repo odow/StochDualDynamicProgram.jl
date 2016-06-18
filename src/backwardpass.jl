@@ -92,6 +92,14 @@ end
 # Solve the subproblem sp in the backward pass storing the objective and dual coefficients
 function backsolve!(sp::Model, scenario::Int)
     solve!(sp)
+    if [:Bin, :Int] in sp.colCat || length(sp.sosconstr) > 0
+        solvenoncontinuous!(sp, scenario)
+    else
+        solvecontinuous!(sp, scenario)
+    end
+end
+
+function solvecontinuous!(sp::Model, scenario::Int)
     # store the objective value
     stagedata(sp).objective_values[scenario] = getobjectivevalue(sp)
     # store the dual value for each of the state variables

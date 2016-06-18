@@ -202,6 +202,8 @@ StageDataExt(scenarios::Int=1) = StageDataExt(
     ConstraintRef[],
     nothing
     )
+# Overload
+Base.copy(s::StageDataExt) = nothing
 
 # ==============================================================================
 #   Forward Pass
