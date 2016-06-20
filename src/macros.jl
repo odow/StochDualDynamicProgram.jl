@@ -189,3 +189,67 @@ macro stageprofit(m, ex)
         stagedata($m).stage_profit = @expression($m, $(esc(gensym())), $(esc(ex)))
     end
 end
+function addpenalties!(sp, weight)
+    @variable(sp, _penalty_upper_ >= 0)
+    @variable(sp, _penalty_lower_ >= 0)
+    stagedata(sp).relaxationpenalties += weight * (_penalty_lower_ + _penalty_upper_)
+    return _penalty_upper_, _penalty_lower_
+end
+macro relaxedconstraint(sp, weight, args...)
+    code = quote end
+    sp = esc(sp)
+    if length(args) == 1
+        constr = args[1]
+    elseif length(args) == 2
+        constr = args[2]
+    else
+        error("Too many arguments in @relaxedconstraint")
+    end
+    @assert constr.head == :comparison
+    _penalty_upper_, _penalty_lower_ = gensym(), gensym()
+    push!(code.args, quote
+        $(esc(_penalty_upper_)), $(esc(_penalty_lower_)) = addpenalties!($sp, $weight)
+    end)
+    if constr.args[2] == :(<=)
+        newconstr = Expr(:comparison, Expr(:call, :(-), constr.args[1], _penalty_lower_), :(<=), constr.args[3])
+     elseif constr.args[2] == :(>=)
+         newconstr = Expr(:comparison, Expr(:call, :(+), constr.args[1], _penalty_upper_), :(>=), constr.args[3])
+    elseif constr.args[2] == :(==)
+         newconstr = Expr(:comparison, Expr(:call, :(-), Expr(:call, :(+), constr.args[1], _penalty_upper_), _penalty_lower_), :(==), constr.args[3])
+    else
+        error("Comparison operator $(constr) not recognised")
+    end
+    if length(args) == 1
+        push!(code.args, Expr(:macrocall, symbol("@constraint"), sp, esc(newconstr)))
+    else
+        push!(code.args,Expr(:macrocall, symbol("@constraint"), sp, esc(args[1]), esc(newconstr)))
+    end
+    return code
+end
+
+macro relaxedconstraints(m, penalty, c)
+    @assert c.head == :block || error("Invalid syntax for @relaxedconstraints")
+    code = quote end
+    for it in c.args
+        if Base.Meta.isexpr(it, :line)
+            # do nothing
+        else
+            if it.head == :comparison
+                push!(code.args,
+                    Expr(:macrocall, symbol("@relaxedconstraint"), esc(m), esc(penalty), esc(it))
+                )
+            elseif it.head == :tuple
+                if length(it.args) != 2
+                    error("Unknown arguments in @relaxedconstraints")
+                end
+                push!(code.args,
+                    Expr(:macrocall, symbol("@relaxedconstraint"), esc(m), esc(penalty), esc(it.args[1]), esc(it.args[2]))
+                )
+            else
+                error("Unknown arguments in @relaxedconstraints")
+            end
+        end
+    end
+    push!(code.args, :(nothing))
+    return code
+end

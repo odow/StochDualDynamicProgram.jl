@@ -2,11 +2,6 @@ using StochDualDynamicProgram, JuMP, FactCheck
 
 const EXAMPLESDIR = joinpath(dirname(dirname(@__FILE__)), "examples")
 
-facts("SOSII Example") do
-    include(joinpath(EXAMPLESDIR, "sos_hydro.jl"))
-    @fact mean(results[:Objective]) --> roughly(910, 5)
-end
-
 facts("SDDPModel") do
     m = SDDPModel(
         stages=3, markov_states=2, transition=[0.2 0.8;0.8 0.2], value_to_go_bound=1000
@@ -96,6 +91,11 @@ end
 facts("Complete Example") do
     include(joinpath(EXAMPLESDIR, "complete_example.jl"))
     @fact mean(results[:Objective]) --> roughly(910, 5)
+end
+
+facts("SOSII Example") do
+    include(joinpath(EXAMPLESDIR, "sos_hydro.jl"))
+    @fact mean(results[:Objective]) --> roughly(-1450, 20)
 end
 
 FactCheck.exitstatus()

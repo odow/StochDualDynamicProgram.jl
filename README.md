@@ -109,6 +109,12 @@ There is also a plural version of the macro similar to JuMP's `@constraints`:
 end)
 ```
 
+#### Complete Recourse
+SDDP requires relatively complete recourse, that is, for every feasible state, there exists a feasible action. We can create complete recourse by relaxing any bounds and linear constraints by adding slack variables and penalising these in the objective. This transformation can be achieved with the `@relaxedconstraint` macro. The first argument is the model, the second argument is the penalty in the objective function and the third argument is the constraint to be relaxed.
+
+```julia
+@relaxedconstraint(sp, 1000, x+y <= 1)
+```
 
 ### Load previously generated cuts
 You can load cuts from a previous solve using `loadcuts!(m::SDDPModel, filename::ASCIIString)`.

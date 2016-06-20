@@ -178,6 +178,9 @@ type StageDataExt
     regularisecoefficient::Float64
     regularisecons::Vector{JuMP.ConstraintRef}
     regularisepen::Union{Void, JuMP.Variable}
+
+    # relax penalties
+    relaxationpenalties
 end
 StageDataExt(scenarios::Int=1) = StageDataExt(
     Variable[],
@@ -200,7 +203,9 @@ StageDataExt(scenarios::Int=1) = StageDataExt(
 
     1.,
     ConstraintRef[],
-    nothing
+    nothing,
+
+    0.
     )
 # Overload
 Base.copy(s::StageDataExt) = nothing

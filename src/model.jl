@@ -324,15 +324,15 @@ end
 function regularise!(regularisation::QuadraticRegularisation, sense::Sense, sp)
     stagedata(sp).regularisecoefficient *= regularisation.decayrate
     @expression(sp, regulariser, sum{(v - oldvalue(v))^2, v in stagedata(sp).state_vars})
-    return regularise!(sense, stagedata(sp).regularisecoefficient * regulariser)
+    return sense!(sense, stagedata(sp).regularisecoefficient * regulariser)
 end
 
 # Dummy regularisation
 regularise!(ty, sense::Sense, sp) = 0.
 
 # Get regularisation sense correct
-regularise!(::Type{Min}, expr) = expr
-regularise!(::Type{Max}, expr) = -expr
+sense!(::Type{Min}, expr) = expr
+sense!(::Type{Max}, expr) = -expr
 
 # Return future cost
 #    TODO: this isn't type stable
@@ -345,7 +345,7 @@ end
 
 # Set potentially regularised objective
 function set_objective!(regularise, sense::Sense, sp::Model)
-    aff = stagedata(sp).stage_profit
+    aff = stagedata(sp).stage_profit + sense!(sense, stagedata(sp).relaxationpenalties)
     aff += futurecost!(sp)
     aff += regularise!(regularise, sense, sp)
     setobj!(sense, sp, aff)

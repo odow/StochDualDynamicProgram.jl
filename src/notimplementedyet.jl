@@ -1,3 +1,15 @@
+function autoregressivevariable(sp::Model, weights::Vector, initial::Vector, errorterm::Vector)
+    n = length(weights)
+    @assert length(initial) == n
+    @state(sp, ar[i=1:n], ar0=initial)
+    @variable(sp, x)
+    @scenarioconstraint(sp, err=errorterm, x == dot(ar0, weights) + err)
+    @constraint(sp, arupdate[i=2:n], ar[i] == ar0[i-1])
+    @cosntraint(sp, ar[1] == x)
+    return x
+end
+# x = autoregressivevariable(sp, [0,0,0,0,1], [0,0,0,0,0], rand(10))
+
 # function cvar(x, beta::Float64=1., lambda::Float64=1.)
 #     @assert beta >= 0 && beta <= 1.
 #     @assert lambda >= 0 && lambda <= 1.
