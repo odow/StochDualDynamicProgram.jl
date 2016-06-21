@@ -95,7 +95,7 @@ end
 
 facts("SOSII Example") do
     include(joinpath(EXAMPLESDIR, "sos_hydro.jl"))
-    @fact mean(results[:Objective]) --> roughly(-1450, 20)
+    @fact mean(results[:Objective]) --> roughly(-920, 20)
 end
 
 FactCheck.exitstatus()

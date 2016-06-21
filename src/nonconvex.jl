@@ -1,61 +1,63 @@
 nonzero(x) = abs(x) > 1e-10
 
-function fixedmodel(m::Model)
-    !m.internalModelLoaded && error("Unable to fix an unsolved model")
-    f = copy(m)
-    # setsolver(f, ClpSolver())
-    # Follow what Gurobi does for Special Ordered Sets
-    for sos in m.sosconstr
-        cols = Int[v.col for v in sos.terms]
-        if sos.sostype == :SOS1
-            for c in cols
-                if nonzero(m.colVal[c])
-                    @constraint(f, sum{Variable(f, i), i=cols; i!=c} == 0)
-                    break
-                end
-            end
-        elseif sos.sostype == :SOS2
-            colorder = sortperm(sos.weights)
-            for (i, sosidx) in enumerate(colorder)
-                c = cols[sosidx]
-                if nonzero(m.colVal[c]) && i != length(colorder)
-                    @constraint(f, sum{Variable(f, j), j=cols; j!=c && j != cols[colorder[i+1]]} == 0)
-                    break
-                elseif nonzero(m.colVal[c]) && i == length(colorder)
-                    @constraint(f, sum{Variable(f, j), j=cols; j!=c && j != cols[colorder[i-1]]} == 0)
-                    break
-                end
-            end
-        else
-            error("Unable to create fixed model with SOS of type $(sos.sostype)")
-        end
-    end
-    f.sosconstr = JuMP.SOSConstraint[]
+function fixvariable!(m::Model, idx, value)
+    setupperbound(Variable(m, idx), value)
+    setlowerbound(Variable(m, idx), value)
+end
 
+function fixmodel!(m::Model)
+    !m.internalModelLoaded && error("Unable to fix an unsolved model")
+    # Follow what Gurobi does for Special Ordered Sets
+    if length(m.sosconstr) > 0
+        for sos in m.sosconstr
+            cols = Int[v.col for v in sos.terms]
+            if sos.sostype == :SOS1
+                for c in cols
+                    nonzero(m.colVal[c]) || fixvariable!(m, c, 0.)
+                end
+            elseif sos.sostype == :SOS2
+                colorder = sortperm(sos.weights)
+                for (i, sosidx) in enumerate(colorder)
+                    c = cols[sosidx]
+                    nonzero(m.colVal[c]) || fixvariable!(m, c, 0.)
+                end
+            else
+                error("Unable to create fixed model with SOS of type $(sos.sostype)")
+            end
+        end
+        m.sosconstr = JuMP.SOSConstraint[]
+        # Do this for now since no efficient way to update/remove SOS constraints
+        m.internalModelLoaded = false
+    end
     # Fix all binary and integer variables to their current value
     for (i, v) in enumerate(m.colCat)
         if v == :Bin || v == :Int
-            setcategory(Variable(f, i), :Cont)
-            @constraint(f, Variable(f, i) == m.colVal[i])
+            setcategory(Variable(m, i), :Cont)
+            fixvariable!(m, i, m.colVal[i])
         end
     end
-    f
 end
 
 function solvenoncontinuous!(sp::Model, scenario::Int)
-    f = fixedmodel(sp)
-    status = solve(f)
+    lb = copy(sp.colLower)
+    ub = copy(sp.colUpper)
+    cat = copy(sp.colCat)
+    sos = copy(sp.sosconstr)
+
+    fixmodel!(sp)
+    status = solve(sp)
     @assert status == :Optimal
-    sp.linconstrDuals = f.linconstrDuals
-    # store the objective value
-    stagedata(sp).objective_values[scenario] = getobjectivevalue(f)
-    # store the dual value for each of the state variables
-    for i in 1:length(stagedata(sp).state_vars)
-        stagedata(sp).dual_values[scenario][i] = f.linconstrDuals[stagedata(sp).dual_constraints[i].idx]
-    end
+
+    storecontinuous!(sp, scenario)
+
+    sp.colLower = lb
+    sp.colUpper = ub
+    sp.colCat = cat
+    sp.sosconstr = sos
+
 end
 
-function SOSII!(m::JuMP.Model, f::Function, x, lb::Float64, ub::Float64, n::Int64=21)
+function SOSII!(m::JuMP.Model, f::Function, x, lb::Float64, ub::Float64, n::Int64=10)
     #   This function adds a SOS of Type II to the JuMP model
     #      Σλ = 1         # Convexity
     #      a∙λ = z        # x value
@@ -85,16 +87,17 @@ end
 
 SOSII!{T<:Real}(m::JuMP.Model, x, xx::Vector{NTuple{2, T}}) = SOSII!(m, x, [y[1] for y in xx], [y[2] for y in xx])
 
-function bilinear(m::JuMP.Model, x::Variable, y::Variable)
+function bilinear(x::Variable, y::Variable, n::Int=10)
     # This macro is used to replace a bilinear term in a JuMP constraint with the expansion
     #   xy = 0.25 * [(x+y)^2 - (x-y)^2]
     #     where (x+y)^2 and (x-y)^2 are approximated with SOS2
+    m = x.m
 
     # (x + y)^2 SOS2
-    v1 = SOSII!(m, (a) -> a.^2, x + y, getLower(x) + getLower(y), getUpper(x) + getUpper(y))
+    v1 = SOSII!(m, (a) -> a.^2, x + y, getLower(x) + getLower(y), getUpper(x) + getUpper(y), n)
 
     # (x + y)^2 SOS2
-    v2 = SOSII!(m, (a) -> a.^2, x - y, getLower(x) - getUpper(y), getUpper(x) - getLower(y))
+    v2 = SOSII!(m, (a) -> a.^2, x - y, getLower(x) - getUpper(y), getUpper(x) - getLower(y), n)
 
     # Return expression to be placed in constraint
     (0.25 * (v1 - v2))

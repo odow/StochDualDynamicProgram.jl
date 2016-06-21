@@ -309,7 +309,7 @@ setobj!(::Type{Max}, sp, aff) = @objective(sp, Max, aff)
 # Linear regularisation term
 function regularise!(regularisation::LinearRegularisation, sense::Sense, sp)
     stagedata(sp).regularisecoefficient *= regularisation.decayrate
-    return regularise!(sense, stagedata(sp).regularisecoefficient * stagedata(sp).regularisepen)
+    return sense!(sense, stagedata(sp).regularisecoefficient * stagedata(sp).regularisepen)
 end
 
 function oldvalue(v)

@@ -168,11 +168,6 @@ m = SDDPModel(
         stationFlowDefinition[s=STATIONS], stationFlow[s] == sum{turbineFlow[s, turbine],turbine=1:TURBINES[s]}
 
         # ------------------------------------------------------------------
-        # Turbine Power Bounds
-        # TurbinePowerLB[s=STATIONS,t=1:TURBINES[s]], turbinePower[s,t] >= turbinePower_min[s]*t*unitsOnBool[s,t]
-        # TurbinePowerUB[s=STATIONS,t=1:TURBINES[s]], turbinePower[s,t] <= turbinePower_max[s]*t*unitsOnBool[s,t]
-
-        # ------------------------------------------------------------------
         # Turbine Flow Bounds
         turbineFlowLB[s=STATIONS,t=1:TURBINES[s]], turbineFlow[s,t] >= turbineFlow_min[s]*unitsOnBool[s,t]
         turbineFlowUB[s=STATIONS,t=1:TURBINES[s]], turbineFlow[s,t] <= turbineFlow_max[s]*unitsOnBool[s,t]
@@ -196,9 +191,6 @@ m = SDDPModel(
         # ------------------------------------------------------------------
         # Spill upper bound constraints
         SpillUB[r=RESERVOIRS], spill[r]<=spill_max[r]
-
-        # WaterBalance[r=SEA], reservoir[r] == reservoir0[r] + sum{outflow[n],n=UPSTREAM_OUTFLOW[r]} +
-        #     sum{spill[n],n=UPSTREAM_SPILL[r]}
 
     end)
 
