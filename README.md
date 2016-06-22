@@ -248,7 +248,7 @@ It is possible to create an interactive visualisation of the simulated policy wi
  - `"title"       = ""` Plot title
  - `"xlabel"      = "Stages"` Label for x axis
  - `"ylabel"      = ""` Label for y axis
- - `"interpolate" = "linear"` D3.js interpolation method to use. See https://github.com/d3/d3/wiki/SVG-Shapes#line_interpolate for more
+ - `"interpolate" = "linear"` D3.js interpolation method to use. See the [D3 wiki](https://github.com/d3/d3/wiki/SVG-Shapes#line_interpolate) for more.
 
 ```julia
 @visualise(results, (stage, replication), begin

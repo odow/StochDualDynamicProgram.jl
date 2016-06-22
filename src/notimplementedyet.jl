@@ -8,6 +8,19 @@ function autoregressivevariable(sp::Model, weights::Vector, initial::Vector, err
     @cosntraint(sp, ar[1] == x)
     return x
 end
+
+function fitAR{T<:Real}(obs::Vector{T}, n::Int)
+    @assert length(obs) > n
+    A = zeros(length(obs) - n, 1+n)
+    A[:,1] = 1
+    for col=2:(n+1)
+        A[:,col] = obs[col:(end+col-n-1)]
+    end
+    b = obs[1:(end-n)]
+    x = (A'*A) \ (A' * b)
+    residuals = A * x - b
+    return x, std(residuals)
+end
 # x = autoregressivevariable(sp, [0,0,0,0,1], [0,0,0,0,0], rand(10))
 
 # function cvar(x, beta::Float64=1., lambda::Float64=1.)
