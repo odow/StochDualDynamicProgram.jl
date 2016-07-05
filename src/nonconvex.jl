@@ -53,8 +53,10 @@ function solvenoncontinuous!(sp::Model, scenario::Int)
     sp.colLower = lb
     sp.colUpper = ub
     sp.colCat = cat
-    sp.sosconstr = sos
-
+    if length(sos) > 0
+        sp.sosconstr = sos
+        m.internalModelLoaded = false
+    end
 end
 
 function SOSII!(m::JuMP.Model, f::Function, x, lb::Float64, ub::Float64, n::Int64=10)
