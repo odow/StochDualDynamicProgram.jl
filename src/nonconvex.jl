@@ -55,7 +55,7 @@ function solvenoncontinuous!(sp::Model, scenario::Int)
     sp.colCat = cat
     if length(sos) > 0
         sp.sosconstr = sos
-        m.internalModelLoaded = false
+        sp.internalModelLoaded = false
     end
 end
 
