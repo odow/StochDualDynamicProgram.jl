@@ -79,7 +79,8 @@ function Base.copy{T, M, S, X, TM}(m::SDDPModel{T, M, S, X, TM})
         deepcopy(m.stagecuts),
         m.solver,
         m.valuetogobound,
-        m.forwardstorage
+        m.forwardstorage,
+        m.roundingaccuracy
     )
 end
 
@@ -112,6 +113,7 @@ Keyword Arguments:
   stages                    the number of stages
   transition                the transition matrix. Can be N*N where N is the number of scenarios, or M*N*N where M is the number of stages.
   value_to_go_bound         Initial bound on value to go
+  rounding_accuracy         Number of decimal places to round cut coefficients to. Use if you run into scaling errors
 """
 SDDPModel(
     build_subproblem!::Function;
@@ -123,10 +125,11 @@ SDDPModel(
     stages               = 1,
     transition           = nothing,
     solver               = ClpSolver(),
-    value_to_go_bound    = NaN
+    value_to_go_bound    = NaN,
+    rounding_accuracy    = 6
     ) = SDDPModel(build_subproblem!, initial_markov_state, markov_states,
             scenarios, scenario_probability, sense, stages, transition,
-            solver, value_to_go_bound
+            solver, value_to_go_bound, rounding_accuracy
         )
 
 function SDDPModel(
@@ -139,7 +142,8 @@ function SDDPModel(
         stages::Int,
         transition,
         solver::MathProgBase.AbstractMathProgSolver,
-        value_to_go_bound
+        value_to_go_bound,
+        rounding_accuracy::Int
         )
     # Some sanity checks
     isnan(value_to_go_bound) && error("You must specify the option [value_to_go_bound] when creating an SDDPModel.")
@@ -170,7 +174,8 @@ function SDDPModel(
         Array(StageCuts, (stages, markov_states)),
         solver,
         value_to_go_bound,
-        ForwardPassData()
+        ForwardPassData(),
+        rounding_accuracy
         )
 
     create_subproblems!(m)

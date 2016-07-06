@@ -358,7 +358,7 @@ function reducecutvectors{T, M, S, X, TM}(m::SDDPModel{T, M, S, X, TM}, results:
             cutout.coefficients += dual_values[cutidx] * prob
         end
     end
-    cutout.coefficients = round(cutout.coefficients, 6)
+    cutout.coefficients = round(cutout.coefficients, m.roundingaccuracy)
     return cutout
 end
 

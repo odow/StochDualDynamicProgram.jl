@@ -297,6 +297,8 @@ type SDDPModel{T, M, S, X<:AbstractSense, TM}
     valuetogobound::Float64
 
     forwardstorage::ForwardPassData
+
+    roundingaccuracy::Int
 end
 
 # Define some short cuts to access members
