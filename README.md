@@ -43,6 +43,7 @@ The following arguments are optional:
 - `transition`: Transition probabilities for markov chain. Either a square matrix of size `markov_states` or a vector of such matrices with length `stages`. Defaults to uniform transition probability.
 - `initial_markov_state`: index of the initial markov state. If not given assumed to transition uniformly at beginning of first stage.
 - `solver`: MathProgBase compliant solver that returns duals from a linear program
+- `rounding_accuracy`: Number of decimal places to round to. Larger (i.e. more decimal places) values may lead to numerical issues with the solvers. Defaults to `6`dp.
 
 ### Describing the Stage Problems
 We now need to define the stage problems.
