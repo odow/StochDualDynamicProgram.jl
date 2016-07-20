@@ -116,6 +116,7 @@ macro scenarioconstraint(sp, args...)
                 esc(c)                          # the constraint expression
                 ))
         registerscenarioconstraint!($sp, con, rhs, $(Expr(:quote, name)))
+        con
     end
 end
 
