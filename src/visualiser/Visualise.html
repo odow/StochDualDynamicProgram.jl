@@ -128,7 +128,12 @@ body {
         d3.min(plotdata.data, function(sim){return d3.min(sim)}),
         d3.max(plotdata.data, function(sim){return d3.max(sim)})
       ];
-
+      if (plotdata.ymin != "") {
+          domain[0] = parseFloat(plotdata.ymin);
+      }
+      if (plotdata.ymax != "") {
+          domain[1] = parseFloat(plotdata.ymax);
+      }
       // set domain of axis
       y.domain(domain);
       x.domain([1, nstages]);

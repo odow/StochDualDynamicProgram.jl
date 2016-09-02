@@ -96,10 +96,10 @@ function bilinear(x::Variable, y::Variable, n::Int=10)
     m = x.m
 
     # (x + y)^2 SOS2
-    v1 = SOSII!(m, (a) -> a.^2, x + y, getLower(x) + getLower(y), getUpper(x) + getUpper(y), n)
+    v1 = SOSII!(m, (a) -> a.^2, x + y, getlowerbound(x) + getlowerbound(y), getupperbound(x) + getupperbound(y), n)
 
     # (x + y)^2 SOS2
-    v2 = SOSII!(m, (a) -> a.^2, x - y, getLower(x) - getUpper(y), getUpper(x) - getLower(y), n)
+    v2 = SOSII!(m, (a) -> a.^2, x - y, getlowerbound(x) - getupperbound(y), getupperbound(x) - getlowerbound(y), n)
 
     # Return expression to be placed in constraint
     (0.25 * (v1 - v2))

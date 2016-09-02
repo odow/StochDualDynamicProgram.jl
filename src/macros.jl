@@ -60,6 +60,12 @@ function registerstatevariable!(sp::Model, xin::JuMP.JuMPArray, xout::JuMP.JuMPA
         registerstatevariable!(sp, xin[key...], xout[key...])
     end
 end
+function registerstatevariable!(sp::Model, xin::JuMP.JuMPDict, xout::JuMP.JuMPDict)
+    @assert length(keys(xin)) == length(keys(xout))
+    for key in keys(xin)
+        registerstatevariable!(sp, xin[key...], xout[key...])
+    end
+end
 
 """
     @scenarioconstraint(sp, [name,] rhs, constraint)

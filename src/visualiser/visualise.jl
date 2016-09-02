@@ -29,7 +29,9 @@ macro visualise(results, kw, block)
 			    "title"       => "",
 			    "ylabel"      => "",
 			    "xlabel"      => "Stages",
-			    "interpolate"  => "linear"
+			    "interpolate" => "linear",
+				"ymin"        => "",
+				"ymax"        => ""
 			)
             if it.head == :tuple
                 if length(it.args) > 2
