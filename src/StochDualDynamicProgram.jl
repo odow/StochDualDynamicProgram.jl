@@ -6,6 +6,7 @@ using JuMP
 using MathProgBase, Clp
 using Distributions, StatsBase
 using JSON
+using Compat
 
 import Base.dot
 

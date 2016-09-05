@@ -21,7 +21,7 @@ humanize52f(v,s) = @sprintf("% 5.2f%s", v, s)
 humanize83f(v,s) = @sprintf("% 8.3f%s", v, s)
 humanize5d(v,s)  = @sprintf("% 5d%s", v, s)
 
-function humanize(value::Number, fmt_str::ASCIIString="5.1f")
+function humanize(value::Number, fmt_str::String="5.1f")
     if fmt_str == "5.1f"
         return humanize(value, humanize51f)
     elseif fmt_str == "5.2f"
@@ -47,5 +47,5 @@ function humanize(value::Number, fmt_str::Function)
         bytes < unit && break
     end
     # O.D. add sign
-    return fmt_str(sign(value)*base * bytes / unit, s)::ASCIIString
+    return fmt_str(sign(value)*base * bytes / unit, s)::String
 end

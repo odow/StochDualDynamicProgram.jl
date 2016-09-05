@@ -13,7 +13,7 @@ function getTrace(sol::Solution, sym::Symbol)
     return [s.(sym) for s in sol.trace]
 end
 
-function Base.print(m::SDDPModel, l::SolutionLog, filename::ASCIIString, ismontecarlo::Bool)
+function Base.print(m::SDDPModel, l::SolutionLog, filename::String, ismontecarlo::Bool)
     open(filename, "a") do f
         write(f, textify(l))
     end

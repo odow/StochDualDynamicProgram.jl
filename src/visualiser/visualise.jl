@@ -2,7 +2,7 @@ const filedir  = dirname(@__FILE__)
 const jsonfile = joinpath(filedir, "run.json")
 const htmlfile = joinpath(filedir, "Visualise.html")
 
-function addtoputput!(output::Dict{ASCIIString, Any}, sym, value)
+function addtoputput!(output::Dict{String, Any}, sym, value)
 	for key in keys(output)
 		if string(sym) == key
 			output[key] = value
@@ -16,7 +16,7 @@ macro visualise(results, kw, block)
 	@assert block.head == :block || error("Invalid syntax for @visualise")
 	push!(kw.args, results)
     code = quote
-		visualiseout = Dict{ASCIIString, Any}[]
+		visualiseout = Dict{String, Any}[]
 		replications = length($(esc(results))[:Current][1])
 		stages = length($(esc(results))[:Current])
 	end
@@ -24,7 +24,7 @@ macro visualise(results, kw, block)
         if Base.Meta.isexpr(it, :line)
             # do nothing
         else
-			output = Dict{ASCIIString, Any}(
+			output = Dict{String, Any}(
 			    "cumulative"  => false,
 			    "title"       => "",
 			    "ylabel"      => "",
@@ -62,14 +62,15 @@ macro visualise(results, kw, block)
         end
     end
 	tmphtmlfile = replace(tempname(), ".tmp", ".html")
-	if OS_NAME == :Windows
+	if is_windows()
 		runcmd = `$(ENV["COMSPEC"]) /c start $tmphtmlfile`
 	else
 		runcmd = ``
 	end
-	visualisehtml = readall(htmlfile)
+	visualisehtml = readstring(htmlfile)
+	cp(joinpath(dirname(@__FILE__), "d3.v3.min.js"), joinpath(dirname(tmphtmlfile), "d3.v3.min.js"), remove_destination=true)
 	push!(code.args, quote
-		if OS_NAME == :Windows
+		if is_windows()
 			open($tmphtmlfile, "w") do f
 				write(f, replace($visualisehtml, "<!--DATA-->", json(visualiseout)))
 			end
@@ -81,7 +82,7 @@ macro visualise(results, kw, block)
     return code
 end
 
-function adddata!(visualiseout::Vector{Dict{ASCIIString, Any}}, results::Dict{Symbol, Any}, replications::Int, stages::Int, func::Function, output::Dict{ASCIIString, Any})
+function adddata!(visualiseout::Vector{Dict{String, Any}}, results::Dict{Symbol, Any}, replications::Int, stages::Int, func::Function, output::Dict{String, Any})
 	output["data"] = Array(Vector{Float64}, replications)
 	for i=1:replications
 		output["data"][i] = zeros(stages)

@@ -239,7 +239,8 @@ end
 # This will probably break at some point
 # https://groups.google.com/forum/#!searchin/julia-users/arguments$20anonymous$20function/julia-users/QcgdNZd-sI8/dgIYSxozZzUJ
 if VERSION > v"0.5-"
-    arglength(f::Function)=length(Base.uncompressed_ast(methods(f).defs.func).args[1])-1
+    # arglength(f::Function)=length(Base.uncompressed_ast(methods(f).defs.func).args[1])-1
+    arglength(f::Function)=length(fieldnames(methods(f).ms[1].sig))-1
 else
     arglength(f::Function)=length(Base.uncompressed_ast(f.code.def).args[1])
 end

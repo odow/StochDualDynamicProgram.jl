@@ -127,7 +127,7 @@ function rebuildcuts!(::LevelOne, sense, sp, stagecut)
     cuts_added
 end
 
-function writecuts!{T, M, S, X, TM}(m::SDDPModel{T, M, S, X, TM}, cut_output_file::ASCIIString)
+function writecuts!{T, M, S, X, TM}(m::SDDPModel{T, M, S, X, TM}, cut_output_file::String)
     open(cut_output_file, "a") do f
         for t=1:(T-1)
             for i=1:M
@@ -150,7 +150,7 @@ end
 
 This function loads cuts from the file at `filename` to the SDDPModel `model`.
 """
-function loadcuts!{T, M, S, X, TM}(m::SDDPModel{T, M, S, X, TM}, filename::ASCIIString)
+function loadcuts!{T, M, S, X, TM}(m::SDDPModel{T, M, S, X, TM}, filename::String)
     open(filename, "r") do f
         while true
             line = readline(f)

@@ -32,7 +32,8 @@ function initialise_workers!{T, M, S, X, TM}(m::SDDPModel{T, M, S, X, TM})
             T,
             deepcopy(m.transition),
             m.solver,
-            m.valuetogobound
+            m.valuetogobound,
+            m.roundingaccuracy
         )
     )
     distribute_work_void!(initialisecutstorage!)

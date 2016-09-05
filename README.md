@@ -118,7 +118,7 @@ SDDP requires relatively complete recourse, that is, for every feasible state, t
 ```
 
 ### Load previously generated cuts
-You can load cuts from a previous solve using `loadcuts!(m::SDDPModel, filename::ASCIIString)`.
+You can load cuts from a previous solve using `loadcuts!(m::SDDPModel, filename::String)`.
 
 ### Solve
 
@@ -141,9 +141,9 @@ The `solve(m::SDDPModel [; kwargs...])` function solves the SDDP model `m`. Ther
   - See section Cut Selection below.
 - `parallel::Parallel` default = `Serial()`
   - See section Parallelisation below.
-- `output::ASCIIString` default = `nothing`
+- `output::String` default = `nothing`
   - Prints the log trace to the file specified by `output`.
-- `cut_output_file::ASCIIString` default = `nothing`
+- `cut_output_file::String` default = `nothing`
   - Save the cuts generated to the file specified by `cut_output_file`. These can be loaded later using `loadcuts!`.
 - `print_level::Int`: control the level of printing logged to the screen. Default = `3`.
   - `0`: Nothing logged to screen
