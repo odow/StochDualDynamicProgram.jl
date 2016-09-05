@@ -45,7 +45,9 @@ function addcut!{T, M, S, X, TM}(m::SDDPModel{T, M, S, X, TM}, pass::Int, t::Int
             end
         end
     end
-    cut.coefficients = round(cut.coefficients, m.roundingaccuracy)
+    if m.roundingaccuracy > -1
+        cut.coefficients = round(cut.coefficients, m.roundingaccuracy)
+    end
     # add to cutselection storage
     add_cut!(X, stagecut(m, t, i), cut)
     # add to problem
