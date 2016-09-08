@@ -3,11 +3,12 @@
 
 Constructs a subproblem with the StageDataExt extension
 """
-function StageProblem(scenarios::Int=1)
+function StageProblem(m, scenarios::Int=1)
     sp = Model()
-    sp.ext[:data] = StageDataExt(scenarios)
+    sp.ext[:data] = StageDataExt(m, scenarios)
     return sp
 end
+StageProblem(scenarios::Int=1) = StageProblem(nothing, scenarios)
 
 """
     stagedata(subproblem)
@@ -78,6 +79,7 @@ function Base.copy{T, M, S, X, TM}(m::SDDPModel{T, M, S, X, TM})
         m.build_function!,
         deepcopy(m.stagecuts),
         m.solver,
+        m.backupsolver,
         m.valuetogobound,
         m.forwardstorage,
         m.roundingaccuracy
@@ -125,11 +127,12 @@ SDDPModel(
     stages               = 1,
     transition           = nothing,
     solver               = ClpSolver(),
+    backupsolver         = solver,
     value_to_go_bound    = NaN,
     rounding_accuracy    = 6
     ) = SDDPModel(build_subproblem!, initial_markov_state, markov_states,
             scenarios, scenario_probability, sense, stages, transition,
-            solver, value_to_go_bound, rounding_accuracy
+            solver, backupsolver, value_to_go_bound, rounding_accuracy
         )
 
 function SDDPModel(
@@ -142,6 +145,7 @@ function SDDPModel(
         stages::Int,
         transition,
         solver::MathProgBase.AbstractMathProgSolver,
+        backupsolver::MathProgBase.AbstractMathProgSolver,
         value_to_go_bound,
         rounding_accuracy::Int
         )
@@ -173,6 +177,7 @@ function SDDPModel(
         build_subproblem!,
         Array(StageCuts, (stages, markov_states)),
         solver,
+        backupsolver,
         value_to_go_bound,
         ForwardPassData(),
         rounding_accuracy
@@ -256,7 +261,7 @@ function create_subproblems!{T, M, S, X, TM}(m::SDDPModel{T, M, S, X, TM})
         # For every markov state
         for markov_state=1:M
             # Create a new stage problem with [scenarios] number of scenarios
-            sp = StageProblem(S)
+            sp = StageProblem(m, S)
             # Set the solver
             setsolver(sp, m.solver)
             if arglength(m.build_function!)==3
@@ -471,12 +476,14 @@ function solve!(sp::Model)
     status = solve(sp)
     # Catch case where we aren't optimal
     if status != :Optimal
-        warn("SDDP subproblem not optimal (stats=$(status)). Assuming numerical infeasibility so rebuilding model from stored cuts.")
-        sp.internalModelLoaded = false
+        warn("SDDP subproblem not optimal (stats=$(status)). Switching to the backup solver.")
+        setsolver(sp, sp.m.backupsolver)
         status = solve(sp)
         if status != :Optimal
-            JuMP.writeMPS(sp, "subproblem_proc$(myid())_$(string(hash(now()))).mps")
-            error("SDDP Subproblems must be feasible. Current status: $(status). I tried rebuilding from the JuMP model but it didn't work so I wrote you an MPS file.")
+            filename = "subproblem_proc$(myid())_$(string(hash(now()))).mps"
+            JuMP.writeMPS(sp, filename)
+            error("SDDP Subproblems must be feasible. Current status: $(status). I tried rebuilding from the JuMP model but it didn't work so I wrote you an MPS file to $filename.")
         end
+        JuMP.setsolver(sp, sp.m.solver)
     end
 end

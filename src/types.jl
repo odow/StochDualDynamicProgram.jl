@@ -181,8 +181,11 @@ type StageDataExt
 
     # relax penalties
     relaxationpenalties
+
+    # link back to main problem
+    m
 end
-StageDataExt(scenarios::Int=1) = StageDataExt(
+StageDataExt(m, scenarios::Int=1) = StageDataExt(
     Variable[],
     ConstraintRef[],
     nothing,
@@ -205,7 +208,9 @@ StageDataExt(scenarios::Int=1) = StageDataExt(
     ConstraintRef[],
     nothing,
 
-    0.
+    0.,
+
+    m
     )
 # Overload
 Base.copy(s::StageDataExt) = nothing
@@ -294,6 +299,7 @@ type SDDPModel{T, M, S, X<:AbstractSense, TM}
     stagecuts::Array{StageCuts, 2}
 
     solver::MathProgBase.AbstractMathProgSolver
+    backupsolver::MathProgBase.AbstractMathProgSolver
     valuetogobound::Float64
 
     forwardstorage::ForwardPassData
