@@ -71,6 +71,32 @@ function registerstatevariable!(sp::Model, xin::JuMP.JuMPDict, xout::JuMP.JuMPDi
     end
 end
 
+macro states(m, b)
+    @assert b.head == :block || error("Invalid syntax for @states")
+    code = quote end
+    for it in b.args
+        if Base.Meta.isexpr(it, :line)
+            # do nothing
+        else
+            if it.head == :tuple
+                if length(it.args) != 2
+                    error("Unknown arguments in @states")
+                end
+                if it.args[2].head == :(=)
+                    it.args[2].head = :kw
+                end
+                push!(code.args,
+                    Expr(:macrocall, Symbol("@state"), esc(m), esc(it.args[1]), esc(it.args[2]))
+                )
+            else
+                error("Unknown arguments in @states")
+            end
+        end
+    end
+    push!(code.args, :(nothing))
+    return code
+end
+
 """
     @scenarioconstraint(sp, [name,] rhs, constraint)
 
@@ -159,7 +185,7 @@ macro scenarioconstraints(m, kw, c)
         if Base.Meta.isexpr(it, :line)
             # do nothing
         else
-            if it.head == :comparison
+            if it.head == :call && it.args[1] in comparison_symbols
                 push!(code.args,
                     Expr(:macrocall, Symbol("@scenarioconstraint"), esc(m), esc(kw), esc(it))
                 )

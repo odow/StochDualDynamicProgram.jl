@@ -12,7 +12,7 @@ import Base.dot
 
 export SDDPModel,
     # macros
-    @state,
+    @state,@states,
     @scenarioconstraint, @scenarioconstraints,
     @relaxedconstraint, @relaxedconstraints,
     @stageprofit,
