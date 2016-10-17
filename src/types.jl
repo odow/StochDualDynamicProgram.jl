@@ -1,3 +1,5 @@
+#  Copyright 2016, Oscar Dowson
+
 typealias ValTF Union{Type{Val{true}}, Type{Val{false}}}
 
 # ==============================================================================

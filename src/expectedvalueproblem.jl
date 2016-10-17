@@ -1,3 +1,5 @@
+#  Copyright 2016, Oscar Dowson
+
 # We solve the expected value problem first to obtain a set of cuts that roughly
 # define the cost function. We hope that this improves convergence.
 Base.dot(x::WeightVec, y::Vector) = dot(x.values, y)

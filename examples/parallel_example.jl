@@ -1,3 +1,5 @@
+#  Copyright 2016, Oscar Dowson
+
 # Solve the classic hydro scheduling problem under price uncertainty.
 #
 # There are two reservoirs (upper and lower). In each time period, a reservoir can

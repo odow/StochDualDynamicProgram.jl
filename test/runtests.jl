@@ -1,3 +1,5 @@
+#  Copyright 2016, Oscar Dowson
+
 using StochDualDynamicProgram, JuMP, FactCheck
 
 const EXAMPLESDIR = joinpath(dirname(dirname(@__FILE__)), "examples")

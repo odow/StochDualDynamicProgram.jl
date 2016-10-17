@@ -1,3 +1,5 @@
+#  Copyright 2016, Oscar Dowson
+
 """
     StageProblem(scenarios)
 

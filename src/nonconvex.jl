@@ -1,3 +1,5 @@
+#  Copyright 2016, Oscar Dowson
+
 nonzero(x) = abs(x) > 1e-10
 
 function fixvariable!(m::Model, idx, value)

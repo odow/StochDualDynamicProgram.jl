@@ -1,3 +1,5 @@
+#  Copyright 2016, Oscar Dowson
+
 function montecarloestimation{T, M, S, X, TM}(::Type{Val{true}}, m::SDDPModel{T, M, S, X, TM}, n::Int)
     objectives = zeros(n)                                # intial storage for objective
     markov = 0                                           # initialise

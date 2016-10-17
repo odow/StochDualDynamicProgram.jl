@@ -1,3 +1,5 @@
+#  Copyright 2016, Oscar Dowson
+
 isdefined(Base, :__precompile__) && __precompile__()
 
 module StochDualDynamicProgram

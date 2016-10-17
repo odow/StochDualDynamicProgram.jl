@@ -1,3 +1,5 @@
+#  Copyright 2016, Oscar Dowson
+
 # Set the risk measure for all the subproblems
 function setriskmeasure!(m::SDDPModel, riskmeasure::RiskMeasure)
     for sp in m.stage_problems

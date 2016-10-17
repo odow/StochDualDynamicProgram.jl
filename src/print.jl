@@ -1,3 +1,5 @@
+#  Copyright 2016, Oscar Dowson
+
 function textify(s::SolutionLog)
     string(s.ci_lower, ",", s.ci_upper, ",", s.bound, ",", s.cuts, ",", s.time_backwards, ",", s.simulations, ",", s.time_forwards, ",", s.time_cutselection, "\n")
 end

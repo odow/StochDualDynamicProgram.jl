@@ -1,3 +1,5 @@
+#  Copyright 2016, Oscar Dowson
+
 function autoregressivevariable(sp::Model, weights::Vector, initial::Vector, errorterm::Vector)
     n = length(weights)
     @assert length(initial) == n

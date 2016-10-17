@@ -1,3 +1,5 @@
+#  Copyright 2016, Oscar Dowson
+
 # This example demonstates the D3.js visualisation
 using JuMP, StochDualDynamicProgram
 

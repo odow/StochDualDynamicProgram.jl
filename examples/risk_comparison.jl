@@ -1,3 +1,5 @@
+#  Copyright 2016, Oscar Dowson
+
 # This makes a pretty picture showing how difference levels of risk aversion skew the profit distribution
 using StochDualDynamicProgram, JuMP, Gadfly, DataFrames
 

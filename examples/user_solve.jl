@@ -1,3 +1,4 @@
+#  Copyright 2016, Oscar Dowson
 #
 #   This example demonstrates how the user can incorporate specialised solve routines
 #   into the normal stage problem solve via the JuMP `solvehook` functionality.

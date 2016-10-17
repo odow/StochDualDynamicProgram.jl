@@ -1,3 +1,5 @@
+#  Copyright 2016, Oscar Dowson
+
 # Overload base.dot to handle (vector x NTuple)
 function Base.dot{T<:Real, N}(x::Vector{T}, y::NTuple{N, T})
     @assert length(x) == N

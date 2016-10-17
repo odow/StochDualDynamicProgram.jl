@@ -1,3 +1,5 @@
+#  Copyright 2016, Oscar Dowson
+
 using JuMP, StochDualDynamicProgram
 
 function AR1_Process(α, ϵ, initial, N)
