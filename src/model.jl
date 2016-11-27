@@ -248,7 +248,8 @@ end
 if VERSION >= v"0.5"
     # arglength(f::Function)=length(Base.uncompressed_ast(methods(f).defs.func).args[1])-1
     # arglength(f::Function)=length(fieldnames(methods(f).ms[1].sig))-1
-    arglength(f::Function)=length(methods(f).ms[1].sig.types)-1
+    # arglength(f::Function)=length(methods(f).ms[1].sig.types)-1
+    arglength(f::Function) = methods(f).mt.max_args-1
 else
     arglength(f::Function)=length(Base.uncompressed_ast(f.code.def).args[1])
 end
