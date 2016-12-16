@@ -84,15 +84,15 @@ m = SDDPModel(stages=3, markov_states=2, scenarios=1, transition=Transition, val
             (outflow[:lower] + spill[:lower])
 
         # Total quantity generated
-        generation_quantity == sum{A[level][2] * dispatch[r,level], r=RESERVOIRS, level=1:n}
+        generation_quantity == sum(A[level][2] * dispatch[reservoir,level] for reservoir in RESERVOIRS for level in 1:n)
 
         # ------------------------------------------------------------------
         # Reservoir constraints
         # Flow out
-        flowout[r=RESERVOIRS], outflow[r] == sum{A[level][1] * dispatch[r, level], level=1:n}
+        flowout[r=RESERVOIRS], outflow[r] == sum(A[level][1] * dispatch[r, level] for level in 1:n)
 
         # Dispatch combination of levels
-        dispatched[r=RESERVOIRS], sum{dispatch[r, level], level=1:n} <= 1
+        dispatched[r=RESERVOIRS], sum(dispatch[r, level] for level in 1:n) <= 1
     end)
 
     # ------------------------------------------------------------------

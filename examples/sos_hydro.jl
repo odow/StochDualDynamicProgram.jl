@@ -89,7 +89,7 @@ m = SDDPModel(
             (outflow[:lower] + spill[:lower])
 
         # Total quantity generated
-        generation_quantity == sum{power[r], r=RESERVOIRS}
+        generation_quantity == sum(power[r] for r in RESERVOIRS)
         powercurve[r=RESERVOIRS], power[r] == SOSII!(sp, outflow[r], A)
     end)
 

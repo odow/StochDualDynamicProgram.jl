@@ -287,8 +287,8 @@ function create_subproblems!{T, M, S, X, TM}(m::SDDPModel{T, M, S, X, TM})
             # Initialise regularisation variables
             stagedata(sp).regularisepen = @variable(sp, regularisepen >= 0)
             @constraints(sp, begin
-                regpos, stagedata(sp).regularisepen + sum{v, v in stagedata(sp).state_vars} >= 0
-                regneg, stagedata(sp).regularisepen - sum{v, v in stagedata(sp).state_vars} >= 0
+                regpos, stagedata(sp).regularisepen + sum(v for v in stagedata(sp).state_vars) >= 0
+                regneg, stagedata(sp).regularisepen - sum(v for v in stagedata(sp).state_vars) >= 0
             end)
             push!(stagedata(sp).regularisecons, regpos)
             push!(stagedata(sp).regularisecons, regneg)
@@ -338,7 +338,7 @@ end
 # Quadratic regularisation term
 function regularise!(regularisation::QuadraticRegularisation, sense::Sense, sp)
     stagedata(sp).regularisecoefficient *= regularisation.decayrate
-    @expression(sp, regulariser, sum{(v - oldvalue(v))^2, v in stagedata(sp).state_vars})
+    @expression(sp, regulariser, sum((v - oldvalue(v))^2 for v in stagedata(sp).state_vars))
     return sense!(sense, stagedata(sp).regularisecoefficient * regulariser)
 end
 

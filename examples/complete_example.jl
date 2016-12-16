@@ -108,17 +108,17 @@ m = SDDPModel(
             (outflow[:lower] + spill[:lower])
 
         # Dispatch combination of levels
-        dispatched[reservoir=RESERVOIRS], sum{dispatch[reservoir, level], level=1:n} <= 1
+        dispatched[reservoir=RESERVOIRS], sum(dispatch[reservoir, level] for level in 1:n) <= 1
     end)
 
     @relaxedconstraints(sp, 1000, begin
         # ------------------------------------------------------------------
         # Reservoir constraints
         # Flow out
-        flowout[reservoir=RESERVOIRS], outflow[reservoir] == sum{A[level][1] * dispatch[reservoir, level], level=1:n}
+        flowout[reservoir=RESERVOIRS], outflow[reservoir] == sum(A[level][1] * dispatch[reservoir, level] for level in 1:n)
 
         # Total quantity generated
-        generation_quantity == sum{A[level][2] * dispatch[reservoir,level], reservoir=RESERVOIRS, level=1:n}
+        generation_quantity == sum(A[level][2] * dispatch[reservoir,level] for reservoir in RESERVOIRS for level in 1:n)
     end)
 
     # Random rainfall

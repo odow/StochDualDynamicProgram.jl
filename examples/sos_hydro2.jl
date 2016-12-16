@@ -154,7 +154,7 @@ m = SDDPModel(
 
         # ------------------------------------------------------------------
         # Offer constraints
-        OfferQuantity == sum{stationPower[s],s=STATIONS}
+        OfferQuantity == sum(stationPower[s] for s in STATIONS)
 
         # ------------------------------------------------------------------
         # Number of units on bool upper
@@ -163,11 +163,11 @@ m = SDDPModel(
 
         # ------------------------------------------------------------------
         # Station power definition
-        StationPowerDefinition[s=STATIONS], stationPower[s] <= sum{turbinePower[s, turbine],turbine=1:TURBINES[s]}
+        StationPowerDefinition[s=STATIONS], stationPower[s] <= sum(turbinePower[s, turbine] for turbine in 1:TURBINES[s])
 
         # ------------------------------------------------------------------
         # Station power definition
-        stationFlowDefinition[s=STATIONS], stationFlow[s] == sum{turbineFlow[s, turbine],turbine=1:TURBINES[s]}
+        stationFlowDefinition[s=STATIONS], stationFlow[s] == sum(turbineFlow[s, turbine] for turbine in 1:TURBINES[s])
 
         # ------------------------------------------------------------------
         # Turbine Flow Bounds
@@ -180,13 +180,13 @@ m = SDDPModel(
 
         # ------------------------------------------------------------------
         # Water balance constraints
-        WaterBalance[r=RESERVOIRS], reservoir[r] == reservoir0[r] + sum{outflow[n],n=UPSTREAM_OUTFLOW[r]} +
-            sum{spill[n],n=UPSTREAM_SPILL[r]} - outflow[r] - spill[r]
+        WaterBalance[r=RESERVOIRS], reservoir[r] == reservoir0[r] + sum(outflow[n] for n in UPSTREAM_OUTFLOW[r]) +
+            sum(spill[n] for n in UPSTREAM_SPILL[r]) - outflow[r] - spill[r]
 
         # ------------------------------------------------------------------
         # station flow balance constraints
-        StationBalanceIn[s=STATIONS], stationFlow[s] == sum{outflow[n],n=UPSTREAM_OUTFLOW[s]} +
-                                                        sum{spill[n],n=UPSTREAM_SPILL[s]}
+        StationBalanceIn[s=STATIONS], stationFlow[s] == sum(outflow[n] for n in UPSTREAM_OUTFLOW[s]) +
+                                                        sum(spill[n] for n in UPSTREAM_SPILL[s])
 
         StationBalanceOUt[s=STATIONS], stationFlow[s] == outflow[s]
 
