@@ -156,27 +156,23 @@ macro stageobjective(m, ex)
 end
 
 """
-    pricestate!(sp,              # subproblem
-        discretisation = 0:10,     # outgoing price
-        initial        = 0.5,      # incoming price
-        noise          = rand(10), # noises
-        weights        = rand(10), # probability
-        (p, w) -> (p + w),         # dynamics
-        (p) -> (p * x)             # Objective can use p0 as a parameter, x as a variable
+    objectivescenario!(sp,                 # subproblem
+        rib_locations = 0:10,              # outgoing price
+        noises        = rand(10),          # noises
+        dynamics      = (p, w) -> (p + w), # dynamics
+        objective     = (p) -> (p * x)     # Objective can use p0 as a parameter, x as a variable
     )
 """
-pricestate!(sp;
-    discretisation::Vector{Float64}=Float64[],
-    initial::Float64=0.0,
-    noise::Vector{Float64}=Float64[],
-    weights::Vector{Float64}=Float64[],
+objectivescenario!(sp;
+    rib_locations::Vector{Float64}=Float64[],
+    noises=Float64[],
     dynamics::Function=()->(),
-    obj::Function=()->()
+    objective::Function=()->()
     ) = PriceScenarios(
         discretisation,
-        noise,
-        weights,
+        noises,
         dynamics,
-        objective,
-        0.
+        objective
     )
+PriceScenarios(discretisation, noises, dynamics, objective) = PriceScenarios(discretisation, noises, dynamics, objective, 0.)
+PriceScenarios(discretisation, noises::AbstracVector, dynamics, objective) = PriceScenarios(discretisation, DiscreteDistribution(noises), dynamics, objective)

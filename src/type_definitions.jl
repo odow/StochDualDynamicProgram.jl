@@ -29,14 +29,20 @@ type Scenarios{N}
     con::Vector{Scenario{N}}
     prob::Vector{Float64}
 end
+Scenarios(probabilities) = Scenarios{length(probabilities)}(Scenario{length(probabilities)}[], probabilities)
+
+immutable DiscreteDistribution{T}
+    values::Vector{T}
+    support::Vector{Float64}
+end
+DiscreteDistribution(x) = DiscreteDistribution(x, ones(length(x)) / length(x))
 
 """
     Price scenario information
 """
-type PriceScenarios{T<:AbstractVector}
+type PriceScenarios{T}
     ribs::Vector{Float64}
-    noises::T
-    probabilitysupport::Vector{Float64}
+    noises::DiscreteDistribution{T}
     dynamics::Function
     objective::Function
     lastprice::Float64
@@ -61,6 +67,8 @@ immutable NestedCVaR
     lambda::Float64
 end
 
+setriskmeasure!(m::JuMP.Model, riskmeasure::AbstractRiskMeasure) = (ext(m).riskmeasure = riskmeasure)
+
 """
     The extension type for the JuMP subproblems
 """
@@ -71,8 +79,17 @@ type SubproblemExt{S, P, RM<:AbstractRiskMeasure}
     riskmeasure::RM
     stageobjective::JuMP.GenericAffExpr{Float64, JuMP.Variable}
 end
+function addsubproblemdata!(m, scenario_probabilities, pricescenarios::Int, riskmeasure)
+    m.ext[:subproblem] = SubproblemExt(
+        StateVar[],
+        Scenarios(scenario_probabilities),
 
-ext(m::JuMP.Model) = m.ext::SubproblemExt
+        riskmeasure,
+        JuMP.AffExpr()
+    )
+end
+
+ext(m::JuMP.Model) = m.ext[:subproblem]::SubproblemExt
 
 """
     Θ (</>)= intercept + coefficients' x
@@ -89,6 +106,7 @@ type CutStorage{N}
     best_cut_index::Vector{Int} # best_cut_index[i] = index of cut in cuts that is the dominant cut at states_dominant[i]
     best_bound::Vector{Float64} # best_bound[i] = best objective bound at statesvisited[i]
 end
+CutStorage(N) = CutStorage{N}(Cut{N}[], Int[], Tuple{Vararg{Float64, N}}[], Int[], Float64[])
 
 """
     The main type that holds the Stochastic Dual Dynamic Programming model
@@ -103,7 +121,6 @@ type SDDPModel{N}
     transition::Vector{Array{Float64, 2}}
 
     buildsubproblem!::Function
-    solver::MathProgBase.AbstractMathProgSolver
 end
 
 """
@@ -113,3 +130,45 @@ stageproblem(m::SDDPModel, t::Int, i::Int) = m.stageproblems[t][i]
 stageproblem(m::SDDPModel, t::Int) = stageproblem(m, t, 1)
 cutstorage(m::SDDPModel, t::Int, i::Int) = m.cutstorage[t][i]
 cutstorage(m::SDDPModel, t::Int) = cutstorage(m, t, 1)
+
+function SDDPModel(buildsubproblem!::Function;
+    sense::Symbol=:Minimisation,
+    stages::Int = 1,
+    transition = [1]',
+    scenarios = [1.],
+    pricescenarios = 1
+    )
+
+    stageproblems = Vector{JuMP.Model}[]
+    for t=1:stages
+        push!(stageproblems, JuMP.Model[])
+        for i=1:nummarkovstates(transition, t)
+            m = JuMP.Model()
+            addsubproblemdata!(m,
+                getvec(scenarios, t, i),
+                getel(pricescenarios, t, i)
+            )
+            buildsubproblem!(m, t, i)
+            push!(stageproblems[t], m)
+        end
+    end
+
+    N = length(ext(stageproblems[1][1]).state_vars)
+    SDDPModel(
+        stageproblems,
+        [CutStorate{N}[CutStorage(N) for i=1:nummarkovstates(transition, t)] for t=1:stages]
+        transition,
+        buildsubproblem!
+    )
+
+end
+
+nummarkovstates(T::Array{Float64, 2}, t::Int) = size(T, 1)
+nummarkovstates(T::Vector{Array{Float64, 2}}, t::Int) = size(T[t], 1)
+
+getvec{T<:AbstractVector}(x::T, t::Int, i::Int) = x
+getvec{T<:AbstractVector}(x::Vector{T}, t::Int, i::Int) = x[t]
+getvec{T<:AbstractVector}(x::Vector{Vector{T}}, t::Int, i::Int) = x[t][i]
+getel{T}(x::T, t::Int, i::Int) = x
+getel{T}(x::Vector{T}, t::Int, i::Int) = x[t]
+getel{T}(x::Vector{Vector{T}}, t::Int, i::Int) = x[t][i]
