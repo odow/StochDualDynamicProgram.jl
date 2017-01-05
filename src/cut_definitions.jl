@@ -39,18 +39,18 @@ end
     + stage::Int - the index of the stage
     + markov::Int - the index of the markov state
 """
-cutgenerator(oracle::CutOracle, x, pi, theta, prob, stage, markov) =
-    cutgenerator(oracle::CutOracle, x, pi, theta, prob)
+cutgenerator(oracle::CutOracle, sense::AbstactSense, x, pi, theta, prob, stage, markov) =
+    cutgenerator(oracle::CutOracle, sense::AbstactSense, x, pi, theta, prob)
 
-cutgenerator(oracle::CutOracle, x, pi, theta, prob) = error("""
+cutgenerator(oracle::CutOracle, sense::AbstactSense, x, pi, theta, prob) = error("""
     You need to overload a `cutgenerator` method for the oracle of type $(typeof(oracle)).
     This could be the method including the stage and markov index
-        cutgenerator(oracle::CutOracle, x, pi, theta, prob, stage, markov)
+        cutgenerator(oracle::CutOracle, sense::AbstactSense, x, pi, theta, prob, stage, markov)
     or
-        cutgenerator(oracle::CutOracle, x, pi, theta, prob)
+        cutgenerator(oracle::CutOracle, sense::AbstactSense, x, pi, theta, prob)
 """)
 
-function cutgenerator(ex::Expectation, x, pi, theta, prob)
+function cutgenerator(ex::Expectation, sense::AbstactSense, x, pi, theta, prob)
     @assert length(x) == length(pi) == length(theta) == length(prob)
     intercept = theta[1] - pi[1]' * x[1]
     coefficients = pi[1] * prob[1]
@@ -63,7 +63,7 @@ end
 
 # λ * E[x] + (1 - λ) * CVaR(β)[x]
 const expectation = Expectation()
-function cutgenerator(cvar::NestedCVaR, sense, x, pi, theta, prob)
+function cutgenerator(cvar::NestedCVaR, sense::AbstractSense, x, pi, theta, prob)
     @assert length(x) == length(pi) == length(theta) == length(prob)
     if length(cvar.storage) < length(prob)
         append!(cvar.storage, zeros(length(prob) - length(cvar.storage)))

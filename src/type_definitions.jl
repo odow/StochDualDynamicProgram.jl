@@ -2,9 +2,9 @@
 
 typealias LinearConstraint JuMP.ConstraintRef{JuMP.Model, JuMP.GenericRangeConstraint{JuMP.GenericAffExpr{Float64, JuMP.Variable}}}
 
-abstract Sense
-immutable Minimisation <: Sense end
-immutable Maximisation <: Sense end
+abstract AbstractSense
+immutable Minimisation <: AbstractSense end
+immutable Maximisation <: AbstractSense end
 
 """
     SDDP State Variable
