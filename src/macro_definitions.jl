@@ -70,9 +70,15 @@ function registerstatevariable!{T<:Union{JuMP.JuMPArray, JuMP.JuMPDict}}(sp::Mod
     map(key->registerstatevariable!(sp, xin[key...], xout[key...]), keys(xin))
 end
 
-registerscenario!{N}(scenarios::Scenarios{N}, scenario::Scenario{N}) = push!(scenarios, scenario)
+function registerscenario!(scenarios::Scenarios, scenario::Scenario)
+    if length(scenarios) > 0
+        if length(scenarios[1].values) != length(scenario.values)
+            error("You must define scenarios with the number of options given in the SDDPModel() constructor (i.e. $(M)). You defined a scenario constraint with $(N).")
+        end
+    end
+    push!(scenarios, scenario)
+end
 registerscenario!(sp::Model, con, values::Vector{Float64}) = registerscenario!(ext(sp).scenarios, Scenario(con, values))
-registerscenario!{M,N}(scenarios::Scenarios{N}, scenario::Scenario{M}) = error("You must define scenarios with the number of options given in the SDDPModel() constructor (i.e. $(M)). You defined a scenario constraint with $(N).")
 
 """
     @scenario(sp, i=1:3, x <= i)
@@ -168,11 +174,19 @@ objectivescenario!(sp;
     noises=Float64[],
     dynamics::Function=()->(),
     objective::Function=()->()
-    ) = PriceScenarios(
+    ) = objectivescenario!(
         discretisation,
         noises,
         dynamics,
         objective
     )
-PriceScenarios(discretisation, noises, dynamics, objective) = PriceScenarios(discretisation, noises, dynamics, objective, 0.)
-PriceScenarios(discretisation, noises::AbstracVector, dynamics, objective) = PriceScenarios(discretisation, DiscreteDistribution(noises), dynamics, objective)
+objectivescenario!(sp, discretisation, noises::AbstracVector, dynamics, objective) = PriceScenarios(discretisation, DiscreteDistribution(noises), dynamics, objective)
+function objectivescenario!(sp, discretisation, noises, dynamics, objective)
+    p = ext(sp).pricescenarios
+    dynamics::Function
+    objective::Function
+    p.ribs = discretisation
+    p.noises = noises
+    p.dynamics = dynamics
+    p.objective = objective
+end

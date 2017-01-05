@@ -31,31 +31,23 @@ m = SDDPModel(
     @scenario(sp, alpha=sampled_errors, output <= alpha)
 
     if t < 28
-        objectivescenario!(sp,
-            rib_locations = linspace(3, 9, 5),
-            objective     = price -> buy * price - transaction_cost * (buy + sell),
-            dynamics      = (p, w) -> price_dynamics(p, w, t),
-            noises        = DiscreteDistribution(
-                                linspace(0, 0.05, 5),
-                                fill(0.2, 5)
-                            )
-        )
+        price_ribs = linspace(3, 9, 5)
+        price_obje = price -> buy * price - transaction_cost * (buy + sell)
     else
-        objectivescenario!(sp,
-            rib_locations = linspace(-5, 15, 10),
-            objective     = price -> (production - contracts) * price,
-            dynamics      = (p, w) -> price_dynamics(p, w, t),
-            noises        = DiscreteDistribution(
-                                linspace(0, 0.05, 5),
-                                fill(0.2, 5)
-                            )
-        )
+        price_ribs = linspace(-5, 15, 10)
+        price_obje = price -> (production - contracts) * price
     end
+    objectivescenario!(sp,
+        rib_locations = price_ribs,
+        objective     = price_obje,
+        dynamics      = (p, w) -> price_dynamics(p, w, t),
+        noises        = DiscreteDistribution(
+                            linspace(0, 0.05, 5),
+                            fill(0.2, 5)
+                        )
+    )
+
 end
-
-
-
-
 
 # @time solvestatus = solve(m,
 #     value_to_go_bound  = 1500,

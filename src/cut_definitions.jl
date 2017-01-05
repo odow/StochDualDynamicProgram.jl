@@ -17,18 +17,20 @@ function _dot{N}(x::Tuple{Vararg{N, Float64}}, y::Tuple{Vararg{N, Float64}})
 end
 evaluate(cut::Cut{N}, state::Tuple{Vararg{N, Float64}}) = cut.intercept + _dot(cut.coefficients, state)
 
-function addcut!{N}(sense::Sense, cs::CutStorage{N}, cut::Cut{N})
-    push!(cs.cuts, cut)
-    push!(cs.states_dominant, 0)
-    for i in 1:length(statesvisited)
-        val = evaluate(cut, statesvisited[i])
-        if dominates(val, best_bound[i])
-            best_bound[i] = val
-            best_cut_index[i] = length(cs.cuts)
-            cs.states_dominant[end] += 1
+function addcut!{N}(sense::Sense, cs::CutStorage{N}, csinner::CutStorageInnter{N}, cut::Cut{N})
+    push!(csinner.cuts, cut)
+    push!(csinner.states_dominant, 0)
+    for i in 1:length(cs.statesvisited)
+        val = evaluate(cut, cs.statesvisited[i])
+        if dominates(val, csinner.best_bound[i])
+            csinner.best_bound[i] = val
+            csinner.best_cut_index[i] = length(csinner.cuts)
+            csinner.states_dominant[end] += 1
         end
     end
 end
 
 # function rebuild!(::DeMatosCutSelection, m::SDDPModel)
 # end
+
+# TODO: need to be able to run cut selection on a single rib

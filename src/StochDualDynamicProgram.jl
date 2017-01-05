@@ -5,7 +5,6 @@ module StochDualDynamicProgram
 export SDDPModel,
     @state, @states, @scenario, @scenarioconstraints, @stageobjective,
     objectivescenario!,
-    setriskmeasure!,
     DiscreteDistribution,
     Expectation, NestedCVaR
 
