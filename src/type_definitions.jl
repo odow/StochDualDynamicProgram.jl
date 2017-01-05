@@ -1,6 +1,8 @@
 #  Copyright 2017, Oscar Dowson
 
 typealias LinearConstraint JuMP.ConstraintRef{JuMP.Model, JuMP.GenericRangeConstraint{JuMP.GenericAffExpr{Float64, JuMP.Variable}}}
+typealias Nested3Vector{T} Vector{Vector{Vector{T}}}
+typealias StateTuple{N} Tuple{Vararg{Float64, N}}
 
 abstract AbstractSense
 immutable Minimisation <: AbstractSense end
@@ -52,18 +54,18 @@ PriceScenarios() = PriceScenarios(Float64[] DiscreteDistribution([0.], [1.]), ()
 """
     Abstract type for dispatching the cut function
 """
-abstract CutOracle
+abstract RiskMeasure
 
 """
     Normal old expectation
 """
-immutable Expectation <: CutOracle end
+immutable Expectation <: RiskMeasure end
 
 """
     Nested CV@R
         λE[x] + (1-λ)CV@R(1-α)(x)
 """
-immutable NestedCVaR <: CutOracle
+immutable NestedCVaR <: RiskMeasure
     alpha::Float64
     lambda::Float64
     storage::Vector{Float64}
@@ -103,29 +105,19 @@ immutable Cut{N}
     intercept::Float64
     coefficients::Tuple{Vararg{Float64, N}}
 end
+Cut(intercept, coefficients::Vector) = Cut(intercept, tuple(coefficients...))
 
-type CutStorageInner{N}
-    cuts::Vector{Cut{N}}
-    states_dominant::Vector{Int} # states_dominant[i] = number of states in statesvisited that cut i is dominant
-    best_cut_index::Vector{Int} # best_cut_index[i] = index of cut in cuts that is the dominant cut at states_dominant[i]
-    best_bound::Vector{Float64} # best_bound[i] = best objective bound at statesvisited[i]
-end
-CutStorageInner(N) = CutStorageInner{N}(Cut{N}[], Int[], Int[], Float64[])
-
-type CutStorage{N}
-    cutstorage::CutStorageInner{N}
-    statesvisited::Vector{Tuple{Vararg{Float64, N}}} # vector of state tuples visited
-end
-CutStorage(N) = CutStorage(CutStorageInner(N), Tuple{Vararg{Float64, N}}[])
+# There is a cut oracle for every subproblem (and every price state).
+abstract CutOracle
 
 """
     The main type that holds the Stochastic Dual Dynamic Programming model
 """
-type SDDPModel{N}
+type SDDPModel{N, C}
     # subproblems
     stageproblems::Vector{Vector{JuMP.Model}}
     # corresponding cut storage cutstoreage[stage][markovstate][rib]
-    cutstorage::Vector{Vector{CutStorage{N}}}
+    cutoracle::C
 
     # markov transition matrices
     transition::Vector{Array{Float64, 2}}
@@ -145,7 +137,8 @@ function SDDPModel(buildsubproblem!::Function;
     sense::Symbol=:Min,
     stages::Int = 1,
     transition = [1]',
-    riskmeasure = Expectation()
+    riskmeasure = Expectation(),
+    cutoracle   = DefaultCutOracle()
     )
 
     stageproblems = Vector{JuMP.Model}[]
@@ -165,7 +158,7 @@ function SDDPModel(buildsubproblem!::Function;
     N = length(ext(stageproblems[1][1]).state_vars)
     SDDPModel(
         stageproblems,
-        [CutStorage{N}[CutStorage(N) for i=1:nummarkovstates(transition, t)] for t=1:stages]
+        # [CutStorage{N}[CutStorage(N) for i=1:nummarkovstates(transition, t)] for t=1:stages]
         transition,
         buildsubproblem!
     )
