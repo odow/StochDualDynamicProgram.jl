@@ -80,7 +80,7 @@ function calculateCVaRprobabilities!(newprob, sense, oldprob, x, lambda, beta::F
     quantile_collected = 0.0
     cvarprob = 0.0
     cache = (1 - lambda) / beta             # cache this to save some operations
-    for i in _sortperm(sense, x)        # For each scenario in order
+    @inbounds for i in _sortperm(sense, x)        # For each scenario in order
         newprob[i] = lambda * oldprob[i]    # expectation contribution
         if quantile_collected <  beta       # We haven't collected the beta quantile
             cvarprob = min(oldprob[i], beta-quantile_collected)
