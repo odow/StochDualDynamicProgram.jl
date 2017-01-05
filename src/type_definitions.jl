@@ -52,21 +52,23 @@ PriceScenarios() = PriceScenarios(Float64[] DiscreteDistribution([0.], [1.]), ()
 """
     Abstract type for dispatching the cut function
 """
-abstract AbstractRiskMeasure
+abstract CutOracle
 
 """
     Normal old expectation
 """
-immutable Expectation end
+immutable Expectation <: CutOracle end
 
 """
     Nested CV@R
         λE[x] + (1-λ)CV@R(1-α)(x)
 """
-immutable NestedCVaR
+immutable NestedCVaR <: CutOracle
     alpha::Float64
     lambda::Float64
+    storage::Vector{Float64}
 end
+NestedCVaR(alpha, lambda) = NestedCVaR(alpha, lambda, Float64[])
 
 # setriskmeasure!(m::JuMP.Model, riskmeasure::AbstractRiskMeasure) = (ext(m).riskmeasure = riskmeasure)
 
