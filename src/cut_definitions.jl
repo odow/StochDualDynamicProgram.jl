@@ -52,10 +52,10 @@ cutgenerator(oracle::CutOracle, sense::AbstactSense, x, pi, theta, prob) = error
 
 function cutgenerator(ex::Expectation, sense::AbstactSense, x, pi, theta, prob)
     @assert length(x) == length(pi) == length(theta) == length(prob)
-    intercept = theta[1] - pi[1]' * x[1]
+    intercept = theta[1] - dot(pi[1], x[1])
     coefficients = pi[1] * prob[1]
     @inbounds for i=2:length(prob)
-        intercept += theta[i] - pi[i]' * x[i]
+        intercept += theta[i] - dot(pi[i], x[i])
         coefficients += pi[i] * prob[i]
     end
     return Cut(intercept, coefficients)
