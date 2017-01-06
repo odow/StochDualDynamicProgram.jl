@@ -1,12 +1,10 @@
 #  Copyright 2017, Oscar Dowson
 
 typealias LinearConstraint JuMP.ConstraintRef{JuMP.Model, JuMP.GenericRangeConstraint{JuMP.GenericAffExpr{Float64, JuMP.Variable}}}
-typealias Nested3Vector{T} Vector{Vector{Vector{T}}}
-typealias StateTuple{N} Tuple{Vararg{Float64, N}}
 
-abstract AbstractSense
-immutable Minimisation <: AbstractSense end
-immutable Maximisation <: AbstractSense end
+typealias Sense Union{Type{Val{:Min}}, Type{Val{:Max}}}
+typealias Minimisation Val{:Min}
+typealias Maximisation Val{:Max}
 
 """
     SDDP State Variable
@@ -77,23 +75,23 @@ NestedCVaR(alpha, lambda) = NestedCVaR(alpha, lambda, Float64[])
 """
     The extension type for the JuMP subproblems
 """
-type SubproblemExt{RM<:AbstractRiskMeasure}
+type SubproblemExt
     states::Vector{StateVar}
     scenarios::Scenarios
     pricescenarios::PriceScenarios
-    riskmeasure::RM
     stageobjective::JuMP.GenericAffExpr{Float64, JuMP.Variable}
     theta::JuMP.Variable
 end
-function addsubproblemdata!(m, scenario_probabilities, riskmeasure)
+function Subproblem()
+    m = JuMP.Model()
     m.ext[:subproblem] = SubproblemExt(
         StateVar[],
         Scenarios(),
         PriceScenarios(),
-        riskmeasure,
         JuMP.AffExpr(),
         @variable(m)
     )
+    m
 end
 
 ext(m::JuMP.Model) = m.ext[:subproblem]::SubproblemExt
@@ -101,23 +99,37 @@ ext(m::JuMP.Model) = m.ext[:subproblem]::SubproblemExt
 """
     Θ (</>)= intercept + coefficients' x
 """
-immutable Cut{N}
+immutable Cut
     intercept::Float64
-    coefficients::Tuple{Vararg{Float64, N}}
+    coefficients::Vector{Float64}
 end
-Cut(intercept, coefficients::Vector) = Cut(intercept, tuple(coefficients...))
+Cut(intercept, coefficients::Vector) = Cut(intercept, coefficients)
 
 # There is a cut oracle for every subproblem (and every price state).
 abstract CutOracle
+typealias OracleStore{T} Vector{Vector{Vector{T}}}
+function OracleStore(T::CutOracle, sense, problem_size)
+    [
+        [
+            [
+                initialise(T, sense stage, markovstate, pricestate)
+            for pricestate in 1:num_price_states]
+        for (markovstate, num_price_states) in enumerate(markov_states)]
+    for (stage, markov_states) in enumerate(problem_size)]
+end
 
 """
     The main type that holds the Stochastic Dual Dynamic Programming model
 """
-type SDDPModel{N, C}
+type SDDPModel{C, R}
     # subproblems
     stageproblems::Vector{Vector{JuMP.Model}}
-    # corresponding cut storage cutstoreage[stage][markovstate][rib]
-    cutoracle::C
+    # Cut oracle
+    cutoracle::OracleStore{C}
+    # list of states visited in each stage
+    statesvisited::Vector{Vector{Vector{Float64}}}
+    # Risk Measure
+    riskmeasure::R
 
     # markov transition matrices
     transition::Vector{Array{Float64, 2}}
@@ -133,6 +145,11 @@ stageproblem(m::SDDPModel, t::Int) = stageproblem(m, t, 1)
 cutstorage(m::SDDPModel, t::Int, i::Int) = m.cutstorage[t][i]
 cutstorage(m::SDDPModel, t::Int) = cutstorage(m, t, 1)
 
+numstages(m::SDDPModel) = length(m.stageproblems)
+nummarkovstates(m::SDDPModel, stage::Int) = length(m.stageproblems[stage])
+numpricescenarios(m::JuMP.Model) = length(ext(m).pricescenarios.ribs)
+numscenarios(m::JuMP.Model) = length(ext(m).scenarios.prob)
+
 function SDDPModel(buildsubproblem!::Function;
     sense::Symbol=:Min,
     stages::Int = 1,
@@ -142,32 +159,40 @@ function SDDPModel(buildsubproblem!::Function;
     )
 
     stageproblems = Vector{JuMP.Model}[]
+    problem_size = Vector{Int}[]
     for t=1:stages
+        push!(problem_size, Int[])
         push!(stageproblems, JuMP.Model[])
         for i=1:nummarkovstates(transition, t)
-            m = JuMP.Model()
-            addsubproblemdata!(m,
-                getel(riskmeasure, t, i)
-            )
+            m = Subproblem()
             buildsubproblem!(m, t, i)
             JuMP.setobjective(m, sense, ext(m).theta + ext(m).stageobjective)
             push!(stageproblems[t], m)
+            push!(problem_size[t], numpricescenarios(m, t, i))
         end
     end
-
-    N = length(ext(stageproblems[1][1]).state_vars)
     SDDPModel(
         stageproblems,
-        # [CutStorage{N}[CutStorage(N) for i=1:nummarkovstates(transition, t)] for t=1:stages]
+        OracleStore(cutoracle, getsense(sense), problem_size),
+        riskmeasure,
         transition,
         buildsubproblem!
     )
 
 end
 
+function getsense(x::Symbol)
+    if x == :Min
+        return Minimisation
+    elseif x == :Max
+        return Maximisation
+    else
+        error("The sense $(x) must be one of [:Min, :Max]")
+    end
+end
+
 nummarkovstates(T::Array{Float64, 2}, t::Int) = size(T, 1)
 nummarkovstates(T::Vector{Array{Float64, 2}}, t::Int) = size(T[t], 1)
-
 getscenariovec(x::Int, t::Int, i::Int) = ones(x) / x
 getscenariovec{T<:AbstractVector}(x::T, t::Int, i::Int) = x
 getscenariovec{T<:AbstractVector}(x::Vector{T}, t::Int, i::Int) = x[t]

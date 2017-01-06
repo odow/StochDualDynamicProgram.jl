@@ -1,27 +1,25 @@
 #  Copyright 2017, Oscar Dowson
+initialise(t::CutOracle, sense::Sense, stage::Int, markovstate::Int, pricestate::Int) = error("""
+    You must define an initialisation method for your cut oracle.
+""")
 
 """
     addcut!(oracle::CutOracle, stage::Int, markovstate::Int, pricestate::Int, cut)
 
     This function adds the cut to the CutOracle.
 """
-addcut!(oracle::CutOracle, stage::Int, markovstate::Int, pricestate::Int, cut) = error("""
+addcut!{M<:SDDModel}(oracle::CutOracle, m::M, stage::Int, markovstate::Int, pricestate::Int, cut) = error("""
     You must define the function
-        addcut!(oracle::$(typeof(oracle)), stage::Int, markovstate::Int, pricestate::Int, cut)
+        addcut!(oracle::$(typeof(oracle)), m::SDDPModel, stage::Int, markovstate::Int, pricestate::Int, cut)
     that is overloaded for your oracle of type $(typeof(oracle)).
 """)
-
-"""
-    An optional method to overload if the oracle needs it
-"""
-addvisitedstate!(oracle::CutOracle, stage::Int, markovstate::Int, pricestate::Int, state::StateTuple{N}) = nothing
 
 """
     validcuts(oracle::CutOracle)
 
     This function returns an iterable list of all the valid cuts contained within the oracle.
 """
-validcuts(oracle::CutOracle, stage::Int, markovstate::Int, pricestate::Int) = error("""
+validcuts(oracle::CutOracle) = error("""
 You must define the function validcuts(oracle::$(typeof(oracle))) that is overloaded for your
     oracle of type $(typeof(oracle)).
 """)
@@ -29,75 +27,69 @@ You must define the function validcuts(oracle::$(typeof(oracle))) that is overlo
 """
     A default cut storage oracle that simply remembers all the cuts
 """
-immutable DefaultCutOracle{N} <: CutOracle
-    cuts::Nested3Vector{Vector{Cut{N}}}
+immutable DefaultCutOracle <: CutOracle
+    cuts::Vector{Cut}
 end
-# DefaultCutOracle()
+DefaultCutOracle() = DefaultCutOracle(Cut[])
+addcut!(oracle::DefaultCutOracle, m, stage, markovstate, pricestate, cut::Cut) = push!(oracle.cuts, cut)
+validcuts(oracle::DefaultCutOracle) = oracle.cuts
+initialise(::DefaultCutOracle, sense::Sense, stage::Int, markovstate::Int, pricestate::Int) = DefaultCutOracle(Cut[])
 
-addcut!{N|}(oracle::DefaultCutOracle{N}, stage::Int, markovstate::Int, pricestate::Int, cut::Cut{N}) = push!(oracle.cuts[stage][markovstate][pricestate], cut)
-validcuts{N}(oracle::DefaultCutOracle{N}, stage::Int, markovstate::Int, pricestate::Int) = oracle.cuts[stage][markovstate][pricestate]
 
-immutable DeMatosCutOracle{N, S} <: CutOracle
-    # statesvisited[state] = vector of state tuples
-    statesvisited::Vector{Vector{StateTuple{N}}}
-    # storage[stage][markov state][rib] = cut storage
-    storage::Nested3Vector{DeMatosCutStorage{N, S}}
-end
 """
     Vitor de Matos Level One Cut Selection
 """
-immutable DeMatosCutStorage{N, S}
-    cuts::Vector{Cut{N}}
+immutable DeMatosCutOracle
+    sense::Sense
+    cuts::Vector{Cut}
     states_dominant::Vector{Int} # states_dominant[i] = number of states in statesvisited that cut i is dominant
     best_cut_index::Vector{Int} # best_cut_index[i] = index of cut in cuts that is the dominant cut at states_dominant[i]
     best_bound::Vector{Float64} # best_bound[i] = best objective bound at statesvisited[i]
 end
+DeMatosCutOracle() = DeMatosCutOracle(Minimisation, Cut[], Int[], Int[], Float64[])
+initialise(::DeMatosCutOracle, sense, stage, markovstate, pricestate) = DeMatosCutOracle(sense, Cut[], Int[], Int[], Float64[])
 
-function _dot{N, T}(x::Tuple{Vararg{N, T}}, y::Tuple{Vararg{N, T}})
-    z = zero(T)
-    @inbounds for i=1:N
-        z += x[i] * y[i]
-    end
-    z
-end
-evaluate(cut::Cut{N}, state::StateTuple{N}) = cut.intercept + _dot(cut.coefficients, state)
-dominates(::Maximisation, x, y) = x < y
-dominates(::Minimisation, x, y) = x > y
-bestval(::Maximisation) = Inf
-bestval(::Minimisation) = -Inf
+evaluate(cut::Cut, state::Vector{Float64}) = cut.intercept + dot(cut.coefficients, state)
+dominates(::Type{Maximisation}, x, y) = x < y
+dominates(::Type{Minimisation}, x, y) = x > y
+bestval(::Type{Maximisation}) = Inf
+bestval(::Type{Minimisation}) = -Inf
 
-function _addcut!{N, S}(dematos::DeMatosCutStorage{N, S}, statesvisited::Vector{StateTuple{N}}, cut::Cut{N})
+function _addcut!(dematos::DeMatosCutOracle, statesvisited, cut)
     push!(dematos.cuts, cut)
     push!(dematos.states_dominant, 0)
-    for i in 1:length(statesvisited)
+    @inbounds for i in 1:length(dematos.best_bound)
         val = evaluate(cut, statesvisited[i])
-        if dominates(S, val, dematos.best_bound[i])
+        if dominates(dematos.sense, val, dematos.best_bound[i])
             dematos.best_bound[i] = val
             dematos.best_cut_index[i] = length(dematos.cuts)
             dematos.states_dominant[end] += 1
         end
     end
 end
-addcut!{N, S}(dematos::DeMatosCutOracle{N, S}, stage::Int, markovstate::Int, pricestate::Int, cut::Cut{N}) = _addcut!(dematos.storage[stage][markovstate][pricestate], dematos.statesvisited[stage], cut)
-
-function _addvisitedstate!{N, S}(dematos::DeMatosCutStorage{N, S}, statesvisited::Vector{Vector{Vector{DeMatosCutStorage{N, S}}}, state::StateTuple{N})
-    push!(statesvisited, state)
-    dematos.best_bound[end] = bestval(S)
-    dematos.best_cut_index[end] = 0
-    for i in 1:length(dematos.cuts)
-        val = evaluate(dematos.cuts[i], statesvisited[end])
-        if dominates(S, val, dematos.best_bound[end])
-            dematos.best_bound[end]     = val
-            dematos.best_cut_index[end] = i
+function _update_level_one_data!(dematos::DeMatosCutOracle, statesvisited)
+    @inbounds for i in (length(dematos.best_bound) + 1):length(statesvisited)
+        push!(dematos.best_bound, bestval(dematos.sense))
+        push!(dematos.best_cut_index, 0)
+        @inbounds for j in 1:length(dematos.cuts)
+            val = evaluate(dematos.cuts[j], statesvisited[i])
+            if dominates(dematos.sense, val, dematos.best_bound[j])
+                dematos.best_bound[j]     = val
+                dematos.best_cut_index[j] = i
+            end
         end
+        dematos.states_dominant[dematos.best_cut_index[i]] += 1
     end
-    dematos.states_dominant[dematos.best_cut_index[end]] += 1
 end
-addvisitedstate!{N, S}(dematos::DeMatosCutOracle{N, S}, stage::Int, markovstate::Int, pricestate::Int, state::StateTuple{N}) = addvisitedstate!(dematos.storage[stage][markovstate][pricestate], dematos.statesvisited[stage], state)
 
-Base.start{N, S}(dematos::DeMatosCutStorage{N, S}) = 1
-Base.done{N, S}(dematos::DeMatosCutStorage{N, S}, state) = (state == -1)
-function Base.next{N, S}(dematos::DeMatosCutStorage{N, S}, state)
+function addcut!(dematos::DeMatosCutOracle, m::SDDPModel, stage::Int, markovstate::Int, pricestate::Int, cut::Cut)
+    _addcut!(dematos, m.statesvisited[stage], cut)
+    _update_level_one_data!(dematos, m.statesvisited[stage])
+end
+
+Base.start(dematos::DeMatosCutOracle) = 1
+Base.done(dematos::DeMatosCutOracle, state) = (state == -1)
+function Base.next{N, S}(dematos::DeMatosCutOracle, state)
     @inline for i=state:length(dematos.cuts)
         if dematos.states_dominant[i] > 0
             return (dematos.cuts[i], i+1)
@@ -105,4 +97,4 @@ function Base.next{N, S}(dematos::DeMatosCutStorage{N, S}, state)
     end
     return (Cut(N), -1)
 end
-validcuts{N, S}(dematos::DeMatosCutSelection{N, S}, stage::Int, markovstate::Int, pricestate::Int) = dematos.storage[stage][markovstate][pricestate]
+validcuts(dematos::DeMatosCutOracle) = dematos
