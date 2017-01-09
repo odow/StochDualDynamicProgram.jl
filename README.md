@@ -135,7 +135,7 @@ The `solve(m::SDDPModel [; kwargs...])` function solves the SDDP model `m`. Ther
   - See section Forward Pass Options below.
 - `backward_pass::BackwardPass` default = `BackwardPass()`
   - See section Backward Pass Options below.
-- `risk_measure::RiskMeasure` default = `Expectation()`
+- `risk_measure::AbstractRiskMeasure` default = `Expectation()`
   - See section Risk Measures below.
 - `cut_selection::CutSelectionMethod` default = `NoSelection()`
   - See section Cut Selection below.

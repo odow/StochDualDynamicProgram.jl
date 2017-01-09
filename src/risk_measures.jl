@@ -2,7 +2,7 @@
 
 """
     This function assembles a new cut using the following inputs
-    + measure::RiskMeasure - used to dispatch
+    + measure::AbstractRiskMeasure - used to dispatch
     + sense::Sense - either Maximum or Minimum
     + x::Vector{Vector{Float64}} - a vector of vector of state values for each scenario
     + pi::Vector{Vector{Float64}} - a vector of vector of dual values for each scenario
@@ -11,15 +11,15 @@
     + stage::Int - the index of the stage
     + markov::Int - the index of the markov state
 """
-cutgenerator(measure::RiskMeasure, sense::Sense, x, pi, theta, prob, stage, markov) =
-    cutgenerator(measure::RiskMeasure, sense::Sense, x, pi, theta, prob)
+cutgenerator(measure::AbstractRiskMeasure, sense::Sense, x, pi, theta, prob, stage, markov) =
+    cutgenerator(measure::AbstractRiskMeasure, sense::Sense, x, pi, theta, prob)
 
-cutgenerator(measure::RiskMeasure, sense::Sense, x, pi, theta, prob) = error("""
+cutgenerator(measure::AbstractRiskMeasure, sense::Sense, x, pi, theta, prob) = error("""
     You need to overload a `cutgenerator` method for the measure of type $(typeof(measure)).
     This could be the method including the stage and markov index
-        cutgenerator(measure::RiskMeasure, sense::Sense, x, pi, theta, prob, stage, markov)
+        cutgenerator(measure::AbstractRiskMeasure, sense::Sense, x, pi, theta, prob, stage, markov)
     or
-        cutgenerator(measure::RiskMeasure, sense::Sense, x, pi, theta, prob)
+        cutgenerator(measure::AbstractRiskMeasure, sense::Sense, x, pi, theta, prob)
 """)
 
 

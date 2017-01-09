@@ -1,7 +1,7 @@
 #  Copyright 2016, Oscar Dowson
 
 # Set the risk measure for all the subproblems
-function setriskmeasure!(m::SDDPModel, riskmeasure::RiskMeasure)
+function setriskmeasure!(m::SDDPModel, riskmeasure::AbstractRiskMeasure)
     for sp in m.stage_problems
         stagedata(sp).beta_quantile = riskmeasure.beta
         stagedata(sp).lambda_weight = riskmeasure.lambda

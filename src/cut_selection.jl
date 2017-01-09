@@ -4,13 +4,13 @@ initialise(t::CutOracle, sense::Sense, stage::Int, markovstate::Int, pricestate:
 """)
 
 """
-    addcut!(oracle::CutOracle, stage::Int, markovstate::Int, pricestate::Int, cut)
+    storecut!(oracle::CutOracle, stage::Int, markovstate::Int, pricestate::Int, cut)
 
     This function adds the cut to the CutOracle.
 """
-addcut!{M<:SDDModel}(oracle::CutOracle, m::M, stage::Int, markovstate::Int, pricestate::Int, cut) = error("""
+storecut!{M<:SDDPModel}(oracle::CutOracle, m::M, stage::Int, markovstate::Int, pricestate::Int, cut) = error("""
     You must define the function
-        addcut!(oracle::$(typeof(oracle)), m::SDDPModel, stage::Int, markovstate::Int, pricestate::Int, cut)
+        storecut!(oracle::$(typeof(oracle)), m::SDDPModel, stage::Int, markovstate::Int, pricestate::Int, cut)
     that is overloaded for your oracle of type $(typeof(oracle)).
 """)
 
@@ -31,7 +31,7 @@ immutable DefaultCutOracle <: CutOracle
     cuts::Vector{Cut}
 end
 DefaultCutOracle() = DefaultCutOracle(Cut[])
-addcut!(oracle::DefaultCutOracle, m, stage, markovstate, pricestate, cut::Cut) = push!(oracle.cuts, cut)
+storecut!(oracle::DefaultCutOracle, m, stage, markovstate, pricestate, cut::Cut) = push!(oracle.cuts, cut)
 validcuts(oracle::DefaultCutOracle) = oracle.cuts
 initialise(::DefaultCutOracle, sense::Sense, stage::Int, markovstate::Int, pricestate::Int) = DefaultCutOracle(Cut[])
 
@@ -55,7 +55,7 @@ dominates(::Type{Minimisation}, x, y) = x > y
 bestval(::Type{Maximisation}) = Inf
 bestval(::Type{Minimisation}) = -Inf
 
-function _addcut!(dematos::DeMatosCutOracle, statesvisited, cut)
+function _storecut!(dematos::DeMatosCutOracle, statesvisited, cut)
     push!(dematos.cuts, cut)
     push!(dematos.states_dominant, 0)
     @inbounds for i in 1:length(dematos.best_bound)
@@ -82,8 +82,8 @@ function _update_level_one_data!(dematos::DeMatosCutOracle, statesvisited)
     end
 end
 
-function addcut!(dematos::DeMatosCutOracle, m::SDDPModel, stage::Int, markovstate::Int, pricestate::Int, cut::Cut)
-    _addcut!(dematos, m.statesvisited[stage], cut)
+function storecut!(dematos::DeMatosCutOracle, m::SDDPModel, stage::Int, markovstate::Int, pricestate::Int, cut::Cut)
+    _storecut!(dematos, m.statesvisited[stage], cut)
     _update_level_one_data!(dematos, m.statesvisited[stage])
 end
 

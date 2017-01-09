@@ -317,9 +317,9 @@ stagedata(m::SDDPModel, t, i) = stagedata(subproblem(m,t,i))
 
 # ==============================================================================
 #   Risk Measures
-abstract RiskMeasure
+abstract AbstractRiskMeasure
 
-immutable NestedCVar <: RiskMeasure
+immutable NestedCVar <: AbstractRiskMeasure
     beta::Float64
     lambda::Float64
     NestedCVar{T<:Real, S<:Real}(beta::T, lambda::S) = (@assert beta >= 0. && beta <= 1. && lambda >= 0. && lambda <= 1.; new(beta, lambda))

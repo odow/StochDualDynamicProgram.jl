@@ -47,7 +47,7 @@ function expectedforwardpass!{T, M, S, X, TM}(log, m::SDDPModel{T, M, S, X, TM},
     return
 end
 
-function expectedbackwardpass!{T, M, S, X, TM}(m::SDDPModel{T, M, S, X, TM}, riskmeasure::RiskMeasure, regularisation::Regularisation, backward_pass::BackwardPass)
+function expectedbackwardpass!{T, M, S, X, TM}(m::SDDPModel{T, M, S, X, TM}, riskmeasure::AbstractRiskMeasure, regularisation::Regularisation, backward_pass::BackwardPass)
     for t=(T-1):-1:1
         for pass = 1:getn(m)
             setrhs!(m, pass, t)
@@ -73,7 +73,7 @@ function expectedbackwardpass!{T, M, S, X, TM}(m::SDDPModel{T, M, S, X, TM}, ris
     end
 end
 
-function expectedbackwardpass!{T, M, S, X, TM}(log, m::SDDPModel{T, M, S, X, TM}, riskmeasure::RiskMeasure, regularisation::Regularisation, backward_pass::BackwardPass)
+function expectedbackwardpass!{T, M, S, X, TM}(log, m::SDDPModel{T, M, S, X, TM}, riskmeasure::AbstractRiskMeasure, regularisation::Regularisation, backward_pass::BackwardPass)
     tic()
     expectedbackwardpass!(m, riskmeasure, regularisation, backward_pass)
     log.cuts += 1

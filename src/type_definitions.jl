@@ -13,23 +13,17 @@ immutable StateVariable
     x::JuMP.Variable
     con::LinearConstraint
 end
+JuMP.getdual(x::StateVariable) = getdual(x.con)
 
 """
     Scenario constraint
 """
 immutable Scenario
-    con::LinearConstraint
+    probability::Float64
+    con::Vector{LinearConstraint}
     values::Vector{Float64}
 end
-
-"""
-    All scenarios
-"""
-type Scenarios
-    con::Vector{Scenario}
-    prob::Vector{Float64}
-end
-Scenarios() = Scenarios(Scenario[], Float64[])
+Scenario(prob::Float64) = Scenario(prob, LinearConstraint[], Float64[])
 
 immutable DiscreteDistribution{T}
     values::Vector{T}
@@ -37,59 +31,61 @@ immutable DiscreteDistribution{T}
 end
 DiscreteDistribution(x) = DiscreteDistribution(x, ones(length(x)) / length(x))
 
+immutable Rib
+    price::Float64
+    theta::JuMP.Variable
+end
+
 """
     Price scenario information
 """
+
 type PriceScenarios
-    ribs::Vector{Float64}
-    noises::DiscreteDistribution # TODO: not type stable
+    noises::Vector
+    probability::Vector{Float64}
     dynamics::Function
     objective::Function
-    lastprice::Float64
 end
-PriceScenarios() = PriceScenarios(Float64[] DiscreteDistribution([0.], [1.]), ()->(), ()->(), 0.)
+PriceScenarios() = PriceScenarios(Any[], Float64[], ()->(), ()->())
 
 """
     Abstract type for dispatching the cut function
 """
-abstract RiskMeasure
+abstract AbstractRiskMeasure
 
 """
     Normal old expectation
 """
-immutable Expectation <: RiskMeasure end
+immutable Expectation <: AbstractRiskMeasure end
 
 """
     Nested CV@R
         λE[x] + (1-λ)CV@R(1-α)(x)
 """
-immutable NestedCVaR <: RiskMeasure
+immutable NestedCVaR <: AbstractRiskMeasure
     alpha::Float64
     lambda::Float64
     storage::Vector{Float64}
 end
 NestedCVaR(alpha, lambda) = NestedCVaR(alpha, lambda, Float64[])
 
-# setriskmeasure!(m::JuMP.Model, riskmeasure::AbstractRiskMeasure) = (ext(m).riskmeasure = riskmeasure)
-
 """
     The extension type for the JuMP subproblems
 """
-type SubproblemExt
+type SubproblemExt{T}
     states::Vector{StateVar}
-    scenarios::Scenarios
-    pricescenarios::PriceScenarios
-    stageobjective::JuMP.GenericAffExpr{Float64, JuMP.Variable}
-    theta::JuMP.Variable
+    scenarios::Vector{Scenario}
+    pricescenarios::PriceScenarios{T}
+    theta::Vector{Rib}
 end
 function Subproblem()
     m = JuMP.Model()
     m.ext[:subproblem] = SubproblemExt(
         StateVar[],
-        Scenarios(),
+        Scenario[],
         PriceScenarios(),
         JuMP.AffExpr(),
-        @variable(m)
+        Rib[]
     )
     m
 end
@@ -148,14 +144,29 @@ cutstorage(m::SDDPModel, t::Int) = cutstorage(m, t, 1)
 numstages(m::SDDPModel) = length(m.stageproblems)
 nummarkovstates(m::SDDPModel, stage::Int) = length(m.stageproblems[stage])
 numpricescenarios(m::JuMP.Model) = length(ext(m).pricescenarios.ribs)
+numpricescenarios(m::SDDPModel, stage::Int, markovstate::Int) = numpricescenarios(stageproblem(stage, markovstate))
+numpricescenarios(m::SDDPModel, stage::Int) = numpricescenarios(m, stage, 1)
+
 numscenarios(m::JuMP.Model) = length(ext(m).scenarios.prob)
+numscenarios(m::SDDPModel, stage::Int, markovstate::Int) = numscenarios(stageproblem(stage, markovstate))
+numscenarios(m::SDDPModel, stage::Int) = numscenarios(m, stage, 1)
+
+function initialisescenaros!(m::JuMP.Model, scenario_probabilities::Vector{Float64})
+    if (sum(scenarios) - 1.0) > 1e-6
+        error("Sum of scenario probabilities must sum to 1. You have given the vector $(scenario_probabilities) which sums to $(sum(scenario_probabilities))")
+    end
+    for p in scenario_probabilities
+        push!(ext(m).scenarios, Scenario(p))
+    end
+end
 
 function SDDPModel(buildsubproblem!::Function;
     sense::Symbol=:Min,
     stages::Int = 1,
     transition = [1]',
     riskmeasure = Expectation(),
-    cutoracle   = DefaultCutOracle()
+    cutoracle   = DefaultCutOracle(),
+    scenarios = 0
     )
 
     stageproblems = Vector{JuMP.Model}[]
@@ -165,8 +176,10 @@ function SDDPModel(buildsubproblem!::Function;
         push!(stageproblems, JuMP.Model[])
         for i=1:nummarkovstates(transition, t)
             m = Subproblem()
+            JuMP.setobjectivesense(m, sense)
             buildsubproblem!(m, t, i)
-            JuMP.setobjective(m, sense, ext(m).theta + ext(m).stageobjective)
+            initialisescenarios!(m, getscenariovec(scenarios, t, i))
+            #
             push!(stageproblems[t], m)
             push!(problem_size[t], numpricescenarios(m, t, i))
         end

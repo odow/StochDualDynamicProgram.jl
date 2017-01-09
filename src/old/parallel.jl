@@ -259,7 +259,7 @@ function reducebackwardpassmulticut!{T, M, S, X, TM}(m::SDDPModel{T, M, S, X, TM
     end
 end
 
-function parallelbackwardpass!{T, M, S, X, TM}(m::SDDPModel{T, M, S, X, TM}, riskmeasure::RiskMeasure, regularisation::Regularisation, backward_pass::BackwardPass)
+function parallelbackwardpass!{T, M, S, X, TM}(m::SDDPModel{T, M, S, X, TM}, riskmeasure::AbstractRiskMeasure, regularisation::Regularisation, backward_pass::BackwardPass)
     updateforwardstorage!(m.forwardstorage)
     # This returns a vector of vector of cuts
     if backward_pass.multicut
@@ -285,7 +285,7 @@ end
 #
 #  Backward Pass Version 2.
 #   solve subproblems
-function bestparallelbackwardpass!{T, M, S, X, TM}(m::SDDPModel{T, M, S, X, TM}, riskmeasure::RiskMeasure, regularisation::Regularisation, backward_pass::BackwardPass)
+function bestparallelbackwardpass!{T, M, S, X, TM}(m::SDDPModel{T, M, S, X, TM}, riskmeasure::AbstractRiskMeasure, regularisation::Regularisation, backward_pass::BackwardPass)
     updateforwardstorage!(m.forwardstorage)
     set_nonregularised_objective_all!(m, regularisation, X, T, M)
     distribute_work_void!(set_nonregularised_objective_all!, regularisation, X, T, M)
@@ -328,7 +328,7 @@ function solvestage!{T, M, S, X, TM}(m::SDDPModel{T, M, S, X, TM}, t, N, riskmea
     return cutsout
 end
 
-# function reducecutvectors{T, M, S, X, TM}(m::SDDPModel{T, M, S, X, TM}, x::Vector, riskmeasure::RiskMeasure, pass, t)
+# function reducecutvectors{T, M, S, X, TM}(m::SDDPModel{T, M, S, X, TM}, x::Vector, riskmeasure::AbstractRiskMeasure, pass, t)
 #     cutout = Cut(0., zeros(length(x[1].coefficients)))
 #     i = getmarkov(m, pass, t)
 #     reweightscenarios!(m, Float64[c.intercept for c in x], t, i, riskmeasure.beta, riskmeasure.lambda)
@@ -339,7 +339,7 @@ end
 #     end
 #     return cutout
 # end
-function reducecutvectors{T, M, S, X, TM}(m::SDDPModel{T, M, S, X, TM}, results::Vector, riskmeasure::RiskMeasure, pass, t)
+function reducecutvectors{T, M, S, X, TM}(m::SDDPModel{T, M, S, X, TM}, results::Vector, riskmeasure::AbstractRiskMeasure, pass, t)
     objectives  = zeros(M*S)
     dual_values = Array(Vector{Float64}, M*S)
     idx = 0

@@ -70,15 +70,17 @@ function registerstatevariable!{T<:Union{JuMP.JuMPArray, JuMP.JuMPDict}}(sp::Mod
     map(key->registerstatevariable!(sp, xin[key...], xout[key...]), keys(xin))
 end
 
-function registerscenario!(scenarios::Scenarios, scenario::Scenario)
-    if length(scenarios) > 0
-        if length(scenarios[1].values) != length(scenario.values)
-            error("You must define scenarios with the number of options given in the SDDPModel() constructor (i.e. $(M)). You defined a scenario constraint with $(N).")
-        end
-    end
-    push!(scenarios, scenario)
+function addscenario!(scenario::Scenario, con, val)
+    push!(scenario.con, con)
+    push!(scenario.values, val)
 end
-registerscenario!(sp::Model, con, values::Vector{Float64}) = registerscenario!(ext(sp).scenarios, Scenario(con, values))
+function registerscenario!(sp::Model, con, values::Vector{Float64})
+    scenarios = ext(sp).scenarios
+    @assert length(scenarios) == length(values)
+    for i in 1:length(values)
+        addscenario!(scenarios[i], con, values[i])
+    end
+end
 
 """
     @scenario(sp, i=1:3, x <= i)
@@ -157,8 +159,15 @@ Usage:
 macro stageobjective(m, ex)
     m = esc(m)
     quote
-        ext($m).stageobjective = @expression($m, $(esc(gensym())), $(esc(ex)))
+        stageobj = @expression($m, $(esc(gensym())), $(esc(ex)))
+        createstageobjective!($m, stageobj)
     end
+end
+function createstageobjective!(m, stageobj::JuMP.GenericAffExpr)
+    @assert length(ext(m).theta) == 0
+    theta = JuMP.@variable(m)
+    push!(ext(m).theta, Rib(0.0, theta))
+    JuMP.setobjective(m, JuMP.getobjectivesense(m), theta + stageobj)
 end
 
 """
@@ -182,11 +191,12 @@ objectivescenario!(sp;
     )
 objectivescenario!(sp, discretisation, noises::AbstracVector, dynamics, objective) = PriceScenarios(discretisation, DiscreteDistribution(noises), dynamics, objective)
 function objectivescenario!(sp, discretisation, noises, dynamics, objective)
-    p = ext(sp).pricescenarios
-    dynamics::Function
-    objective::Function
-    p.ribs = discretisation
-    p.noises = noises
-    p.dynamics = dynamics
-    p.objective = objective
+    ex = ext(sp)
+    for rib in discretisation
+        push!(ex.theta, Rib(rib, @variable(m)))
+    end
+    ex.pricescenarios.noises = noises.values
+    ex.pricescenarios.probability = noises.support
+    ex.pricescenarios.dynamics = dynamics
+    ex.pricescenarios.objective = objective
 end

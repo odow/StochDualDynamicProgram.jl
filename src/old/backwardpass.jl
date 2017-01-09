@@ -1,6 +1,6 @@
 #  Copyright 2016, Oscar Dowson
 
-function backwardpass!{T, M, S, X, TM}(m::SDDPModel{T, M, S, X, TM}, riskmeasure::RiskMeasure, regularisation::Regularisation, backward_pass::BackwardPass)
+function backwardpass!{T, M, S, X, TM}(m::SDDPModel{T, M, S, X, TM}, riskmeasure::AbstractRiskMeasure, regularisation::Regularisation, backward_pass::BackwardPass)
     for t=(T-1):-1:1
         for pass = 1:getn(m)
             setrhs!(m, pass, t)
