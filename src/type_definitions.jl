@@ -14,7 +14,7 @@ immutable StateVariable
     con::LinearConstraint
 end
 JuMP.getdual(x::StateVariable) = getdual(x.con)
-
+JuMP.getvalue(x::StateVariable) = getvalue(x.x)
 """
     Scenario constraint
 """
@@ -25,11 +25,8 @@ immutable Scenario
 end
 Scenario(prob::Float64) = Scenario(prob, LinearConstraint[], Float64[])
 
-immutable DiscreteDistribution{T}
-    values::Vector{T}
-    support::Vector{Float64}
-end
-DiscreteDistribution(x) = DiscreteDistribution(x, ones(length(x)) / length(x))
+typealias DiscreteDistribution{T} Vector{Tuple{T, Float64}}
+DiscreteDistribution(x) = map(i->(i, 1.0/length(x)), x)
 
 immutable Rib
     price::Float64
@@ -40,13 +37,13 @@ end
     Price scenario information
 """
 
-type PriceScenarios
-    noises::Vector
-    probability::Vector{Float64}
+type PriceScenario{T}
+    noise::T
+    probability::Float64
     dynamics::Function
     objective::Function
 end
-PriceScenarios() = PriceScenarios(Any[], Float64[], ()->(), ()->())
+PriceScenario() = PriceScenario(0.0, 1.0, ()->(), ()->())
 
 """
     Abstract type for dispatching the cut function
@@ -72,10 +69,10 @@ NestedCVaR(alpha, lambda) = NestedCVaR(alpha, lambda, Float64[])
 """
     The extension type for the JuMP subproblems
 """
-type SubproblemExt{T}
+type SubproblemExt
     states::Vector{StateVar}
     scenarios::Vector{Scenario}
-    pricescenarios::PriceScenarios{T}
+    pricescenarios::Vector{PriceScenario}
     theta::Vector{Rib}
 end
 function Subproblem()
@@ -83,8 +80,7 @@ function Subproblem()
     m.ext[:subproblem] = SubproblemExt(
         StateVar[],
         Scenario[],
-        PriceScenarios(),
-        JuMP.AffExpr(),
+        PriceScenario[],
         Rib[]
     )
     m
@@ -117,7 +113,7 @@ end
 """
     The main type that holds the Stochastic Dual Dynamic Programming model
 """
-type SDDPModel{C, R}
+type SDDPModel{S, C, R}
     # subproblems
     stageproblems::Vector{Vector{JuMP.Model}}
     # Cut oracle
@@ -131,7 +127,21 @@ type SDDPModel{C, R}
     transition::Vector{Array{Float64, 2}}
 
     buildsubproblem!::Function
+
+    storage::TmpStorage
 end
+
+type TmpStorage
+    obj::Vector{Float64}
+    probability::Vector{Float64}
+    pi::Vector{Vector{Float64}}
+end
+
+TmpStorage(n, xn) = TmpStorage(
+    zeros(Float64, n),
+    zeros(Float64, n),
+    [zeros(Float64, xn) for i=1:n]
+)
 
 """
     Some accessor functions
@@ -143,9 +153,18 @@ cutstorage(m::SDDPModel, t::Int) = cutstorage(m, t, 1)
 
 numstages(m::SDDPModel) = length(m.stageproblems)
 nummarkovstates(m::SDDPModel, stage::Int) = length(m.stageproblems[stage])
-numpricescenarios(m::JuMP.Model) = length(ext(m).pricescenarios.ribs)
+
+numstates(m::JuMP.Model) = length(ext(m).states)
+numstates(m::SDDPModel, stage::Int, markovstate::Int) = numstates(stageproblem(stage, markovstate))
+numstates(m::SDDPModel, stage::Int) = numstates(m, stage, 1)
+
+numpricescenarios(m::JuMP.Model) = length(ext(m).pricescenarios)
 numpricescenarios(m::SDDPModel, stage::Int, markovstate::Int) = numpricescenarios(stageproblem(stage, markovstate))
-numpricescenarios(m::SDDPModel, stage::Int) = numpricescenarios(m, stage, 1)
+numpricescenarios(m::SDDPModel, stage::Int) = numpriceribs(m, stage, 1)
+
+numpriceribs(m::JuMP.Model) = length(ext(m).theta)
+numpriceribs(m::SDDPModel, stage::Int, markovstate::Int) = numpriceribs(stageproblem(stage, markovstate))
+numpriceribs(m::SDDPModel, stage::Int) = numpriceribs(m, stage, 1)
 
 numscenarios(m::JuMP.Model) = length(ext(m).scenarios.prob)
 numscenarios(m::SDDPModel, stage::Int, markovstate::Int) = numscenarios(stageproblem(stage, markovstate))
@@ -171,9 +190,14 @@ function SDDPModel(buildsubproblem!::Function;
 
     stageproblems = Vector{JuMP.Model}[]
     problem_size = Vector{Int}[]
+
+    tmp_storage_size = 0
+    max_size::Int
     for t=1:stages
+
         push!(problem_size, Int[])
         push!(stageproblems, JuMP.Model[])
+        max_size = 0
         for i=1:nummarkovstates(transition, t)
             m = Subproblem()
             JuMP.setobjectivesense(m, sense)
@@ -182,14 +206,21 @@ function SDDPModel(buildsubproblem!::Function;
             #
             push!(stageproblems[t], m)
             push!(problem_size[t], numpricescenarios(m, t, i))
+
+            max_size += numscenarios(m), * numpricescenarios(m)
+        end
+        if max_size > tmp_storage_size
+            tmp_storage_size = max_size
         end
     end
-    SDDPModel(
+    tmp_storage = TmpStorage(tmp_storage_size, numstates(stageproblems[1][1]))
+    SDDPModel{getsense(sense), typeof(cutoracle), typeof(riskmeasure)}(
         stageproblems,
         OracleStore(cutoracle, getsense(sense), problem_size),
         riskmeasure,
         transition,
-        buildsubproblem!
+        buildsubproblem!,
+        tmp_storage
     )
 
 end

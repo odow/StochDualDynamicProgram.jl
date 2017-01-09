@@ -167,9 +167,9 @@ function createstageobjective!(m, stageobj::JuMP.GenericAffExpr)
     @assert length(ext(m).theta) == 0
     theta = JuMP.@variable(m)
     push!(ext(m).theta, Rib(0.0, theta))
-    JuMP.setobjective(m, JuMP.getobjectivesense(m), theta + stageobj)
+    _setobjective!(m, theta + stageobj)
 end
-
+_setobjective!(m::JuMP.Model, obj) = JuMP.setobjective(m, JuMP.getobjectivesense(m), obj)
 """
     objectivescenario!(sp,                 # subproblem
         rib_locations = 0:10,              # outgoing price
@@ -190,13 +190,12 @@ objectivescenario!(sp;
         objective
     )
 objectivescenario!(sp, discretisation, noises::AbstracVector, dynamics, objective) = PriceScenarios(discretisation, DiscreteDistribution(noises), dynamics, objective)
-function objectivescenario!(sp, discretisation, noises, dynamics, objective)
+function objectivescenario!(sp::JuMP.Model, discretisation::AbstractVector, noises::DiscreteDistribution, dynamics::Function, objective::Function)
     ex = ext(sp)
     for rib in discretisation
         push!(ex.theta, Rib(rib, @variable(m)))
     end
-    ex.pricescenarios.noises = noises.values
-    ex.pricescenarios.probability = noises.support
-    ex.pricescenarios.dynamics = dynamics
-    ex.pricescenarios.objective = objective
+    for (val, prob) in noises
+        push!(ex.pricescenarios, PriceScenario(val, prob, dynamics, objective))
+    end
 end
