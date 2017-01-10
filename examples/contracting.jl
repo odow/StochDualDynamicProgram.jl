@@ -1,6 +1,7 @@
 #  Copyright 2016, Oscar Dowson
+using StochDualDynamicProgram, JuMP
 
-const sampled_errors = rand(Normal(0, 0.0785220888754297), 20)
+const sampled_errors = [-0.1290, -0.1010, -0.0814, -0.0661, -0.0530, -0.0412, -0.0303, -0.0199, -0.00987, 0.0, 0.00987, 0.0199, 0.0303, 0.0412, 0.0530, 0.0661, 0.0814, 0.1010, 0.1290]
 const σ² = linspace(1, 0, 28) # Decreasing variance in changes in price over time
 const transaction_cost = 0.01
 
@@ -9,13 +10,12 @@ price_dynamics(p, w, t) = box(exp(log(p) + σ²[t]*w), 3, 9)
 
 m = SDDPModel(
     stages   = 28,
-    sense    = :Max
+    sense    = :Max,
+    scenarios = 19
                 ) do sp, t, i
 
-    @states(sp, begin
-        0 <= contracts  <= 1.5, (contracts0 = 0)
-        0 <= production <= 1.5, (production0 = 0)
-    end)
+    @state(sp, 0 <= contracts  <= 1.5, contracts0 = 0)
+    @state(sp, 0 <= production <= 1.5, production0 = 0)
 
     @variables(sp, begin
         0 <= buy <= 1.2
@@ -32,11 +32,12 @@ m = SDDPModel(
 
     if t < 28
         price_ribs = linspace(3, 9, 5)
-        price_obje = price -> buy * price - transaction_cost * (buy + sell)
+        price_obje = price -> (buy * price - transaction_cost * (buy + sell))
     else
         price_ribs = linspace(-5, 15, 10)
         price_obje = price -> (production - contracts) * price
     end
+
     objectivescenario!(sp,
         rib_locations = price_ribs,
         objective     = price_obje,

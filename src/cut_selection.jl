@@ -89,12 +89,12 @@ end
 
 Base.start(dematos::DeMatosCutOracle) = 1
 Base.done(dematos::DeMatosCutOracle, state) = (state == -1)
-function Base.next{N, S}(dematos::DeMatosCutOracle, state)
-    @inline for i=state:length(dematos.cuts)
+function Base.next(dematos::DeMatosCutOracle, state)
+    @inbounds for i=state:length(dematos.cuts)
         if dematos.states_dominant[i] > 0
             return (dematos.cuts[i], i+1)
         end
     end
-    return (Cut(N), -1)
+    return (Cut(), -1)
 end
 validcuts(dematos::DeMatosCutOracle) = dematos

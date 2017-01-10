@@ -18,37 +18,8 @@ Usage:
     @state(sp,      z            , z0=0.5        )
 
 """
-Base.copy(s::Symbol) = s
 const comparison_symbols = [:(<=), :(>=), :(==)]
 is_comparison(x) = Base.Meta.isexpr(x, :comparison) || (Base.Meta.isexpr(x, :call) && x.args[1] in comparison_symbols)
-
-macro state(sp, x, x0)
-    sp = esc(sp)                        # escape the model
-    @assert x0.head == :kw              # must be a keyword
-    symin, rhs = x0.args                # name of the statein variable
-    if is_comparison(x)
-        if length(x.args) == 5          # double sided
-            xin = copy(x.args[3])       # variable is in middle
-        elseif length(x.args) == 3      # single comparison
-            xin = copy(x.args[2])       # variable is second entry
-        else
-            error("Unknown format for $(x)")
-        end
-    else
-        xin = copy(x)                   # no bounds
-    end
-    if isa(xin, Expr)                   # x has indices
-        xin.args[1] = symin             # so just change the name
-    else                                # its just a Symbol
-        xin = symin                     # so change the Symbol
-    end
-    quote
-        stateout = $(Expr(:macrocall, Symbol("@variable"), sp, esc(x), Expr(:kw, :start, esc(rhs))))
-        statein  = $(Expr(:macrocall, Symbol("@variable"), sp, esc(xin)))
-        registerstatevariable!($sp, statein, stateout)
-        stateout, statein
-    end
-end
 
 function registerstatevariable!(sp::Model, xin::JuMP.Variable, xout::JuMP.Variable)
     push!(ext(sp).states,
@@ -70,15 +41,42 @@ function registerstatevariable!{T<:Union{JuMP.JuMPArray, JuMP.JuMPDict}}(sp::Mod
     map(key->registerstatevariable!(sp, xin[key...], xout[key...]), keys(xin))
 end
 
-function addscenario!(scenario::Scenario, con, val)
-    push!(scenario.con, con)
-    push!(scenario.values, val)
+macro state(sp, x, x0)
+    sp = esc(sp)                        # escape the model
+    @assert x0.head == :kw              # must be a keyword
+    symin, rhs = x0.args                # name of the statein variable
+    if is_comparison(x)
+        if length(x.args) == 5          # double sided
+            xin = identity(x.args[3])       # variable is in middle
+        elseif length(x.args) == 3      # single comparison
+            xin = identity(x.args[2])       # variable is second entry
+        else
+            error("Unknown format for $(x)")
+        end
+    else
+        xin = identity(x)                   # no bounds
+    end
+    if isa(xin, Expr)                   # x has indices
+        xin.args[1] = symin             # so just change the name
+    else                                # its just a Symbol
+        xin = symin                     # so change the Symbol
+    end
+    quote
+        stateout = $(Expr(:macrocall, Symbol("@variable"), sp, esc(x), Expr(:kw, :start, esc(rhs))))
+        statein  = $(Expr(:macrocall, Symbol("@variable"), sp, esc(xin)))
+        registerstatevariable!($sp, statein, stateout)
+        stateout, statein
+    end
 end
+
 function registerscenario!(sp::Model, con, values::Vector{Float64})
     scenarios = ext(sp).scenarios
-    @assert length(scenarios) == length(values)
+    if length(scenarios) != length(values)
+        error("You must specify the same number of scenarios as you declared in the SDDPModel constructor ($(length(scenarios))). In one of your @scenario blocks you have $(length(values)).")
+    end
     for i in 1:length(values)
-        addscenario!(scenarios[i], con, values[i])
+        push!(scenarios[i].con, con)
+        push!(scenarios[i].values, values[i])
     end
 end
 
@@ -94,21 +92,20 @@ macro scenario(sp, noise_kw, con)
             $(esc(noise_kw.args[1])) = noise  # set the scenariovalue
             push!(rhs,                          # add to the rhs vector
                 -$(Expr(                        # negate to shift from LHS to RHS
-                    :macrocall, Symbol("@expression"),
-                    sp,                         # model is first argument
-                    esc(gensym()),              # generate a random Symbol
-                    esc($(con.args[2]) - $(con.args[3])) # the constrexpr
+                    :call, :(-),
+                    esc(con.args[2]),                         # model is first argument
+                    esc(con.args[3]) # the constrexpr
                 )).constant                     # want the constant term
             )
          end
         $(esc(noise_kw.args[1])) = $noise_values[1] # initialise with first scenario
-        con = $(Expr(                           # add the constraint
+        full_con = $(Expr(                           # add the constraint
                 :macrocall, Symbol("@constraint"),
                 sp,                             # the subproblem
                 esc(con)                          # the constraint expression
                 ))
-        registerscenario!($sp, con, rhs)
-        con
+        registerscenario!($sp, full_con, rhs)
+        full_con
     end
 end
 
@@ -159,17 +156,25 @@ Usage:
 macro stageobjective(m, ex)
     m = esc(m)
     quote
-        stageobj = @expression($m, $(esc(gensym())), $(esc(ex)))
-        createstageobjective!($m, stageobj)
+        depwarn("""
+            The macro @stageobjective has been deprecated. Use the function stageobjective! from now on. It has the same syntax as before. i.e.:
+
+                @stageobjective(m, 2x + y)
+
+                becomes
+
+                stageobjective!(m, 2x + y)
+                """)
+        stageobjective!($m, $(esc(ex)))
     end
 end
-function createstageobjective!(m, stageobj::JuMP.GenericAffExpr)
+function stageobjective!(m::JuMP.Model, stageobj::JuMP.GenericAffExpr)
     @assert length(ext(m).theta) == 0
     theta = JuMP.@variable(m)
     push!(ext(m).theta, Rib(0.0, theta))
     _setobjective!(m, theta + stageobj)
 end
-_setobjective!(m::JuMP.Model, obj) = JuMP.setobjective(m, JuMP.getobjectivesense(m), obj)
+
 """
     objectivescenario!(sp,                 # subproblem
         rib_locations = 0:10,              # outgoing price
@@ -178,22 +183,30 @@ _setobjective!(m::JuMP.Model, obj) = JuMP.setobjective(m, JuMP.getobjectivesense
         objective     = (p) -> (p * x)     # Objective can use p0 as a parameter, x as a variable
     )
 """
-objectivescenario!(sp;
-    rib_locations::Vector{Float64}=Float64[],
+objectivescenario!{T<:Real}(sp::JuMP.Model;
+    rib_locations::AbstractVector{T}=Float64[],
     noises=Float64[],
     dynamics::Function=()->(),
     objective::Function=()->()
-    ) = objectivescenario!(
-        discretisation,
+    ) = objectivescenario!(sp,
+        rib_locations,
         noises,
         dynamics,
         objective
     )
-objectivescenario!(sp, discretisation, noises::AbstracVector, dynamics, objective) = PriceScenarios(discretisation, DiscreteDistribution(noises), dynamics, objective)
+objectivescenario!(sp::JuMP.Model, discretisation::AbstractVector, noises::AbstractVector, dynamics::Function, objective::Function) = objectivescenario!(sp, discretisation, DiscreteDistribution(noises), dynamics, objective)
+
 function objectivescenario!(sp::JuMP.Model, discretisation::AbstractVector, noises::DiscreteDistribution, dynamics::Function, objective::Function)
     ex = ext(sp)
+    if length(ex.theta) > 0
+        error("""
+        You can only define one objectivescenario for each subproblem.
+
+        Do you have a call to stageobjective! as well?
+            """)
+    end
     for rib in discretisation
-        push!(ex.theta, Rib(rib, @variable(m)))
+        push!(ex.theta, Rib(rib, @variable(sp)))
     end
     for (val, prob) in noises
         push!(ex.pricescenarios, PriceScenario(val, prob, dynamics, objective))

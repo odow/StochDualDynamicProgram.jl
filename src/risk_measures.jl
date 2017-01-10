@@ -24,14 +24,16 @@ cutgenerator(measure::AbstractRiskMeasure, sense::Sense, x, pi, theta, prob) = e
 
 
 """
-    The expectation risk measure
+    Normal old expectation
 """
+immutable Expectation <: AbstractRiskMeasure end
+
 function cutgenerator(ex::Expectation, sense::Sense, x, pi, theta, prob)
     @assert length(pi) == length(theta) == length(prob)
-    intercept = theta[1] - dot(pi[1], x)
+    intercept = (theta[1] - dot(pi[1], x))*prob[1]
     coefficients = pi[1] * prob[1]
     @inbounds for i=2:length(prob)
-        intercept += theta[i] - dot(pi[i], x)
+        intercept += (theta[i] - dot(pi[i], x))*prob[i]
         coefficients += pi[i] * prob[i]
     end
     return Cut(intercept, coefficients)
@@ -57,14 +59,31 @@ function calculateCVaRprobabilities!(newprob, sense, oldprob, theta, lambda, bet
 end
 
 """
-    A weighted combination of Expectation and CVaR
+    Nested CV@R
+        λE[x] + (1-λ)CV@R(1-α)(x)
 """
+immutable NestedCVaR <: AbstractRiskMeasure
+    beta::Float64
+    lambda::Float64
+    storage::Vector{Float64}
+end
+function checkzerotoone(x)
+    @assert x <= 1
+    @assert x >= 0
+end
+function NestedCVaR(beta, lambda)
+    checkzerotoone(beta)
+    checkzerotoone(lambda)
+    NestedCVaR(beta, lambda, Float64[])
+end
+NestedCVaR(;beta=1, lambda=1) = NestedCVaR(beta, lambda)
+
 function cutgenerator(cvar::NestedCVaR, sense::Sense, x, pi, theta, prob)
     @assert length(pi) == length(theta) == length(prob)
     if length(cvar.storage) < length(prob)
         append!(cvar.storage, zeros(length(prob) - length(cvar.storage)))
     end
-    calculateCVaRprobabilities!(cvar.storage, sense, prob, x, cvar.lambda, cvar.beta)
+    calculateCVaRprobabilities!(cvar.storage, sense, prob, theta, cvar.lambda, cvar.beta)
 
-    cutgenerator(expectation, x, pi, theta, cvar.storage[1:length(prob)])
+    cutgenerator(expectation, sense, x, pi, theta, view(cvar.storage, 1:length(prob)))
 end
