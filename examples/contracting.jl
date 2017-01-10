@@ -5,13 +5,17 @@ const sampled_errors = [-0.1290, -0.1010, -0.0814, -0.0661, -0.0530, -0.0412, -0
 const σ² = linspace(1, 0, 28) # Decreasing variance in changes in price over time
 const transaction_cost = 0.01
 
+const markov_states = [0.9, 1.1]
+const markov_transition = [0.75 0.25; 0.3 0.7]
+
 box(x, a, b) = min(b, max(a, x))
 price_dynamics(p, w, t) = box(exp(log(p) + σ²[t]*w), 3, 9)
 
 m = SDDPModel(
-    stages   = 28,
-    sense    = :Max,
-    scenarios = 19
+    stages     = 28,
+    sense      = :Max,
+    scenarios  = 19,
+    transition = markov_transition
                 ) do sp, t, i
 
     @state(sp, 0 <= contracts  <= 1.5, contracts0 = 0)
@@ -28,7 +32,7 @@ m = SDDPModel(
         production == production0 + output
     end)
 
-    @scenario(sp, alpha=sampled_errors, output <= alpha)
+    @scenario(sp, alpha=sampled_errors, output <= alpha * markov_states[i])
 
     if t < 28
         price_ribs = linspace(3, 9, 5)

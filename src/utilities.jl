@@ -10,6 +10,8 @@ _setobjective!(m::JuMP.Model, obj) = JuMP.setobjective(m, JuMP.getobjectivesense
 stageproblem(m::SDDPModel, t::Int, i::Int) = m.stageproblems[t][i]
 stageproblem(m::SDDPModel, t::Int) = stageproblem(m, t, 1)
 
+getstate(m::JuMP.Model) = map(getvalue, ext(m).states)
+
 cutstorage(m::SDDPModel, t::Int, i::Int) = m.cutstorage[t][i]
 cutstorage(m::SDDPModel, t::Int) = cutstorage(m, t, 1)
 
@@ -43,6 +45,10 @@ getscenariovec{T<:AbstractVector}(x::Vector{Vector{T}}, t::Int, i::Int) = x[t][i
 getel{T}(x::T, t::Int, i::Int) = x
 getel{T}(x::Vector{T}, t::Int, i::Int) = x[t]
 getel{T}(x::Vector{Vector{T}}, t::Int, i::Int) = x[t][i]
+
+transition(x::Array{Float64, 2}, t, i, j) = x[i, j]
+transition(x::Vector{Array{Float64, 2}}, t, i, j) = x[t][i, j]
+transition(x, t, i, j) = 1.0
 
 function getsense(x::Symbol)
     if x == :Min
