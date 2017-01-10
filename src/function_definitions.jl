@@ -22,7 +22,7 @@ function solvesubproblem(m::JuMP.Model)
 end
 
 function setrhs!(m::JuMP.Model, rhs::Scenario)
-    @assert length(rhs.con == length(rhs.values)
+    @assert length(rhs.con) == length(rhs.values)
     @inbounds for i=1:length(rhs.con)
         JuMP.setrhs!(rhs.con[i], rhs.values[i])
     end
@@ -59,7 +59,10 @@ function setprice!(m::JuMP.Model, scenario::PriceScenario, old_price::Float64)
     newprice = scenario.dynamics(old_price, scenario.noise)
     # stage profit + convex combination of value to go functions
     _setobjective!(m, scenario.objective(newprice) + interpolateribs(ext(m).theta, newprice))
+
+    newprice
 end
+setprice!(m::JuMP.Model, scenario::PriceScenario, old_rib::Rib) = setprice!(m, scenario, old_rib.price)
 
 function addcut!{S,C,R}(m::SDDPModel{S,C,R}, t::Int, i::Int, p::Int, storage_idx)
     base_sp = stageproblem(m, t, i)
@@ -84,7 +87,6 @@ end
 
 function solvestage!{S,C,R}(m::SDDPModel{S,C,R}, t::Int, i::Int, p::Int, x)
     base_sp = stageproblem(m, t, i)
-    base_ex = ext(base_sp)
     markov_probability   = 0.0
     price_probability    = 0.0
     scenario_probability = 0.0
@@ -92,29 +94,24 @@ function solvestage!{S,C,R}(m::SDDPModel{S,C,R}, t::Int, i::Int, p::Int, x)
     # for each markov state
     for j in 1:nummarkovstates(m, t+1)
         # begin building probability
-        markov_probability = transition(m.transition, t, i, j)
+        markov_probability = transition(m, t, i, j)
         sp = stageproblem(m, t+1, j)
-        ex = ext(sp)
         setstate!(sp, x)
 
-        for pnew in 1:length(ex.pricescenarios)
-            price_probability = ex.pricescenarios[pnew].probability
-
-            setprice!(sp, ex.pricescenarios[pnew], base_ex.ribs[p])
-            for s in 1:length(ex.scenarios)
-                scenario_probability = ex.scenarios[s].probability
-                setrhs!(sp, ex.scenarios[s])
-
+        for pnew in 1:numpricescenarios(sp)
+            price_probability = probability(pricescenario(sp, pnew))
+            setprice!(sp, pricescenario(sp, pnew), rib(base_sp, p))
+            for s in 1:numscenarios(sp)
+                scenario_probability = probability(scenario(sp, s))
+                setrhs!(sp, scenario(sp, s))
                 storage_idx += 1
-                obj = solvesubproblem!(m.storage.pi[storage_idx], sp)
-                m.storage.obj[storage_idx] = obj
-                m.storage.probability[storage_idx] = markov_probability * price_probability * scenario_probability
+                obj = solvesubproblem!(dualstore(m, storage_idx), sp)
+                storeobj!(m, storage_idx, obj)
+                storeprob!(m, storage_idx, markov_probability * price_probability * scenario_probability)
             end
         end
     end
-
     addcut!(m, t, i, p, storage_idx)
-
     # This can only be done if the price scenarios do not depend on markov state
     # delta::Float64
     # for ii in 1:nummarkovstates(m, t)
@@ -133,27 +130,31 @@ function solvestage!{S,C,R}(m::SDDPModel{S,C,R}, t::Int, i::Int, p::Int, x)
     # end
 end
 
-# forward pass
-#     with standard probabilities
-#     with uniform probabilities
-#
-#     scenario incrementation
-#
-#
-# backward pass
-#     sample trajectory
-#     solve all subproblems
-#     add cut
-#     back track
-#
-# cut selection
-#
-# simulation
-#
+
 function backwardpass!(m::SDDPModel, num_forward_passes::Int)
+    # backtrack up stages
     for t in reverse(1:(numstages(m)-1))
+        # for scenario incrementation
         for i=1:num_forward_passes
-            solvestage!(m, t, m.forward_storage[i].markov[t], m.forward_storage[i].price[t], m.forward_storage[i].state[t])
+            # it's critical to solve upper and lower rib
+            for p in boundingribs(m, t, i)
+                solvestage!(m, t, getmarkov(m, i, t), p, getstate(m, i, t))
+            end
+        end
+    end
+end
+function boundingribs(m, t, pass)
+    ex = ext(stageproblem(m, t, getmarkov(m, t, pass)))
+    p = getprice(m, t, pass)
+    if p < ex.theta[1].price
+        return (1,2)
+    elseif p > ex.theta[end].price
+        return (length(ex.theta)-1, length(ex.theta))
+    else
+        for i=2:length(ex.theta)
+            if p < ex.theta[i].price
+                return (i-1, i)
+            end
         end
     end
 end
@@ -168,30 +169,56 @@ function samplerhs(sp::JuMP.Model, r::Float64)
     end
     error("Probabilities do not sum to 1")
 end
+function sampleprice(sp::JuMP.Model, r::Float64)
+    checkzerotoone(r)
+    for scenario in ext(sp).pricescenarios
+        r -= probability(scenario)
+        if r <= 0.0
+            return scenario
+        end
+    end
+    error("Probabilities do not sum to 1")
+end
+function samplefirstmarkov(m::SDDPModel)
+    r = rand()
+    for i=1:length(m.initialmarkovprobability)
+        r -= m.initialmarkovprobability[i]
+        if r <= 0.0
+            return i
+        end
+    end
+end
+function getfirstprice(m::SDDPModel)
+    if numpriceribs(m, 1) != 1
+        @assert !isnan(m.firstprice)
+    end
+    return m.firstprice
+end
 
 function forwardpass!(m::SDDPModel, num_forward_passes::Int)
     for i=1:num_forward_passes
-        # sample first markov (store)
-        solvestageforward!(m, 1, first_markov, i, first_price)
-
+        if length(m.forwardstorage) < i
+            push!(m.forwardstorage, ForwardStorage(m))
+        end
+        setmarkov!(m, i, 1, samplefirstmarkov(m))
+        setprice!(m, i, 1, getfirstprice(m))
+        solvestageforward!(m, 1, i)
         for t in 2:numstages(m)
-            m.forwardstorage[i].markov[t] = transition(m, t-1, m.forwardstorage[i].markov[t-1]) # sample markov
-
-            solvestageforward!(m, t, m.forwardstorage[i].markov[t], i, old_price)
+            setmarkov!(m, i, t, transition(m, t-1, getmarkov(m, i, t-1))) # sample markov
+            solvestageforward!(m, t, i)
         end
     end
 end
 
-function solvestageforward!(m::SDDPModel, stage, new_markov, pass, oldprice)
-    sp = stageproblem(m, stage, new_markov)
-    setstate!(sp, m.forwardstorage[pass].state[stage-1])
-
+function solvestageforward!(m::SDDPModel, stage, pass)
+    sp = stageproblem(m, stage, getmarkov(m, pass, stage-1))
+    setstate!(sp, getstate(m, pass, stage-1))
     setrhs!(sp, samplescenario(sp, rand())) # sample rhs
-
-    sampleprice!(sp, oldprice) # sample price
-
+    if numpricescenarios(sp) > 0
+        newprice = setprice!(sp, sampleprice(sp, rand()), getprice(m, pass, stage-1)) # sample price
+        setprice!(m, pass, stage, newprice)
+    end
     solvetooptimality!(sp) # solve subproblem
-
-    copy!(getstate(sp), m.forwardstorage[pass].state[stage]) # store state
-    addstatevisited!(m, t, m.forwardstorage[pass].state[stage])
+    getstate!(sp, getstate(m, pass, stage))
+    addstatevisited!(m, t, getstate(m, pass, stage))
 end

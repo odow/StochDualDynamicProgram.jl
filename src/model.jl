@@ -7,14 +7,29 @@ function initialisescenarios!(m::JuMP.Model, scenario_probabilities::Vector{Floa
     end
 end
 
+validatetransition(transition::Array{Float64, 2}, initialmarkovstate) = nothing
+function validatetransition(transition::Vector{Array{Float64, 2}}, stages::Int)
+    if length(transition) != (stages - 1)
+            error("Incorrect markov transition supplied. You have chosen to give a vector of transition matrices with a specified markov state for the first stage, so you should have a vector that contains (stages - 1) = $(stages-1) markov transition matrices. However the current vector has $(length(transition)).")
+    end
+end
+initialmarkovprobability(x, n) = ones(n) / n
+function initialmarkovprobability(x::Vector, n)
+    @assert length(x) == n
+    @assert (sum(x) - 1.0) < 1e-6
+    return x
+end
 function SDDPModel(buildsubproblem!::Function;
     sense::Symbol=:Min,
     stages::Int = 1,
     transition = [1.0]',
     riskmeasure = Expectation(),
     cutoracle   = DefaultCutOracle(),
-    scenarios = 0
+    scenarios = 0,
+    initialmarkovstate = nothing,
+    firstprice = NaN
     )
+    validatetransition(transition, stages)
 
     stageproblems = Vector{JuMP.Model}[]
     statesvisited = Vector{Vector{Float64}}[]
@@ -43,15 +58,17 @@ function SDDPModel(buildsubproblem!::Function;
             tmp_storage_size = max_size
         end
     end
-    tmp_storage = TmpStorage(tmp_storage_size, numstates(stageproblems[1][1]))
     SDDPModel{getsense(sense), typeof(cutoracle), typeof(riskmeasure), typeof(transition)}(
         stageproblems,
         OracleStore(cutoracle, getsense(sense), problem_size),
         statesvisited,
         riskmeasure,
         transition,
+        initialmarkovprobability(initialmarkovstate, nummarkovstates(transition, 1)),
+        firstprice,
         buildsubproblem!,
-        tmp_storage
+        [BackwardStorage(numstates(stageproblems[1][1])) for i=1:tmp_storage_size],
+        ForwardStorage[]
     )
 
 end

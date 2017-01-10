@@ -63,7 +63,7 @@ getel{T}(x::Vector{T}, t::Int, i::Int) = x[t]
 getel{T}(x::Vector{Vector{T}}, t::Int, i::Int) = x[t][i]
 
 transition(x::Array{Float64, 2}, t, i, j) = x[i, j]
-transition(x::Vector{Array{Float64, 2}}, t, i, j) = x[t][i, j]
+transition(x::Vector{Array{Float64, 2}}, t, i, j) = x[t+1][i, j]
 transition(x, t, i, j) = 1.0
 transition(m::SDDPModel, t, i, j) = transition(m.transition, t, i, j)
 function transition(m::SDDPModel, t, i)
@@ -93,3 +93,25 @@ JuMP.getvalue(x::StateVariable) = getvalue(x.x)
 addstatevisited!(m, t, x) = push!(m.statesvisited[t], copy(x))
 probability(scenario::Scenario) = scenario.probability
 probability{T}(price::PriceScenario{T}) = price.probability
+
+storeobj!(m, idx, obj) = (m.backwardstorage[idx].obj = obj)
+storeprob!(m, idx, prob) = (m.backwardstorage[idx].probability = prob)
+dualstore(m, idx) = m.backwardstorage[idx].pi
+
+pricescenario(m::JuMP.Model, p) = ext(m).pricescenarios[p]
+scenario(m::JuMP.Model, s) = ext(m).scenarios[s]
+rib(m::JuMP.Model, r) = ext(m).theta[r]
+
+ForwardStorage(m::SDDPModel) = ForwardStorage(numstages(m), numstates(stageproblem(m, 1, 1)))
+
+getmarkov(m::SDDPModel, pass::Int, stage::Int) = m.forward_storage[pass][stage].markov
+getprice(m::SDDPModel, pass::Int, stage::Int) = m.forward_storage[pass][stage].price
+getstate(m::SDDPModel, pass::Int, stage::Int) = m.forward_storage[pass][stage].state
+
+setmarkov!(m::SDDPModel, pass::Int, stage::Int, x) = (m.forward_storage[pass][stage].markov = x)
+setprice!(m::SDDPModel, pass::Int, stage::Int, x) = (m.forward_storage[pass][stage].price = x)
+function setstate!(m::SDDPModel, pass::Int, stage::Int, x)
+    for i=1:length(x)
+        m.forward_storage[pass][stage].state[i] = x[i]
+    end
+end

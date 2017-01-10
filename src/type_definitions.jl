@@ -95,21 +95,22 @@ function OracleStore(T::CutOracle, sense, problem_size)
 end
 
 type BackwardStorage
-    obj::Vector{Float64}
-    probability::Vector{Float64}
-    pi::Vector{Vector{Float64}}
+    obj::Float64
+    probability::Float64
+    pi::Vector{Float64}
 end
 
-BackwardStorage(n, xn) = BackwardStorage(
-    zeros(Float64, n),
-    zeros(Float64, n),
-    [zeros(Float64, xn) for i=1:n]
-)
+BackwardStorage(xn) = BackwardStorage(0.0, 0.0, zeros(Float64, xn))
 
 type ForwardStorage
-    markov::Vector{Int}
-    price::Vector{Int}
-    state::Vector{Vector{Float64}}
+    markov::Int
+    price::Float64
+    state::Vector{Float64}
+end
+
+
+function ForwardStorage(stages, states)
+    [ForwardStorage(0, 0.0, zeros(Float64, states)) for i=1:stages]
 end
 
 """
@@ -127,9 +128,12 @@ type SDDPModel{S, C, R, T}
 
     # markov transition matrices
     transition::T
+    initialmarkovprobability::Vector{Float64}
+
+    initialprice::Float64
 
     buildsubproblem!::Function
 
-    storage::BackwardStorage
-    forwardstorage::Vector{ForwardStorage}
+    backwardstorage::Vector{BackwardStorage}
+    forwardstorage::Vector{Vector{ForwardStorage}}
 end
