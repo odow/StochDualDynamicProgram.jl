@@ -67,10 +67,7 @@ immutable NestedCVaR <: AbstractRiskMeasure
     lambda::Float64
     storage::Vector{Float64}
 end
-function checkzerotoone(x)
-    @assert x <= 1
-    @assert x >= 0
-end
+
 function NestedCVaR(beta, lambda)
     checkzerotoone(beta)
     checkzerotoone(lambda)

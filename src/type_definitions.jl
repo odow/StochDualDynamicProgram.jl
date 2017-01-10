@@ -94,17 +94,23 @@ function OracleStore(T::CutOracle, sense, problem_size)
     for (stage, markov_states) in enumerate(problem_size)]
 end
 
-type TmpStorage
+type BackwardStorage
     obj::Vector{Float64}
     probability::Vector{Float64}
     pi::Vector{Vector{Float64}}
 end
 
-TmpStorage(n, xn) = TmpStorage(
+BackwardStorage(n, xn) = BackwardStorage(
     zeros(Float64, n),
     zeros(Float64, n),
     [zeros(Float64, xn) for i=1:n]
 )
+
+type ForwardStorage
+    markov::Vector{Int}
+    price::Vector{Int}
+    state::Vector{Vector{Float64}}
+end
 
 """
     The main type that holds the Stochastic Dual Dynamic Programming model
@@ -124,5 +130,6 @@ type SDDPModel{S, C, R, T}
 
     buildsubproblem!::Function
 
-    storage::TmpStorage
+    storage::BackwardStorage
+    forwardstorage::Vector{ForwardStorage}
 end

@@ -1,10 +1,14 @@
 # Copyright Oscar Dowson, 2017
 
-function solvesubproblem!(pi::Vector{Float64}, m::JuMP.Model)
+function solvetooptimality!(m::JuMP.Model)
     status = solve(m)
     if status != :Optimal
         error("Subproblems must be solved to optimality")
     end
+end
+
+function solvesubproblem!(pi::Vector{Float64}, m::JuMP.Model)
+    solvetooptimality!(m)
     for i = 1:length(ext(m).states)
         pi[i] = getdual(ext(m).states)
     end
@@ -21,6 +25,13 @@ function setrhs!(m::JuMP.Model, rhs::Scenario)
     @assert length(rhs.con == length(rhs.values)
     @inbounds for i=1:length(rhs.con)
         JuMP.setrhs!(rhs.con[i], rhs.values[i])
+    end
+end
+
+function setstate!(m::JuMP.Model, state::Vector{Float64})
+    ex = ext(m)
+    for i = 1:length(state)
+        JuMP.setrhs!(ex.states[i].con, state[i])
     end
 end
 
@@ -71,7 +82,7 @@ function addcutconstraint!(m::JuMP.Model, cut::Cut, p::Int)
     end
 end
 
-function solvestage{S,C,R}(m::SDDPModel{S,C,R}, t::Int, i::Int, p::Int, x)
+function solvestage!{S,C,R}(m::SDDPModel{S,C,R}, t::Int, i::Int, p::Int, x)
     base_sp = stageproblem(m, t, i)
     base_ex = ext(base_sp)
     markov_probability   = 0.0
@@ -84,6 +95,8 @@ function solvestage{S,C,R}(m::SDDPModel{S,C,R}, t::Int, i::Int, p::Int, x)
         markov_probability = transition(m.transition, t, i, j)
         sp = stageproblem(m, t+1, j)
         ex = ext(sp)
+        setstate!(sp, x)
+
         for pnew in 1:length(ex.pricescenarios)
             price_probability = ex.pricescenarios[pnew].probability
 
@@ -137,11 +150,48 @@ end
 #
 # simulation
 #
-function backwardpass!(m::SDDPModel, markov_states::Vector{Int}, price_states::Vector{Int})
-#
-#     # solve final stage markov problems
-#     for sp in m.stageproblems[end]
-#         # solve markov state
-#     end
-#
+function backwardpass!(m::SDDPModel, num_forward_passes::Int)
+    for t in reverse(1:(numstages(m)-1))
+        for i=1:num_forward_passes
+            solvestage!(m, t, m.forward_storage[i].markov[t], m.forward_storage[i].price[t], m.forward_storage[i].state[t])
+        end
+    end
+end
+
+function samplerhs(sp::JuMP.Model, r::Float64)
+    checkzerotoone(r)
+    for scenario in ext(sp).scenarios
+        r -= probability(scenario)
+        if r <= 0.0
+            return scenario
+        end
+    end
+    error("Probabilities do not sum to 1")
+end
+
+function forwardpass!(m::SDDPModel, num_forward_passes::Int)
+    for i=1:num_forward_passes
+        # sample first markov (store)
+        solvestageforward!(m, 1, first_markov, i, first_price)
+
+        for t in 2:numstages(m)
+            m.forwardstorage[i].markov[t] = transition(m, t-1, m.forwardstorage[i].markov[t-1]) # sample markov
+
+            solvestageforward!(m, t, m.forwardstorage[i].markov[t], i, old_price)
+        end
+    end
+end
+
+function solvestageforward!(m::SDDPModel, stage, new_markov, pass, oldprice)
+    sp = stageproblem(m, stage, new_markov)
+    setstate!(sp, m.forwardstorage[pass].state[stage-1])
+
+    setrhs!(sp, samplescenario(sp, rand())) # sample rhs
+
+    sampleprice!(sp, oldprice) # sample price
+
+    solvetooptimality!(sp) # solve subproblem
+
+    copy!(getstate(sp), m.forwardstorage[pass].state[stage]) # store state
+    addstatevisited!(m, t, m.forwardstorage[pass].state[stage])
 end

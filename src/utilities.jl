@@ -1,5 +1,10 @@
 # Copyright 2017, Oscar Dowson
 
+function checkzerotoone(x)
+    @assert x <= 1
+    @assert x >= 0
+end
+
 dominates(::Maximisation, x, y) = x < y
 dominates(::Minimisation, x, y) = x > y
 
@@ -10,7 +15,18 @@ _setobjective!(m::JuMP.Model, obj) = JuMP.setobjective(m, JuMP.getobjectivesense
 stageproblem(m::SDDPModel, t::Int, i::Int) = m.stageproblems[t][i]
 stageproblem(m::SDDPModel, t::Int) = stageproblem(m, t, 1)
 
-getstate(m::JuMP.Model) = map(getvalue, ext(m).states)
+function getstate(m::JuMP.Model)
+    y = zeros(numstates(m))
+    getstate!(m, y)
+    y
+ end
+function getstate!(m::JuMP.Model, x::Vector{Float64})
+    @assert length(x) == numstates(m)
+    for i=1:numstates(m)
+        x[i] = getvalue(state(m, i))
+    end
+end
+state(m::JuMP.Model, i::Int) = ext(m).states[i]
 
 cutstorage(m::SDDPModel, t::Int, i::Int) = m.cutstorage[t][i]
 cutstorage(m::SDDPModel, t::Int) = cutstorage(m, t, 1)
@@ -49,6 +65,17 @@ getel{T}(x::Vector{Vector{T}}, t::Int, i::Int) = x[t][i]
 transition(x::Array{Float64, 2}, t, i, j) = x[i, j]
 transition(x::Vector{Array{Float64, 2}}, t, i, j) = x[t][i, j]
 transition(x, t, i, j) = 1.0
+transition(m::SDDPModel, t, i, j) = transition(m.transition, t, i, j)
+function transition(m::SDDPModel, t, i)
+    r = rand()
+    for j = 1:nummarkovstates(m, t)
+        r -= transition(m, t, i, j)
+        if r <= 0.0
+            return j
+        end
+    end
+    return -1
+end
 
 function getsense(x::Symbol)
     if x == :Min
@@ -62,3 +89,7 @@ end
 
 JuMP.getdual(x::StateVariable) = getdual(x.con)
 JuMP.getvalue(x::StateVariable) = getvalue(x.x)
+
+addstatevisited!(m, t, x) = push!(m.statesvisited[t], copy(x))
+probability(scenario::Scenario) = scenario.probability
+probability{T}(price::PriceScenario{T}) = price.probability
