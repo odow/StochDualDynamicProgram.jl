@@ -81,6 +81,13 @@ immutable Cut
 end
 Cut(intercept, coefficients::Vector) = Cut(intercept, coefficients)
 
+immutable CutContainer
+    cut::Cut
+    stage::Int
+    markov::Int
+    rib::Int
+end
+
 # There is a cut oracle for every subproblem (and every price state).
 abstract CutOracle
 typealias OracleStore{T} Vector{Vector{Vector{T}}}
@@ -116,7 +123,7 @@ end
 """
     The main type that holds the Stochastic Dual Dynamic Programming model
 """
-type SDDPModel{S, C, R, T}
+type SDDPModel{S, C, R, F1, F2, T}
     # subproblems
     stageproblems::Vector{Vector{JuMP.Model}}
     # Cut oracle
@@ -125,6 +132,8 @@ type SDDPModel{S, C, R, T}
     statesvisited::Vector{Vector{Vector{Float64}}}
     # Risk Measure
     riskmeasure::R
+
+    forwardsampler::F1 # forward sampler
 
     # markov transition matrices
     transition::T

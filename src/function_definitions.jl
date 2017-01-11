@@ -74,6 +74,8 @@ function addcut!{S,C,R}(m::SDDPModel{S,C,R}, t::Int, i::Int, p::Int, storage_idx
 
     # add the constraint
     addcutconstraint!(base_sp, cut, p)
+
+    return cut
 end
 
 function addcutconstraint!(m::JuMP.Model, cut::Cut, p::Int)
@@ -85,7 +87,7 @@ function addcutconstraint!(m::JuMP.Model, cut::Cut, p::Int)
     end
 end
 
-function solvestage!{S,C,R}(m::SDDPModel{S,C,R}, t::Int, i::Int, p::Int, x)
+function solvestage!{S,C,R}(m::SDDPModel{S,C,R}, cutstore::Vector{CutContainer}, t::Int, i::Int, p::Int, x)
     base_sp = stageproblem(m, t, i)
     markov_probability   = 0.0
     price_probability    = 0.0
@@ -111,7 +113,8 @@ function solvestage!{S,C,R}(m::SDDPModel{S,C,R}, t::Int, i::Int, p::Int, x)
             end
         end
     end
-    addcut!(m, t, i, p, storage_idx)
+    cut = addcut!(m, t, i, p, storage_idx)
+    push!(cutstore, CutContainer(cut, t, i, p))
     # This can only be done if the price scenarios do not depend on markov state
     # delta::Float64
     # for ii in 1:nummarkovstates(m, t)
@@ -131,14 +134,15 @@ function solvestage!{S,C,R}(m::SDDPModel{S,C,R}, t::Int, i::Int, p::Int, x)
 end
 
 
-function backwardpass!(m::SDDPModel, num_forward_passes::Int)
+function backwardpass!(m::SDDPModel, cutstore::Vector{CutContainer}, num_forward_passes::Int)
     # backtrack up stages
     for t in reverse(1:(numstages(m)-1))
         # for scenario incrementation
         for i=1:num_forward_passes
+            markov = getmarkov(m, i, t)
             # it's critical to solve upper and lower rib
             for p in boundingribs(m, t, i)
-                solvestage!(m, t, getmarkov(m, i, t), p, getstate(m, i, t))
+                solvestage!(m, cutstore, t, markov, p, getstate(m, i, t))
             end
         end
     end
@@ -159,26 +163,7 @@ function boundingribs(m, t, pass)
     end
 end
 
-function samplerhs(sp::JuMP.Model, r::Float64)
-    checkzerotoone(r)
-    for scenario in ext(sp).scenarios
-        r -= probability(scenario)
-        if r <= 0.0
-            return scenario
-        end
-    end
-    error("Probabilities do not sum to 1")
-end
-function sampleprice(sp::JuMP.Model, r::Float64)
-    checkzerotoone(r)
-    for scenario in ext(sp).pricescenarios
-        r -= probability(scenario)
-        if r <= 0.0
-            return scenario
-        end
-    end
-    error("Probabilities do not sum to 1")
-end
+
 function samplefirstmarkov(m::SDDPModel)
     r = rand()
     for i=1:length(m.initialmarkovprobability)
@@ -204,21 +189,52 @@ function forwardpass!(m::SDDPModel, num_forward_passes::Int)
         setprice!(m, i, 1, getfirstprice(m))
         solvestageforward!(m, 1, i)
         for t in 2:numstages(m)
-            setmarkov!(m, i, t, transition(m, t-1, getmarkov(m, i, t-1))) # sample markov
             solvestageforward!(m, t, i)
         end
     end
 end
 
+
 function solvestageforward!(m::SDDPModel, stage, pass)
-    sp = stageproblem(m, stage, getmarkov(m, pass, stage-1))
+    # markov = samplemarkov(m.sampler, gettransitionmatrix(m, stage), stage, getmarkov(m, i, stage-1))
+    # setmarkov!(m, i, t, markov) # sample markov
+
+    sp = stageproblem(m, stage, getmarkov(m, pass, stage))
     setstate!(sp, getstate(m, pass, stage-1))
-    setrhs!(sp, samplescenario(sp, rand())) # sample rhs
+
+    setrhs!(sp, samplescenario(m.sampler, ext(sp).scenarios, stage, markov)) # sample rhs
     if numpricescenarios(sp) > 0
-        newprice = setprice!(sp, sampleprice(sp, rand()), getprice(m, pass, stage-1)) # sample price
+        newprice = setprice!(sp, samplepricescenario(m.sampler, ext(sp).pricescenarios, stage, markov), getprice(m, pass, stage-1)) # sample price
         setprice!(m, pass, stage, newprice)
     end
     solvetooptimality!(sp) # solve subproblem
     getstate!(sp, getstate(m, pass, stage))
     addstatevisited!(m, t, getstate(m, pass, stage))
+end
+
+function addcuts!(m::SDDPModel, cuts::Vector{CutContainer})
+    for c in cuts
+        addcut!(m, c)
+    end
+end
+function addcut!(m::SDDPModel, cut::CutContainer)
+        # save the cut in the oracle
+        storecut!(m.cutoracle, m, c.stage, c.markov, c.rib, c.cut)
+        # add the constraint
+        addcutconstraint!(stageproblem(m, c.stage, c.markov), c.cut, c.rib)
+    end
+end
+
+
+function asyncronousiteration!(m::SDDPModel, scenarios::Int, newcuts::Vector{CutContainer})
+    addcuts!(m, newcuts) # add new cuts
+    # cut selection
+    rebuildsubproblems!(m)
+
+    forwardpass!(m, scenarios)
+    cutstore = CutContainer[]
+    backwardpass!(m, cutstore, scenarios)
+    # check termination
+    terminate = false
+    return terminate, cutstore
 end

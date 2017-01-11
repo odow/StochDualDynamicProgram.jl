@@ -25,6 +25,7 @@ function SDDPModel(buildsubproblem!::Function;
     transition = [1.0]',
     riskmeasure = Expectation(),
     cutoracle   = DefaultCutOracle(),
+    forwardsampler = DefaultSampler(),
     scenarios = 0,
     initialmarkovstate = nothing,
     firstprice = NaN
@@ -63,6 +64,7 @@ function SDDPModel(buildsubproblem!::Function;
         OracleStore(cutoracle, getsense(sense), problem_size),
         statesvisited,
         riskmeasure,
+        forwardsampler,
         transition,
         initialmarkovprobability(initialmarkovstate, nummarkovstates(transition, 1)),
         firstprice,
@@ -71,4 +73,22 @@ function SDDPModel(buildsubproblem!::Function;
         ForwardStorage[]
     )
 
+end
+
+function rebuildsubproblems!{S, C, R, T}(m::SDDPModel{S, C, R, T})
+    for t in 1:numstages(m)
+        for i in 1:nummarkovstates(m, t)
+            sp = Subproblem()
+            JuMP.setobjectivesense(sp, getsense(S))
+            scenario_probability = [probability(scenario) for scenario in ext(m.stageproblems[t][i]).scenarios]
+            initialisescenarios!(sp, scenario_probability)
+            buildsubproblem!(sp, t, i)
+            m.stageproblems[t][i] = sp
+            for r in 1:numpriceribs(sp)
+                for cut in validcuts(m.cutoracle[t][i][r])
+                    addcutconstraint!(sp, cut, r)
+                end
+            end
+        end
+    end
 end

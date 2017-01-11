@@ -5,8 +5,8 @@ function checkzerotoone(x)
     @assert x >= 0
 end
 
-dominates(::Maximisation, x, y) = x < y
-dominates(::Minimisation, x, y) = x > y
+dominates(::Type{Maximisation}, x, y) = x < y
+dominates(::Type{Minimisation}, x, y) = x > y
 
 ext(m::JuMP.Model) = m.ext[:subproblem]::SubproblemExt
 
@@ -66,6 +66,10 @@ transition(x::Array{Float64, 2}, t, i, j) = x[i, j]
 transition(x::Vector{Array{Float64, 2}}, t, i, j) = x[t+1][i, j]
 transition(x, t, i, j) = 1.0
 transition(m::SDDPModel, t, i, j) = transition(m.transition, t, i, j)
+gettransitionmatrix(m::SDDPModel, t) = gettransitionmatrix(m.transition, t)
+gettransitionmatrix(T::Array{Float64, 2}, t) = T
+gettransitionmatrix(T::Vector{ArrayFloat64, 2}, t) = T[t]
+
 function transition(m::SDDPModel, t, i)
     r = rand()
     for j = 1:nummarkovstates(m, t)
@@ -77,6 +81,8 @@ function transition(m::SDDPModel, t, i)
     return -1
 end
 
+getsense(::Type{Maximisation}) = :Max
+getsense(::Type{Minimisation}) = :Min
 function getsense(x::Symbol)
     if x == :Min
         return Minimisation
