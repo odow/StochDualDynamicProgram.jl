@@ -22,12 +22,13 @@ end
 function SDDPModel(buildsubproblem!::Function;
     sense::Symbol=:Min,
     stages::Int = 1,
-    transition = [1.0]',
+    markovstates = 1,
+    # transition = [1.0]',
     riskmeasure = Expectation(),
     cutoracle   = DefaultCutOracle(),
-    forwardsampler = DefaultSampler(),
-    scenarios = 0,
-    initialmarkovstate = nothing,
+    montecalosampler = UniformSampler(),
+    # scenarios = 0,
+    # initialmarkovstate = nothing,
     firstprice = NaN
     )
     validatetransition(transition, stages)

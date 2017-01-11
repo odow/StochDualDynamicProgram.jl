@@ -124,6 +124,9 @@ end
     The main type that holds the Stochastic Dual Dynamic Programming model
 """
 type SDDPModel{S, C, R, F1, F2, T}
+    # markov states by stage
+    markovstates::Vector{Int}
+
     # subproblems
     stageproblems::Vector{Vector{JuMP.Model}}
     # Cut oracle
@@ -133,11 +136,11 @@ type SDDPModel{S, C, R, F1, F2, T}
     # Risk Measure
     riskmeasure::R
 
-    forwardsampler::F1 # forward sampler
+    montecarlosampler::MonteCarloSampler
 
     # markov transition matrices
-    transition::T
-    initialmarkovprobability::Vector{Float64}
+    # transition::T
+    # initialmarkovprobability::Vector{Float64}
 
     initialprice::Float64
 
