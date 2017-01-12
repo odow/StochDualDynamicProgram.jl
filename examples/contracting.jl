@@ -18,18 +18,12 @@ m = SDDPModel(
     #    ::Int = identical number for each stage
     #    ::Vector{Int} = differing numbers by stage
     markovstates = 2,
+    transition = markov_transition,
+
+    scenarios = ones(19) / 19,
     # :Max for maximisation or :Min for minimisation
     sense        = :Max
                         ) do sp, t, i
-
-    # set markov transition probabilities from markov state i to j
-    setmarkovtransition!(sp, markov_transition[i, :])
-
-    # set scenario probability
-    #   can either be integer (number of scenarios, uniform dist)
-    #   or vector of probabilities
-    setscenarios!(sp, ones(19) / 19)
-    # or equivalently => setscenarios!(sp, 19)
 
     # create state variables
     @state(sp, 0 <= contracts  <= 1.5, contracts0 = 0)
@@ -54,21 +48,20 @@ m = SDDPModel(
         output <= alpha * markov_states[i]
     )
 
-    # Set up the price 'ribs'
-    setpricestate!(sp,
-        linspace(3, 9, 5),                  # locations
-        (p, w)->price_dynamics(p, w, t)     # dynamics for updating price state
-    )
     if t < 28
-        setpricescenario!(sp,
+        priceprocess!(sp,
+            linspace(3, 9, 5),                  # locations
+            (p, w)->price_dynamics(p, w, t)     # dynamics for updating price state
             linspace(0, 0.05, 5),   # noises
             fill(0.2, 5),           # probability support
             price -> (buy * price - transaction_cost * (buy + sell)) # returns AffExpr for stage objective
         )
     else
-        setpricescenario!(sp,
+        priceprocess!(sp,
+            linspace(3, 9, 5),                  # locations
+            (p, w)->price_dynamics(p, w, t)     # dynamics for updating price state
             linspace(0, 0.05, 5), # noises
-                                  # assume uniform dist!
+            # fill(0.2, 5),           # probability support
             price -> (production - contracts) * price # objective
         )
     end

@@ -1,45 +1,9 @@
 #  Copyright 2017, Oscar Dowson
-initialise(t::CutOracle, sense::Sense, stage::Int, markovstate::Int, pricestate::Int) = error("""
-    You must define an initialisation method for your cut oracle.
-""")
-
-"""
-    storecut!(oracle::CutOracle, stage::Int, markovstate::Int, pricestate::Int, cut)
-
-    This function adds the cut to the CutOracle.
-"""
-storecut!{M<:SDDPModel}(oracle::CutOracle, m::M, stage::Int, markovstate::Int, pricestate::Int, cut) = error("""
-    You must define the function
-        storecut!(oracle::$(typeof(oracle)), m::SDDPModel, stage::Int, markovstate::Int, pricestate::Int, cut)
-    that is overloaded for your oracle of type $(typeof(oracle)).
-""")
-
-"""
-    validcuts(oracle::CutOracle)
-
-    This function returns an iterable list of all the valid cuts contained within the oracle.
-"""
-validcuts(oracle::CutOracle) = error("""
-You must define the function validcuts(oracle::$(typeof(oracle))) that is overloaded for your
-    oracle of type $(typeof(oracle)).
-""")
-
-"""
-    A default cut storage oracle that simply remembers all the cuts
-"""
-immutable DefaultCutOracle <: CutOracle
-    cuts::Vector{Cut}
-end
-DefaultCutOracle() = DefaultCutOracle(Cut[])
-storecut!(oracle::DefaultCutOracle, m, stage, markovstate, pricestate, cut::Cut) = push!(oracle.cuts, cut)
-validcuts(oracle::DefaultCutOracle) = oracle.cuts
-initialise(::DefaultCutOracle, sense::Sense, stage::Int, markovstate::Int, pricestate::Int) = DefaultCutOracle(Cut[])
-
 
 """
     Vitor de Matos Level One Cut Selection
 """
-immutable DeMatosCutOracle
+immutable DeMatosCutOracle <: AbstractCutOracle
     sense::Sense
     cuts::Vector{Cut}
     states_dominant::Vector{Int} # states_dominant[i] = number of states in statesvisited that cut i is dominant
@@ -47,6 +11,7 @@ immutable DeMatosCutOracle
     best_bound::Vector{Float64} # best_bound[i] = best objective bound at statesvisited[i]
 end
 DeMatosCutOracle() = DeMatosCutOracle(Minimisation, Cut[], Int[], Int[], Float64[])
+
 initialise(::DeMatosCutOracle, sense, stage, markovstate, pricestate) = DeMatosCutOracle(sense, Cut[], Int[], Int[], Float64[])
 
 evaluate(cut::Cut, state::Vector{Float64}) = cut.intercept + dot(cut.coefficients, state)

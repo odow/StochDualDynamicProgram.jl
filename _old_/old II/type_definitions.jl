@@ -6,6 +6,8 @@ typealias Sense Union{Type{Val{:Min}}, Type{Val{:Max}}}
 typealias Minimisation Val{:Min}
 typealias Maximisation Val{:Max}
 
+# typealias State{N, T} Tuple{Vararg{N, T}}
+
 """
     SDDP State Variable
 """
@@ -55,19 +57,30 @@ abstract AbstractRiskMeasure
 """
     The extension type for the JuMP subproblems
 """
-type SubproblemExt
+type Subproblem{R<:AbstractRiskMeasure}
+    model::JuMP.Model
+    # A vector of state variables
     states::Vector{StateVariable}
+    # A vecotr of RHS scenario constraints
     scenarios::Vector{Scenario}
+    # A vector of noises for the objective
     pricescenarios::Vector{PriceScenario}
+    # Vector of price ribs
     theta::Vector{Rib}
+    # Probability of transitioning from here to next markov state
+    markovtransition::Vector{Float64}
+    # risk measure
+    riskmeasure::R
 end
+
 function Subproblem()
     m = JuMP.Model()
     m.ext[:subproblem] = SubproblemExt(
         StateVariable[],
         Scenario[],
         PriceScenario[],
-        Rib[]
+        Rib[],
+        Float64[]
     )
     m
 end
@@ -75,14 +88,14 @@ end
 """
     Θ (</>)= intercept + coefficients' x
 """
-immutable Cut
+immutable Cut{N}
     intercept::Float64
-    coefficients::Vector{Float64}
+    coefficients::NTuple{N, Float64}
 end
-Cut(intercept, coefficients::Vector) = Cut(intercept, coefficients)
+Cut(intercept, coefficients::Vector) = Cut(intercept, tuple(coefficients...))
 
-immutable CutContainer
-    cut::Cut
+immutable CutContainer{N}
+    cut::Cut{N}
     stage::Int
     markov::Int
     rib::Int
@@ -132,7 +145,7 @@ type SDDPModel{S, C, R, F1, F2, T}
     # Cut oracle
     cutoracle::OracleStore{C}
     # list of states visited in each stage
-    statesvisited::Vector{Vector{Vector{Float64}}}
+    statesvisited::Vector{Vector{NTuple{N, Float64}}}
     # Risk Measure
     riskmeasure::R
 

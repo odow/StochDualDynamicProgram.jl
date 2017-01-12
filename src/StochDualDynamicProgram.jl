@@ -5,24 +5,21 @@ module StochDualDynamicProgram
 using JuMP
 
 export SDDPModel,
-    @state, @states, @scenario, @scenarioconstraints, @stageobjective,
-    objectivescenario!,
-    DiscreteDistribution,
+    @state, @states, @scenario, @scenarioconstraints,# @stageobjective,
+#     objectivescenario!,
+#     DiscreteDistribution,
     # risk measures
     Expectation, NestedCVaR,
     # cut oracles
-    DefaultCutOracle, DeMatosCutOracle,
-    # forward samplers
-    DefaultSampler, UniformSampler
+    DefaultCutOracle, DeMatosCutOracle
+#     # forward samplers
+#     DefaultSampler, UniformSampler
 
-include("type_definitions.jl")
-include("utilities.jl")
-include("cut_selection.jl")
-include("risk_measures.jl")
-include("forward_sampler.jl")
-include("macro_definitions.jl")
-include("function_definitions.jl")
-include("model.jl")
+include("types.jl")
+include("cutoracles.jl")
+include("riskmeasures.jl")
 
+include("scenario.jl")
+include("statevariable.jl")
 
 end

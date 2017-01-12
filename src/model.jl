@@ -1,95 +1,71 @@
-function initialisescenarios!(m::JuMP.Model, scenario_probabilities::Vector{Float64})
-    if (sum(scenario_probabilities) - 1.0) > 1e-6
-        error("Sum of scenario probabilities must sum to 1. You have given the vector $(scenario_probabilities) which sums to $(sum(scenario_probabilities))")
-    end
-    for p in scenario_probabilities
-        push!(ext(m).scenarios, Scenario(p))
-    end
-end
+# Copyright 2017, Oscar Dowson
 
-validatetransition(transition::Array{Float64, 2}, initialmarkovstate) = nothing
-function validatetransition(transition::Vector{Array{Float64, 2}}, stages::Int)
-    if length(transition) != (stages - 1)
-            error("Incorrect markov transition supplied. You have chosen to give a vector of transition matrices with a specified markov state for the first stage, so you should have a vector that contains (stages - 1) = $(stages-1) markov transition matrices. However the current vector has $(length(transition)).")
-    end
+function ExtendedJuMPModel()
+    sp = JuMP.Model()
+    sp.ext[:subproblem] = SubproblemExtension()
+    sp
 end
-initialmarkovprobability(x, n) = ones(n) / n
-function initialmarkovprobability(x::Vector, n)
-    @assert length(x) == n
-    @assert (sum(x) - 1.0) < 1e-6
-    return x
-end
+ext(m::JuMP.Model) = m.ext[:subproblem]::SubproblemExtension
+
+
 function SDDPModel(buildsubproblem!::Function;
-    sense::Symbol=:Min,
     stages::Int = 1,
+    sense::Symbol = :Min,
     markovstates = 1,
-    # transition = [1.0]',
-    riskmeasure = Expectation(),
-    cutoracle   = DefaultCutOracle(),
-    montecalosampler = UniformSampler(),
-    # scenarios = 0,
-    # initialmarkovstate = nothing,
-    firstprice = NaN
-    )
-    validatetransition(transition, stages)
+    transition = nothing,
+    scenarios = nothing,
+    kwargs...)
 
-    stageproblems = Vector{JuMP.Model}[]
-    statesvisited = Vector{Vector{Float64}}[]
-    problem_size = Vector{Int}[]
+    m = SDDPModel(buildsubproblem!)
 
-    tmp_storage_size = 0
-    max_size = 0
-    for t=1:stages
-
-        push!(problem_size, Int[])
-        push!(stageproblems, JuMP.Model[])
-        push!(statesvisited, Vector{Float64}[])
-        max_size = 0
-        for i=1:nummarkovstates(transition, t)
-            m = Subproblem()
-            JuMP.setobjectivesense(m, sense)
-            initialisescenarios!(m, getscenariovec(scenarios, t, i))
-            buildsubproblem!(m, t, i)
-
-            push!(stageproblems[t], m)
-            push!(problem_size[t], numpriceribs(m))
-
-            max_size += numscenarios(m) * numpricescenarios(m)
+    for t in 1:stages
+        stage = Stage()
+        for i in 1:numberofmarkovstates(markovstates, t)
+            sp = ExtendedJuMPModel()
+            JuMP.setobjectivesense(sp, sense)
+            settransition!(sp, transition, markovstates, stages, t, i)
+            setscenarios!(sp, scenarios, t, i)
+            buildsubproblem!(sp, t, i)
+            push!(stage.arr, Subproblem(sp, DefaultCutOracle(), Expectation()))
         end
-        if max_size > tmp_storage_size
-            tmp_storage_size = max_size
-        end
+        push!(m.stageproblems, stage)
     end
-    SDDPModel{getsense(sense), typeof(cutoracle), typeof(riskmeasure), typeof(transition)}(
-        stageproblems,
-        OracleStore(cutoracle, getsense(sense), problem_size),
-        statesvisited,
-        riskmeasure,
-        forwardsampler,
-        transition,
-        initialmarkovprobability(initialmarkovstate, nummarkovstates(transition, 1)),
-        firstprice,
-        buildsubproblem!,
-        [BackwardStorage(numstates(stageproblems[1][1])) for i=1:tmp_storage_size],
-        ForwardStorage[]
-    )
-
+    m
 end
 
-function rebuildsubproblems!{S, C, R, T}(m::SDDPModel{S, C, R, T})
-    for t in 1:numstages(m)
-        for i in 1:nummarkovstates(m, t)
-            sp = Subproblem()
-            JuMP.setobjectivesense(sp, getsense(S))
-            scenario_probability = [probability(scenario) for scenario in ext(m.stageproblems[t][i]).scenarios]
-            initialisescenarios!(sp, scenario_probability)
-            buildsubproblem!(sp, t, i)
-            m.stageproblems[t][i] = sp
-            for r in 1:numpriceribs(sp)
-                for cut in validcuts(m.cutoracle[t][i][r])
-                    addcutconstraint!(sp, cut, r)
-                end
-            end
-        end
+function priceprocess!(sp::JuMP.Model,
+    ribs::AbstractVector{Float64},
+    dynamics::Function,
+    noises::AbstractVector,
+    probability::AbstractVector{Float64},
+    objective::Function
+    )
+    @assert length(noises) == length(probability)
+    for r in ribs
+        push!(
+            ribs(sp),
+            Rib(r, @variable(sp))
+        )
     end
+    for i in 1:length(noises)
+        push!(
+            pricescenarios(sp),
+            PriceScenario(probability[i], createpricefunction!(dynamics, objective, noises[i]))
+        )
+    end
+
+end
+priceprocess!(sp::JuMP.Model,
+    ribs::AbstractVector{Float64},
+    dynamics::Function,
+    noises::AbstractVector,
+    # probability::AbstractVector{Float64},
+    objective::Function
+    ) = priceprocess!(sp, ribs, dynamics, noises, ones(length(noises)) / length(noises), objective)
+
+function createpricefunction!(dynamics::Function, objective::Function, noise)
+    (p) -> (
+        newp = dynamics(p, noise);
+        (newp, objective(newp))
+    )
 end
