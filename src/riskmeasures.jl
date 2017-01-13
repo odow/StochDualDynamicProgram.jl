@@ -11,10 +11,10 @@
     + stage::Int - the index of the stage
     + markov::Int - the index of the markov state
 """
-cutgenerator(measure::AbstractRiskMeasure, m::SDDPModel, x, pi, theta, prob, stage, markov) =
+cutgenerator(measure::AbstractRiskMeasure, m, x, pi, theta, prob, stage, markov) =
     cutgenerator(measure::AbstractRiskMeasure, m::SDDPModel, x, pi, theta, prob)
 
-cutgenerator(measure::AbstractRiskMeasure, m::SDDPModel, x, pi, theta, prob) = error("""
+cutgenerator(measure::AbstractRiskMeasure, m, x, pi, theta, prob) = error("""
     You need to overload a `cutgenerator` method for the measure of type $(typeof(measure)).
     This could be the method including the stage and markov index
         cutgenerator(measure::AbstractRiskMeasure, sense::Sense, x, pi, theta, prob, stage, markov)

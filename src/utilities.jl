@@ -9,16 +9,26 @@ _setobjective!(m::JuMP.Model, obj) = JuMP.setobjective(m, JuMP.getobjectivesense
 #   Model.jl
 #
 
-model(x::SubproblemExtension) = x.model
-states(x::SubproblemExtension) = x.states
-scenarios(x::SubproblemExtension) = x.scenarios
-pricescenarios(x::SubproblemExtension) = x.pricescenarios
-ribs(x::JuMP.Model) = ribs(ext(x))
-model(x::JuMP.Model) = model(ext(x))
-states(x::JuMP.Model) = states(ext(x))
-scenarios(x::JuMP.Model) = scenarios(ext(x))
-pricescenarios(x::JuMP.Model) = pricescenarios(ext(x))
-ribs(x::JuMP.Model) = ribs(ext(x))
+function getsense(x::Symbol)
+    if x == :Min
+        Minimisation
+    elseif x == :Max
+        Maximisation
+    else
+        error("Sense $(x) not supported.")
+    end
+end
+
+getmodel(x::SubproblemExtension) = x.model
+getstates(x::SubproblemExtension) = x.states
+getscenarios(x::SubproblemExtension) = x.scenarios
+getpricescenarios(x::SubproblemExtension) = x.pricescenarios
+getribs(x::SubproblemExtension) = x.ribs
+getmodel(x::JuMP.Model) = getmodel(ext(x))
+getstates(x::JuMP.Model) = getstates(ext(x))
+getscenarios(x::JuMP.Model) = getscenarios(ext(x))
+getpricescenarios(x::JuMP.Model) = getpricescenarios(ext(x))
+getribs(x::JuMP.Model) = getribs(ext(x))
 
 
 #
@@ -32,11 +42,11 @@ function settransition!(ex::SubproblemExtension, transition, markovstates, T, t,
     if t < T
         J = numberofmarkovstates(markovstates, t+1)
         tmat = extracttransition(transition, t, i, J)
-        settransition!(sp, tmat)
+        settransition!(ex, tmat)
     end
     nothing
 end
-
+settransition!(sp::JuMP.Model, transition, markovstates, T, t, i) = settransition!(ext(sp), transition, markovstates, T, t, i)
 function settransition!(ex::SubproblemExtension, T::Vector{Float64})
     while length(ex.transitionprobability) > 0
         pop!(ex.transitionprobability)
@@ -59,8 +69,8 @@ scenarioprob(x::Int, t, i) = ones(Float64, x) / x
 scenarioprob(x::Vector{Float64}, t, i) = x
 scenarioprob{T<:Union{Int, Vector{Float64}}}(x::Vector{T}, t, i) = scenarioprob(x[t], t, i)
 scenarioprob{T<:Union{Int, Vector{Float64}}}(x::Vector{Vector{T}}, t, i) = scenarioprob(x[t][i], t, i)
-function setscenarios!(sp::JuMP.Model, scenarios, t, i)
-    for s in scenarioprob(scenarios)
-        push!(scenarios(sp), Scenario(s))
+function setscenarios!(sp::JuMP.Model, sc, t, i)
+    for s in scenarioprob(sc, t, i)
+        push!(getscenarios(sp), Scenario(s))
     end
 end

@@ -97,6 +97,7 @@ end
 Stage() = Stage(Subproblem[], Vector{Float64}[], BackwardPassStore[], ForwardPassStore[])
 
 type SDDPModel
+    sense::Sense
     # the problems
     stageproblems::Vector{Stage}
     # the build function
@@ -104,4 +105,4 @@ type SDDPModel
     # store all cuts
     cutcontainer::Vector{CutContainer}
 end
-SDDPModel(buildsubproblem!::Function) = SDDPModel(Stage[], buildsubproblem!, CutContainer[])
+SDDPModel(sense, buildsubproblem!::Function) = SDDPModel(sense, Stage[], buildsubproblem!, CutContainer[])

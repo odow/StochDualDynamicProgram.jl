@@ -16,7 +16,7 @@ function SDDPModel(buildsubproblem!::Function;
     scenarios = nothing,
     kwargs...)
 
-    m = SDDPModel(buildsubproblem!)
+    m = SDDPModel(getsense(sense), buildsubproblem!)
 
     for t in 1:stages
         stage = Stage()
@@ -31,41 +31,4 @@ function SDDPModel(buildsubproblem!::Function;
         push!(m.stageproblems, stage)
     end
     m
-end
-
-function priceprocess!(sp::JuMP.Model,
-    ribs::AbstractVector{Float64},
-    dynamics::Function,
-    noises::AbstractVector,
-    probability::AbstractVector{Float64},
-    objective::Function
-    )
-    @assert length(noises) == length(probability)
-    for r in ribs
-        push!(
-            ribs(sp),
-            Rib(r, @variable(sp))
-        )
-    end
-    for i in 1:length(noises)
-        push!(
-            pricescenarios(sp),
-            PriceScenario(probability[i], createpricefunction!(dynamics, objective, noises[i]))
-        )
-    end
-
-end
-priceprocess!(sp::JuMP.Model,
-    ribs::AbstractVector{Float64},
-    dynamics::Function,
-    noises::AbstractVector,
-    # probability::AbstractVector{Float64},
-    objective::Function
-    ) = priceprocess!(sp, ribs, dynamics, noises, ones(length(noises)) / length(noises), objective)
-
-function createpricefunction!(dynamics::Function, objective::Function, noise)
-    (p) -> (
-        newp = dynamics(p, noise);
-        (newp, objective(newp))
-    )
 end

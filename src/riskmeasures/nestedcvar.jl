@@ -9,6 +9,11 @@ immutable NestedCVaR <: AbstractRiskMeasure
     lambda::Float64
     storage::Vector{Float64}
 end
+Base.eps{T<:Integer}(::Type{T}) = zero(T)
+function checkzerotoone{T}(x::T)
+    @assert x >= zero(T) - eps(T)
+    @assert x <= one(T) + eps(T)
+end
 
 function NestedCVaR(beta, lambda)
     checkzerotoone(beta)
@@ -41,6 +46,6 @@ function cutgenerator(cvar::NestedCVaR, m, x, pi, theta, prob)
     if length(cvar.storage) < length(prob)
         append!(cvar.storage, zeros(length(prob) - length(cvar.storage)))
     end
-    calculateCVaRprobabilities!(cvar.storage, sense, prob, theta, cvar.lambda, cvar.beta)
+    calculateCVaRprobabilities!(cvar.storage, m.sense, prob, theta, cvar.lambda, cvar.beta)
     cutgenerator(expectation, m, x, pi, theta, view(cvar.storage, 1:length(prob)))
 end

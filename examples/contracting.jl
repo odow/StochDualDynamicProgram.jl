@@ -51,7 +51,7 @@ m = SDDPModel(
     if t < 28
         priceprocess!(sp,
             linspace(3, 9, 5),                  # locations
-            (p, w)->price_dynamics(p, w, t)     # dynamics for updating price state
+            (p, w)->price_dynamics(p, w, t),    # dynamics for updating price state
             linspace(0, 0.05, 5),   # noises
             fill(0.2, 5),           # probability support
             price -> (buy * price - transaction_cost * (buy + sell)) # returns AffExpr for stage objective
@@ -59,7 +59,7 @@ m = SDDPModel(
     else
         priceprocess!(sp,
             linspace(3, 9, 5),                  # locations
-            (p, w)->price_dynamics(p, w, t)     # dynamics for updating price state
+            (p, w)->price_dynamics(p, w, t),    # dynamics for updating price state
             linspace(0, 0.05, 5), # noises
             # fill(0.2, 5),           # probability support
             price -> (production - contracts) * price # objective

@@ -3,8 +3,8 @@
 setvalue!(x::StateVariable, y::Float64) = JuMP.setrhs!(x.c, y)
 JuMP.getdual(x::StateVariable) = JuMP.getdual(x.c)
 
-function statevariable!(states::Vector{StateVariable}, xin::JuMP.Variable, xout::JuMP.Variable)
-    push!(states,
+function statevariable!(sp::JuMP.Model, xin::JuMP.Variable, xout::JuMP.Variable)
+    push!(getstates(sp),
             StateVariable(
                 xout,
                 @constraint(sp, xin == getvalue(xout))
@@ -12,17 +12,17 @@ function statevariable!(states::Vector{StateVariable}, xin::JuMP.Variable, xout:
     )
 end
 
-function statevariable!(states::Vector{StateVariable}, xin::Array{JuMP.Variable}, xout::Array{JuMP.Variable})
+function statevariable!(sp::JuMP.Model, xin::Array{JuMP.Variable}, xout::Array{JuMP.Variable})
     @assert length(xin) == length(xout)
     for i in 1:length(xin)
-        statevariable!(states, xin[i], xout[i])
+        statevariable!(sp, xin[i], xout[i])
     end
 end
 
-function statevariable!{T<:Union{JuMP.JuMPArray, JuMP.JuMPDict}}(states::Vector{StateVariable}, xin::T, xout::T)
+function statevariable!{T<:Union{JuMP.JuMPArray, JuMP.JuMPDict}}(sp::JuMP.Model, xin::T, xout::T)
     @assert length(keys(xin)) == length(keys(xout))
     for key in keys(xin)
-        statevariable!(states, xin[key...], xout[key...])
+        statevariable!(sp, xin[key...], xout[key...])
     end
 end
 
@@ -67,7 +67,7 @@ macro state(sp, x, x0)
     quote
         stateout = $(Expr(:macrocall, Symbol("@variable"), sp, esc(x), Expr(:kw, :start, esc(rhs))))
         statein  = $(Expr(:macrocall, Symbol("@variable"), sp, esc(xin)))
-        statevariable!(states($sp), statein, stateout)
+        statevariable!($sp, statein, stateout)
         stateout, statein
     end
 end

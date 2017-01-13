@@ -1,6 +1,7 @@
 # Copyright 2017, Oscar Dowson
 
-function scenario!(scenarios::Vector{Scenario}, con::LinearConstraint, values::Vector{Float64})
+function scenario!(sp::JuMP.Model, con::LinearConstraint, values::Vector{Float64})
+    scenarios = getscenarios(sp)
     @assert length(scenarios) == length(values)
     for i in 1:length(values)
         push!(scenarios[i].arr, ConstraintRHS(con, values[i]))
@@ -31,7 +32,7 @@ macro scenario(sp, noise_kw, con)
                 sp,                             # the subproblem
                 esc(con)                          # the constraint expression
                 ))
-        scenario!(scenarios($sp), full_con, rhs)
+        scenario!($sp, full_con, rhs)
         full_con
     end
 end
