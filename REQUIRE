@@ -1,8 +1,7 @@
 julia 0.5-
-JuMP 0.13
+JuMP 0.16
 Clp
 Distributions
 JSON
 StatsBase
-FactCheck
 Compat

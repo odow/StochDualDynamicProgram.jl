@@ -1,4 +1,4 @@
-#  Copyright 2016, Oscar Dowson
+#  Copyright 2017, Oscar Dowson
 
 # Overload base.dot to handle (vector x NTuple)
 function Base.dot{T<:Real, N}(x::Vector{T}, y::NTuple{N, T})
@@ -207,8 +207,8 @@ end
 # Run the exact method for cut selection
 function rebuildcuts!{N}(::Deterministic, sense::Sense, sp::Model, sc::StageCuts{N}) #, bound::Real=-Inf)
     m = Model()
-    @variable(m, getlowerbound(stagedata(sp).state_vars[i]) <= x[i=1:N] <= getupperbound(stagedata(sp).state_vars[i]))
-    @variable(m, y)
+    x = @variable(m, [i=1:N], lowerbound=getlowerbound(stagedata(sp).state_vars[i]), upperbound=getupperbound(stagedata(sp).state_vars[i]))
+    y = @variable(m)
     for cut in sc.cuts
         if isa(sense, Max)
             @constraints(m, begin

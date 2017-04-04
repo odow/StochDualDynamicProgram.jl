@@ -1,4 +1,4 @@
-#  Copyright 2016, Oscar Dowson
+#  Copyright 2017, Oscar Dowson
 
 """
     StageProblem(scenarios)
@@ -285,7 +285,7 @@ function create_subproblems!{T, M, S, X, TM}(m::SDDPModel{T, M, S, X, TM})
             end
 
             # Initialise regularisation variables
-            stagedata(sp).regularisepen = @variable(sp, regularisepen >= 0)
+            stagedata(sp).regularisepen = @variable(sp, lowerbound=0)
             @constraints(sp, begin
                 regpos, stagedata(sp).regularisepen + sum(v for v in stagedata(sp).state_vars) >= 0
                 regneg, stagedata(sp).regularisepen - sum(v for v in stagedata(sp).state_vars) >= 0
@@ -314,8 +314,8 @@ function create_subproblems!{T, M, S, X, TM}(m::SDDPModel{T, M, S, X, TM})
 end
 
 # Add the value/cost to go variable depending on model sense
-addtheta!(::Type{Min}, sp::Model, value_to_go_bound) = (stagedata(sp).theta = @variable(sp, theta >= value_to_go_bound))
-addtheta!(::Type{Max}, sp::Model, value_to_go_bound) = (stagedata(sp).theta = @variable(sp, theta <= value_to_go_bound))
+addtheta!(::Type{Min}, sp::Model, value_to_go_bound) = (stagedata(sp).theta = @variable(sp, lowerbound=value_to_go_bound))
+addtheta!(::Type{Max}, sp::Model, value_to_go_bound) = (stagedata(sp).theta = @variable(sp, upperbound=value_to_go_bound))
 
 # Set the objective depending on model sense
 setobj!(::Type{Min}, sp, aff) = @objective(sp, Min, aff)
